@@ -1,24 +1,25 @@
-import WebSocket from 'ws';
+import WebSocket from "ws";
 
 // Client message types
 export type ClientEventType =
-  | 'create_room'
-  | 'join_room'
-  | 'leave_room'
-  | 'room_list'
-  | 'player_ready'
-  | 'game_started'
-  | 'gesture_event';
+  | "create_room"
+  | "join_room"
+  | "leave_room"
+  | "room_list"
+  | "player_ready"
+  | "game_started"
+  | "gesture_event";
 
 // Server message types
 export type ServerEventType =
-  | 'room_updated'
-  | 'room_list'
-  | 'player_ready'
-  | 'game_started'
-  | 'game_ended'
-  | 'error'
-  | 'gesture_event';
+  | "room_updated"
+  | "room_list"
+  | "player_ready"
+  | "game_started"
+  | "game_ended"
+  | "error"
+  | "gesture_event"
+  | "udp_message";
 
 // WebSocket client extended with custom properties
 export interface ExtendedWebSocket extends WebSocket {
@@ -44,7 +45,7 @@ export interface Room {
   createdAt: number;
   hostId: string;
   players: Player[];
-  status: 'waiting' | 'playing' | 'ended';
+  status: "waiting" | "playing" | "ended";
   maxPlayers: number;
 }
 
@@ -54,25 +55,25 @@ export interface RoomListItem {
   name: string;
   playerCount: number;
   maxPlayers: number;
-  status: Room['status'];
+  status: Room["status"];
 }
 
 // Gesture types
 export type GestureType =
-  | 'rightHandRaise'
-  | 'tPose'
-  | 'handsAboveHead'
-  | 'diagonalArms'
-  | 'handWave'
-  | 'armsCrossed'
-  | 'pushMotion'
-  | 'punchMotion'
-  | 'karateChop'
-  | 'circularArm'
-  | 'clapHands'
-  | 'squatMotion'
-  | 'weatherShield'
-  | 'spinAround';
+  | "rightHandRaise"
+  | "tPose"
+  | "handsAboveHead"
+  | "diagonalArms"
+  | "handWave"
+  | "armsCrossed"
+  | "pushMotion"
+  | "punchMotion"
+  | "karateChop"
+  | "circularArm"
+  | "clapHands"
+  | "squatMotion"
+  | "weatherShield"
+  | "spinAround";
 
 // WebSocket message format
 export interface WebSocketMessage {
@@ -115,4 +116,10 @@ export interface GestureEventPayload {
 
 export interface ErrorPayload {
   error: string;
+}
+
+// New UDP message payload type
+export interface UdpMessagePayload {
+  message: string;
+  timestamp: number;
 }

@@ -34,17 +34,24 @@ export interface ApiResponse<T> {
 
 // Custom event types for WebSocket
 export type WebSocketEventName =
-  | 'room_updated'
-  | 'room_list'
-  | 'player_ready'
-  | 'game_started'
-  | 'error'
-  | 'gesture_event'
-  | 'navigate_to_room'
-  | 'navigate_to_game';
+  | "room_updated"
+  | "room_list"
+  | "player_ready"
+  | "game_started"
+  | "error"
+  | "gesture_event"
+  | "navigate_to_room"
+  | "navigate_to_game"
+  | "udp_message";
 
 export interface ErrorPayload {
   error: string;
   code?: string;
   details?: Record<string, unknown>;
+}
+
+// UDP message payload
+export interface UdpMessagePayload {
+  message: string;
+  timestamp: number;
 }

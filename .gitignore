@@ -1,0 +1,37 @@
+# C++ build artifacts
+build/
+*.o
+*.a
+*.so
+*.exe
+*.out
+*.app
+
+# Node.js dependencies
+node_modules/
+web-version/node_modules/
+gesture-tower-server/node_modules/
+*/node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Next.js build artifacts
+.next/
+web-version/.next/
+out/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs
+*.log
+
+# OS specific files
+.DS_Store
+Thumbs.db

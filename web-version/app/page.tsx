@@ -1,30 +1,31 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { TitleScreen } from './components/TitleScreen';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { TitleScreen } from "./components/TitleScreen";
+import UdpMessageDisplay from "./components/UdpMessageDisplay";
 import {
   initializeSocket,
   getSocketStatus,
   saveRoomInfo,
   logConnectionDetails,
-} from './lib/websocket';
-import { NavigateToRoomEvent } from './lib/types';
+} from "./lib/websocket";
+import { NavigateToRoomEvent } from "./lib/types";
 
 export default function Home() {
   const router = useRouter();
   const [connectionStatus, setConnectionStatus] = useState<
-    'connected' | 'connecting' | 'disconnected'
-  >('connecting');
+    "connected" | "connecting" | "disconnected"
+  >("connecting");
 
   // Clear any mock data on startup
   useEffect(() => {
     // Also clear any room data that might be stored incorrectly
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       // Check if localStorage contains JSON array instead of proper room data
-      const storedRooms = localStorage.getItem('currentRoomId');
-      if (storedRooms && storedRooms.startsWith('[')) {
-        console.log('Found invalid room data, clearing localStorage');
+      const storedRooms = localStorage.getItem("currentRoomId");
+      if (storedRooms && storedRooms.startsWith("[")) {
+        console.log("Found invalid room data, clearing localStorage");
         localStorage.clear();
       }
     }
@@ -48,13 +49,13 @@ export default function Home() {
   // Handle navigation events
   useEffect(() => {
     // Skip if not in browser
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
 
     // Handle room navigation
     const handleNavigateToRoom = (event: Event) => {
       const { roomId, playerId, playerName } = (event as NavigateToRoomEvent)
         .detail;
-      console.log('Navigation event received:', {
+      console.log("Navigation event received:", {
         roomId,
         playerId,
         playerName,
@@ -68,14 +69,14 @@ export default function Home() {
         console.log(`Navigating to rooms/${roomId}`);
         router.push(`/rooms/${roomId}`);
       } else {
-        console.warn('Navigation event received but no roomId provided');
+        console.warn("Navigation event received but no roomId provided");
       }
     };
 
     // Handle game navigation
     const handleNavigateToGame = (event: Event) => {
       const { roomId } = (event as CustomEvent).detail;
-      console.log('Game navigation event received:', { roomId });
+      console.log("Game navigation event received:", { roomId });
 
       if (roomId) {
         // Navigate to the game page
@@ -85,13 +86,13 @@ export default function Home() {
     };
 
     // Add event listeners
-    window.addEventListener('navigate_to_room', handleNavigateToRoom);
-    window.addEventListener('navigate_to_game', handleNavigateToGame);
+    window.addEventListener("navigate_to_room", handleNavigateToRoom);
+    window.addEventListener("navigate_to_game", handleNavigateToGame);
 
     // Clean up
     return () => {
-      window.removeEventListener('navigate_to_room', handleNavigateToRoom);
-      window.removeEventListener('navigate_to_game', handleNavigateToGame);
+      window.removeEventListener("navigate_to_room", handleNavigateToRoom);
+      window.removeEventListener("navigate_to_game", handleNavigateToGame);
     };
   }, [router]);
 
@@ -108,24 +109,25 @@ export default function Home() {
     // Don't close WebSocket on component unmount as we need it for navigation
     return () => {
       console.log(
-        'Home component unmounting, keeping WebSocket connection alive'
+        "Home component unmounting, keeping WebSocket connection alive"
       );
     };
   }, []);
 
   return (
-    <main className='min-h-screen'>
+    <main className="min-h-screen">
       <TitleScreen />
+      <UdpMessageDisplay />
 
-      {connectionStatus !== 'connected' && (
+      {connectionStatus !== "connected" && (
         <div
           className={`fixed bottom-4 right-4 px-3 py-1 rounded-lg text-sm ${
-            connectionStatus === 'connecting' ? 'bg-yellow-600' : 'bg-red-600'
+            connectionStatus === "connecting" ? "bg-yellow-600" : "bg-red-600"
           } text-white`}
         >
-          {connectionStatus === 'connecting'
-            ? 'Connecting to server...'
-            : 'Disconnected from server'}
+          {connectionStatus === "connecting"
+            ? "Connecting to server..."
+            : "Disconnected from server"}
         </div>
       )}
     </main>

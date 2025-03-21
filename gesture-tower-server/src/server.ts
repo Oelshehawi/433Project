@@ -1,7 +1,8 @@
-import http from 'http';
-import express from 'express';
-import WebSocket from 'ws';
-import { v4 as uuidv4 } from 'uuid';
+import http from "http";
+import express from "express";
+import WebSocket from "ws";
+import { v4 as uuidv4 } from "uuid";
+import dgram from "dgram";
 import {
   ExtendedWebSocket,
   Room,
@@ -17,7 +18,8 @@ import {
   GameStartedPayload,
   GestureEventPayload,
   ErrorPayload,
-} from './types';
+  UdpMessagePayload,
+} from "./types";
 
 // Initialize Express app and HTTP server
 const app = express();
@@ -29,18 +31,66 @@ const wss = new WebSocket.Server({ server });
 // Store active rooms
 const rooms: Map<string, Room> = new Map();
 
+// Create UDP server
+const udpServer = dgram.createSocket("udp4");
+const UDP_PORT = 9090;
+
+// Initialize UDP server
+udpServer.on("error", (err) => {
+  console.error(`UDP server error:\n${err.stack}`);
+  udpServer.close();
+});
+
+udpServer.on("message", (msg, rinfo) => {
+  const message = msg.toString();
+  console.log(
+    `UDP server received message: ${message} from ${rinfo.address}:${rinfo.port}`
+  );
+
+  // Create a payload with the UDP message
+  const payload: UdpMessagePayload = {
+    message,
+    timestamp: Date.now(),
+  };
+
+  // Broadcast the UDP message to all connected WebSocket clients
+  broadcastToAllClients({
+    event: "udp_message",
+    payload,
+  });
+});
+
+udpServer.on("listening", () => {
+  const address = udpServer.address();
+  console.log(`UDP server listening on ${address.address}:${address.port}`);
+});
+
+// Bind UDP server to the specified port
+udpServer.bind(UDP_PORT);
+
+// Helper function to broadcast to all clients
+function broadcastToAllClients(message: WebSocketMessage) {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(message));
+    }
+  });
+}
+
 // Store client connections with custom properties
 const clients: Map<string, ExtendedWebSocket> = new Map();
 
 // Generate room list for clients
 const getRoomList = (): RoomListItem[] => {
-  console.log(Array.from(rooms.values()).map((room) => ({
-    id: room.id,
-    name: room.name,
-    playerCount: room.players.length,
-    maxPlayers: room.maxPlayers,
-    status: room.status,
-  })));
+  console.log(
+    Array.from(rooms.values()).map((room) => ({
+      id: room.id,
+      name: room.name,
+      playerCount: room.players.length,
+      maxPlayers: room.maxPlayers,
+      status: room.status,
+    }))
+  );
   return Array.from(rooms.values()).map((room) => ({
     id: room.id,
     name: room.name,
@@ -48,7 +98,6 @@ const getRoomList = (): RoomListItem[] => {
     maxPlayers: room.maxPlayers,
     status: room.status,
   }));
-
 };
 
 // Send message to a specific client
@@ -91,8 +140,8 @@ const handleCreateRoom = (
 
     // Validate data
     if (!room || !playerId) {
-      return sendToClient(client, 'error', {
-        error: 'Missing required data',
+      return sendToClient(client, "error", {
+        error: "Missing required data",
       } as ErrorPayload);
     }
 
@@ -103,15 +152,15 @@ const handleCreateRoom = (
 
     // Validate room data
     if (!room || !room.id || !room.name || !playerId) {
-      return sendToClient(client, 'error', {
-        error: 'Invalid room data',
+      return sendToClient(client, "error", {
+        error: "Invalid room data",
       } as ErrorPayload);
     }
 
     // Check if room already exists
     if (rooms.has(room.id)) {
-      return sendToClient(client, 'error', {
-        error: 'Room already exists',
+      return sendToClient(client, "error", {
+        error: "Room already exists",
       } as ErrorPayload);
     }
 
@@ -119,7 +168,7 @@ const handleCreateRoom = (
     const newRoom: Room = {
       ...room,
       createdAt: Date.now(),
-      status: 'waiting',
+      status: "waiting",
       players: room.players.map((player) => ({
         ...player,
         isReady: false,
@@ -133,14 +182,14 @@ const handleCreateRoom = (
     console.log(`Room created: ${newRoom.id} - ${newRoom.name}`);
 
     // Notify the client
-    sendToClient(client, 'room_updated', { room: newRoom });
+    sendToClient(client, "room_updated", { room: newRoom });
 
     // Update room list for all clients
-    broadcastToAll('room_list', { rooms: getRoomList() });
+    broadcastToAll("room_list", { rooms: getRoomList() });
   } catch (error) {
-    console.error('Error creating room:', error);
-    sendToClient(client, 'error', {
-      error: 'Failed to create room',
+    console.error("Error creating room:", error);
+    sendToClient(client, "error", {
+      error: "Failed to create room",
     } as ErrorPayload);
   }
 };
@@ -155,8 +204,8 @@ const handleJoinRoom = (
 
     // Validate data
     if (!roomId || !playerId || !playerName) {
-      return sendToClient(client, 'error', {
-        error: 'Missing required data',
+      return sendToClient(client, "error", {
+        error: "Missing required data",
       } as ErrorPayload);
     }
 
@@ -167,8 +216,8 @@ const handleJoinRoom = (
 
     // Check if room exists
     if (!rooms.has(roomId)) {
-      return sendToClient(client, 'error', {
-        error: 'Room not found',
+      return sendToClient(client, "error", {
+        error: "Room not found",
       } as ErrorPayload);
     }
 
@@ -176,15 +225,15 @@ const handleJoinRoom = (
 
     // Check if room is full
     if (room.players.length >= room.maxPlayers) {
-      return sendToClient(client, 'error', {
-        error: 'Room is full',
+      return sendToClient(client, "error", {
+        error: "Room is full",
       } as ErrorPayload);
     }
 
     // Check if room is already playing
-    if (room.status === 'playing') {
-      return sendToClient(client, 'error', {
-        error: 'Game is already in progress',
+    if (room.status === "playing") {
+      return sendToClient(client, "error", {
+        error: "Game is already in progress",
       } as ErrorPayload);
     }
 
@@ -201,14 +250,14 @@ const handleJoinRoom = (
     console.log(`Player ${playerName} joined room ${room.name} (${roomId})`);
 
     // Notify all clients in the room
-    sendToRoom(roomId, 'room_updated', { room });
+    sendToRoom(roomId, "room_updated", { room });
 
     // Update room list for all clients
-    broadcastToAll('room_list', { rooms: getRoomList() });
+    broadcastToAll("room_list", { rooms: getRoomList() });
   } catch (error) {
-    console.error('Error joining room:', error);
-    sendToClient(client, 'error', {
-      error: 'Failed to join room',
+    console.error("Error joining room:", error);
+    sendToClient(client, "error", {
+      error: "Failed to join room",
     } as ErrorPayload);
   }
 };
@@ -224,8 +273,8 @@ const handleLeaveRoom = (
 
     // Validate data
     if (!roomId) {
-      return sendToClient(client, 'error', {
-        error: 'Missing room ID',
+      return sendToClient(client, "error", {
+        error: "Missing room ID",
       } as ErrorPayload);
     }
 
@@ -265,14 +314,14 @@ const handleLeaveRoom = (
 
       // Notify remaining clients in the room if it still exists
       if (rooms.has(roomId)) {
-        sendToRoom(roomId, 'room_updated', { room });
+        sendToRoom(roomId, "room_updated", { room });
       }
 
       // Update room list for all clients
-      broadcastToAll('room_list', { rooms: getRoomList() });
+      broadcastToAll("room_list", { rooms: getRoomList() });
     }
   } catch (error) {
-    console.error('Error leaving room:', error);
+    console.error("Error leaving room:", error);
   }
 };
 
@@ -292,22 +341,22 @@ const handlePlayerReady = (
 
     // Validate data
     if (!effectiveRoomId || !effectivePlayerId) {
-      console.error('Missing roomId or playerId in player ready event', {
+      console.error("Missing roomId or playerId in player ready event", {
         payloadRoomId: roomId,
         payloadPlayerId: playerId,
         clientRoomId: client.roomId,
         clientPlayerId: client.playerId,
       });
-      return sendToClient(client, 'error', {
-        error: 'Missing required data',
+      return sendToClient(client, "error", {
+        error: "Missing required data",
       } as ErrorPayload);
     }
 
     // Check if room exists
     if (!rooms.has(effectiveRoomId)) {
       console.error(`Room not found: ${effectiveRoomId}`);
-      return sendToClient(client, 'error', {
-        error: 'Room not found',
+      return sendToClient(client, "error", {
+        error: "Room not found",
       } as ErrorPayload);
     }
 
@@ -320,8 +369,8 @@ const handlePlayerReady = (
       console.error(
         `Player ${effectivePlayerId} not found in room ${effectiveRoomId}`
       );
-      return sendToClient(client, 'error', {
-        error: 'Player not found in room',
+      return sendToClient(client, "error", {
+        error: "Player not found in room",
       } as ErrorPayload);
     }
 
@@ -329,17 +378,17 @@ const handlePlayerReady = (
     player.isReady = isReady;
 
     // Send room updated event to all clients in the room
-    sendToRoom(effectiveRoomId, 'room_updated', { room });
+    sendToRoom(effectiveRoomId, "room_updated", { room });
 
     console.log(
       `Player ${player.name} (${effectivePlayerId}) in room ${
         room.name
-      } (${effectiveRoomId}) is now ${isReady ? 'ready' : 'not ready'}`
+      } (${effectiveRoomId}) is now ${isReady ? "ready" : "not ready"}`
     );
   } catch (error) {
-    console.error('Error handling player ready:', error);
-    sendToClient(client, 'error', {
-      error: 'Internal server error',
+    console.error("Error handling player ready:", error);
+    sendToClient(client, "error", {
+      error: "Internal server error",
     } as ErrorPayload);
   }
 };
@@ -354,15 +403,15 @@ const handleGameStart = (
 
     // Validate data
     if (!roomId) {
-      return sendToClient(client, 'error', {
-        error: 'Missing room ID',
+      return sendToClient(client, "error", {
+        error: "Missing room ID",
       } as ErrorPayload);
     }
 
     // Check if room exists
     if (!rooms.has(roomId)) {
-      return sendToClient(client, 'error', {
-        error: 'Room not found',
+      return sendToClient(client, "error", {
+        error: "Room not found",
       } as ErrorPayload);
     }
 
@@ -372,33 +421,33 @@ const handleGameStart = (
     const allPlayersReady = room.players.every((player) => player.isReady);
 
     if (!allPlayersReady) {
-      return sendToClient(client, 'error', {
-        error: 'Not all players are ready',
+      return sendToClient(client, "error", {
+        error: "Not all players are ready",
       } as ErrorPayload);
     }
 
     // Check if client is the host
     if (client.playerId !== room.hostId) {
-      return sendToClient(client, 'error', {
-        error: 'Only the host can start the game',
+      return sendToClient(client, "error", {
+        error: "Only the host can start the game",
       } as ErrorPayload);
     }
 
     // Update room status
-    room.status = 'playing';
+    room.status = "playing";
 
     console.log(`Game started in room ${room.name} (${roomId})`);
 
     // Notify all clients in the room
-    sendToRoom(roomId, 'room_updated', { room });
-    sendToRoom(roomId, 'game_started', { roomId });
+    sendToRoom(roomId, "room_updated", { room });
+    sendToRoom(roomId, "game_started", { roomId });
 
     // Update room list for all clients
-    broadcastToAll('room_list', { rooms: getRoomList() });
+    broadcastToAll("room_list", { rooms: getRoomList() });
   } catch (error) {
-    console.error('Error starting game:', error);
-    sendToClient(client, 'error', {
-      error: 'Failed to start game',
+    console.error("Error starting game:", error);
+    sendToClient(client, "error", {
+      error: "Failed to start game",
     } as ErrorPayload);
   }
 };
@@ -418,7 +467,7 @@ const handleGestureEvent = (
     }
 
     // Check if room exists and is playing
-    if (!rooms.has(roomId) || rooms.get(roomId)!.status !== 'playing') {
+    if (!rooms.has(roomId) || rooms.get(roomId)!.status !== "playing") {
       return;
     }
 
@@ -427,15 +476,15 @@ const handleGestureEvent = (
     );
 
     // Broadcast gesture event to all players in the room
-    sendToRoom(roomId, 'gesture_event', { playerId, gesture, confidence });
+    sendToRoom(roomId, "gesture_event", { playerId, gesture, confidence });
   } catch (error) {
-    console.error('Error handling gesture event:', error);
+    console.error("Error handling gesture event:", error);
   }
 };
 
 // Send room list to a client
 const handleRoomList = (client: ExtendedWebSocket) => {
-  sendToClient(client, 'room_list', { rooms: getRoomList() });
+  sendToClient(client, "room_list", { rooms: getRoomList() });
 };
 
 // Handle incoming messages
@@ -448,25 +497,25 @@ const handleMessage = (
   console.log(`Received event: ${event}`);
 
   switch (event as ClientEventType) {
-    case 'create_room':
+    case "create_room":
       handleCreateRoom(client, payload);
       break;
-    case 'join_room':
+    case "join_room":
       handleJoinRoom(client, payload);
       break;
-    case 'leave_room':
+    case "leave_room":
       handleLeaveRoom(client, payload);
       break;
-    case 'player_ready':
+    case "player_ready":
       handlePlayerReady(client, payload);
       break;
-    case 'game_started':
+    case "game_started":
       handleGameStart(client, payload);
       break;
-    case 'gesture_event':
+    case "gesture_event":
       handleGestureEvent(client, payload);
       break;
-    case 'room_list':
+    case "room_list":
       handleRoomList(client);
       break;
     default:
@@ -476,7 +525,7 @@ const handleMessage = (
 };
 
 // Set up WebSocket connection handler
-wss.on('connection', (ws: WebSocket) => {
+wss.on("connection", (ws: WebSocket) => {
   // Create extended client with custom properties
   const client = ws as ExtendedWebSocket;
   client.id = uuidv4();
@@ -488,22 +537,22 @@ wss.on('connection', (ws: WebSocket) => {
   console.log(`Client connected: ${client.id}`);
 
   // Set up ping/pong for connection health check
-  client.on('pong', () => {
+  client.on("pong", () => {
     client.isAlive = true;
   });
 
   // Handle incoming messages
-  client.on('message', (data: WebSocket.Data) => {
+  client.on("message", (data: WebSocket.Data) => {
     try {
       const message = JSON.parse(data.toString()) as WebSocketMessage;
       handleMessage(client, message);
     } catch (error) {
-      console.error('Error parsing message:', error);
+      console.error("Error parsing message:", error);
     }
   });
 
   // Handle client disconnection
-  client.on('close', () => {
+  client.on("close", () => {
     console.log(`Client disconnected: ${client.id}`);
 
     // If client was in a room, handle leaving
@@ -541,13 +590,13 @@ const interval = setInterval(() => {
 }, 30000);
 
 // Clean up interval on server close
-wss.on('close', () => {
+wss.on("close", () => {
   clearInterval(interval);
 });
 
 // Add a basic route for health check
-app.get('/', (req, res) => {
-  res.send('Gesture Tower WebSocket Server is running');
+app.get("/", (req, res) => {
+  res.send("Gesture Tower WebSocket Server is running");
 });
 
 // Start the server
