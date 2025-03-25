@@ -52,9 +52,10 @@ void UDPSender::sendFileWithText(const std::string& filename, const std::string&
 //Takes in a uchar vector, which contains the image
 //which can be obtained via the cv::imencode function
 //eg: cv::imencode(".jpg", frame, dest);, where ".jpg" is image format,
-//frame is a cv::Mat variable, and dest is a uchar vector 
+//frame is a cv::Mat variable (Likely taken from the cameraHAL's captureFrame function),
+//and dest is a uchar vector that stores the jpg image
 //Does not have any protection against lost/out of order packets
-void UDPSender::sendFile(std::vector<uchar> image){
+void UDPSender::sendImageFile(std::vector<uchar> image){
     int sockfd;
     struct sockaddr_in servaddr; 
     if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
@@ -109,14 +110,14 @@ void UDPSender::sendFile(std::vector<uchar> image){
     close(sockfd);
 }
 /*
-node.js receiver snippit code
+node.js receiver snippit code:
 var full_data_client_0 = [];
 var counter_client_0 = 0;
 function buildimage(image, client){
     if (image.slice(0,3) != "fin"){
         full_data_client_0.push(...image);
     }else if (image.slice(0,3) == 'fin'){
-        
+        //Do something with the data, here we save it as img
         const imageBuffer = Buffer.from(full_data_client_0);
 
         const filePath = './images/' + client.toString() + 'output' + counter_client_0.toString() +'.jpg';
@@ -143,5 +144,5 @@ server.on('message',function(msg,info){
         //do something else
     }
 });
-Can be used for testing using a sample udp server such as here: https://gist.github.com/sid24rane/6e6698e93360f2694e310dd347a2e2eb
+Can be used for testing using a sample udp server such as here: https://gist.github.com/sid24rane/6e6698e93360f2694e310dd347a2e2eb (replace lines 15-29)
 */
