@@ -43,6 +43,9 @@ public:
     std::string getCurrentRoomId() const;
     bool isConnected() const;
     
+    // Player status
+    bool setReady(bool ready);
+    
     // Command formatting
     std::string formatCommand(const std::string& command, 
                              const std::map<std::string, std::string>& params = {});

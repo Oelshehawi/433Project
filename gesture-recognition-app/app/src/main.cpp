@@ -14,6 +14,8 @@ void displayHelp() {
     std::cout << "  joinroom <room_id>  - Join a specific room" << std::endl;
     std::cout << "  leaveroom           - Leave the current room" << std::endl;
     std::cout << "  status              - Show current status" << std::endl;
+    std::cout << "  ready               - Set your status to ready" << std::endl;
+    std::cout << "  notready            - Set your status to not ready" << std::endl;
     std::cout << "  start               - Start gesture detection" << std::endl;
     std::cout << "  stop                - Stop gesture detection" << std::endl;
     std::cout << "  exit                - Exit the application" << std::endl;
@@ -119,6 +121,12 @@ int main() {
             std::cout << "Room status: " << 
                 (roomManager.isConnected() ? ("Connected to room " + roomManager.getCurrentRoomId()) : "Not connected") << std::endl;
             std::cout << "Gesture detection: " << (detectionRunning ? "Running" : "Stopped") << std::endl;
+        }
+        else if (command == "ready") {
+            roomManager.setReady(true);
+        }
+        else if (command == "notready") {
+            roomManager.setReady(false);
         }
         else if (command == "start") {
             if (!detectionRunning) {

@@ -238,6 +238,31 @@ bool RoomManager::isConnected() const {
     return !currentRoomId.empty();
 }
 
+bool RoomManager::setReady(bool ready) {
+    if (!isConnected()) {
+        std::cerr << "Not in a room. Join a room before setting ready status." << std::endl;
+        return false;
+    }
+    
+    std::map<std::string, std::string> params = {
+        {"Ready", ready ? "true" : "false"}
+    };
+    
+    // Send set ready command
+    sendCommand("SET_READY", params);
+    
+    // Wait for response (with timeout)
+    bool received = waitForResponse(5000); // 5 second timeout
+    
+    if (received) {
+        std::cout << "Successfully set ready status to: " << (ready ? "Ready" : "Not Ready") << std::endl;
+        return true;
+    } else {
+        std::cerr << "Timeout waiting for set ready response" << std::endl;
+        return false;
+    }
+}
+
 std::string RoomManager::formatGestureMessage(const std::string& gestureData) {
     if (!isConnected()) {
         return gestureData; // If not connected to a room, just return original data
@@ -383,6 +408,19 @@ bool RoomManager::processServerResponse(const std::string& response) {
             return true;
         } else {
             std::cerr << "Failed to leave room: " << parts["message"] << std::endl;
+            return false;
+        }
+    }
+    // Handle SET_READY response
+    else if (command == "SET_READY") {
+        std::string status = parts["status"];
+        std::string message = parts["message"];
+        
+        if (status == "SUCCESS") {
+            std::cout << "Ready status updated: " << message << std::endl;
+            return true;
+        } else {
+            std::cerr << "Failed to set ready status: " << message << std::endl;
             return false;
         }
     }

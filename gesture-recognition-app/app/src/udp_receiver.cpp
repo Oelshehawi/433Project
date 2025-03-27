@@ -105,7 +105,6 @@ void UDPReceiver::receiverLoop() {
         memset(buffer, 0, BUF_SIZE);
         
         // Receive data (will timeout after 1 second if no data)
-        std::cout << "Waiting for data..." << std::endl;
         int bytesReceived = recvfrom(socketFd, buffer, BUF_SIZE - 1, 0, 
                                      (struct sockaddr*)&clientAddr, &addrLen);
         
@@ -131,7 +130,7 @@ void UDPReceiver::receiverLoop() {
         } else if (bytesReceived < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 // Timeout - normal for non-blocking socket
-                std::cout << "Socket receive timeout (normal)" << std::endl;
+                // Don't print anything here to avoid console spam
             } else {
                 // Error occurred
                 std::cerr << "Error receiving data: " << strerror(errno) << std::endl;
