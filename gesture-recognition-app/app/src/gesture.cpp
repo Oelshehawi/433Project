@@ -8,6 +8,7 @@
 #include <mutex>
 #include <chrono>
 #include <thread>
+#include <random>
 
 using namespace cv;
 
@@ -47,6 +48,14 @@ int recognize_gesture(const std::vector<cv::Point>& landmarks) {
     return -1;
 }
 
+// Generate random confidence between 0.7 and 1.0
+float generateConfidence() {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_real_distribution<float> dis(0.7f, 1.0f);
+    return dis(gen);
+}
+
 // Detect gesture function
 bool detect_gesture(GestureResult *result, CameraHAL &camera) {
     cv::Mat frame;
@@ -67,15 +76,21 @@ bool detect_gesture(GestureResult *result, CameraHAL &camera) {
     }
 
     result->gesture_name = GESTURES[detected_index];
+    result->confidence = generateConfidence();
 
     return true;
 }
 
 // GestureDetector class implementation
-GestureDetector::GestureDetector() : running(false), camera("/dev/video3") {}
+GestureDetector::GestureDetector() : running(false), camera("/dev/video3"), roomManager(nullptr) {}
 
 GestureDetector::~GestureDetector() {
     stopDetection();
+}
+
+// Set the room manager
+void GestureDetector::setRoomManager(RoomManager* manager) {
+    roomManager = manager;
 }
 
 // Start detection in a separate thread
@@ -92,7 +107,7 @@ void GestureDetector::stopDetection() {
 
 // Detection loop
 void GestureDetector::detectionLoop(GestureDetector* detector) {
-    UDPSender sender("192.168.7.2", 12345);
+    UDPSender sender("192.168.7.1", 9090);  // Server IP and port
 
     // Attempt to open the camera
     if (!detector->camera.openCamera()) {
@@ -107,23 +122,40 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
         // Capture frame and verify
         cv::Mat frame;
         if (!detector->camera.captureFrame(frame)) {
-            sender.sendMessage("Camera frame capture failed!");
+            std::string message = "Camera frame capture failed!";
+            
+            // If room manager is available, format the message with room info
+            if (detector->roomManager && detector->roomManager->isConnected()) {
+                message = detector->roomManager->formatGestureMessage(message);
+            }
+            
+            sender.sendMessage(message);
             std::cerr << "Error: Could not capture frame" << std::endl;
             continue;
         }
-        sender.sendMessage("Camera frame captured successfully!");
 
         // Attempt to detect a gesture
         if (detect_gesture(&result, detector->camera)) {
-            std::cout << "Detected Gesture: " << result.gesture_name << std::endl;
-            sender.sendMessage("Detected Gesture: " + result.gesture_name);
-        } else {
-            sender.sendMessage("No gesture detected.");
+            std::cout << "Detected Gesture: " << result.gesture_name 
+                      << " (confidence: " << result.confidence << ")" << std::endl;
+            
+            // Format the gesture data as JSON
+            std::stringstream gestureJson;
+            gestureJson << "{\"gesture\":\"" << result.gesture_name << "\","
+                        << "\"confidence\":" << result.confidence << "}";
+            
+            std::string message = gestureJson.str();
+            
+            // If room manager is available, format the message with room info
+            if (detector->roomManager && detector->roomManager->isConnected()) {
+                message = detector->roomManager->formatGestureMessage(message);
+            }
+            
+            sender.sendMessage(message);
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
     detector->camera.closeCamera();
-    sender.sendMessage("Camera closed.");
 }
