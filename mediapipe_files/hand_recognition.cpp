@@ -121,7 +121,11 @@ handPosition ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landm
     return ret;
 }
         
-
+//Shamelessly stolen from the example code
+//To run, place this folder in mediapipe, cd to this file, then use 
+//bazel build -c opt --crosstool_top=@crosstool//:toolchains --compiler=gcc --cpu=aarch64 --define MEDIAPIPE_DISABLE_GPU=1 --compile_one_dependency --copt -DMEDIAPIPE_EDGE_TPU --copt=-flax-vector-conversions hand_recognition.cpp
+//Recommened to also copy mediapipe file to the public directory(for beagle), output program should be found in bazel_bin, you will need to manually copy the program
+//to the public mediapipe file as bazel_bin is a symlink folder, so the beagle will not be able to access it
 absl::Status RunMPPGraph() {
   std::string calculator_graph_config_contents;
   MP_RETURN_IF_ERROR(mediapipe::file::GetContents(
