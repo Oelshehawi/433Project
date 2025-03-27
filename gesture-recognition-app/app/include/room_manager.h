@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <unordered_map>
 #include <random>
+#include <map>
 #include "udp_sender.h"
 
 // Structure to represent a room
@@ -30,8 +31,8 @@ private:
     // Load or generate device ID
     void initializeDeviceId();
     
-    // Send a command to the UDP server
-    std::string sendCommand(const std::string& command, const std::string& params);
+    // Generate a unique device ID for this BeagleBoard
+    std::string generateUniqueDeviceId();
 
 public:
     RoomManager(UDPSender* sender, const std::string& configPath = "/tmp/beagle_board_config.txt");
@@ -56,8 +57,32 @@ public:
     // Check if connected to a room
     bool isConnected() const;
     
+    // Communication methods
+    
+    // Format a command message for the server
+    std::string formatCommand(const std::string& command, 
+                             const std::map<std::string, std::string>& params = {});
+    
+    // Send a command to the server
+    std::string sendCommand(const std::string& command, 
+                           const std::map<std::string, std::string>& params = {});
+    
     // Format gesture message with device ID and room ID
     std::string formatGestureMessage(const std::string& gestureData);
+    
+    // Format gesture detection message with a gesture name and confidence
+    std::string formatGestureDetection(const std::string& gesture, float confidence);
+    
+    // Send a gesture detection to the server
+    bool sendGestureDetection(const std::string& gesture, float confidence);
+    
+    // Utility methods
+    
+    // Send a hello message to announce this device
+    void sendHello();
+    
+    // List available rooms from the server
+    void requestRoomList();
 };
 
 #endif // ROOM_MANAGER_H 

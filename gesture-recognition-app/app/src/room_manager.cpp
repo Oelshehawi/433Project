@@ -2,6 +2,8 @@
 #include <iostream>
 #include <sstream>
 #include <nlohmann/json.hpp>
+#include <unistd.h>
+#include <cstring>
 
 using json = nlohmann::json;
 
@@ -31,21 +33,7 @@ void RoomManager::initializeDeviceId() {
     }
     
     // Generate a new device ID if not found
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, 15);
-    
-    const char* hexChars = "0123456789abcdef";
-    std::stringstream ss;
-    
-    // Format: beagle-xxxx-xxxx-xxxx
-    ss << "beagle-";
-    for (int i = 0; i < 12; ++i) {
-        if (i % 4 == 0 && i > 0) ss << "-";
-        ss << hexChars[dis(gen)];
-    }
-    
-    deviceId = ss.str();
+    deviceId = generateUniqueDeviceId();
     
     // Save the device ID to config file
     std::ofstream outFile(configPath);
@@ -56,6 +44,21 @@ void RoomManager::initializeDeviceId() {
     } else {
         std::cerr << "Failed to save device ID to config file" << std::endl;
     }
+}
+
+std::string RoomManager::generateUniqueDeviceId() {
+    // Try to get hostname as base for ID
+    char hostname[128];
+    if (gethostname(hostname, sizeof(hostname)) != 0) {
+        strcpy(hostname, "beagleboard");
+    }
+    
+    // Add some randomness to ensure uniqueness
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> distrib(1000, 9999);
+    
+    return std::string(hostname) + "-" + std::to_string(distrib(gen));
 }
 
 std::string RoomManager::getDeviceId() const {
@@ -70,14 +73,23 @@ std::string RoomManager::getPlayerName() const {
     return playerName;
 }
 
-std::string RoomManager::sendCommand(const std::string& command, const std::string& params) {
-    // Format: CMD:<command>|DeviceID:<device_id>|<params>
-    std::string message = "CMD:" + command + "|DeviceID:" + deviceId;
-    if (!params.empty()) {
-        message += "|" + params;
+std::string RoomManager::formatCommand(const std::string& command, 
+                                     const std::map<std::string, std::string>& params) {
+    std::string msg = "CMD:" + command + "|DeviceID:" + deviceId;
+    
+    for (const auto& param : params) {
+        msg += "|" + param.first + ":" + param.second;
     }
     
-    // Send message and wait for response
+    return msg;
+}
+
+std::string RoomManager::sendCommand(const std::string& command, 
+                                   const std::map<std::string, std::string>& params) {
+    // Format the command message
+    std::string message = formatCommand(command, params);
+    
+    // Send message
     udpSender->sendMessage(message);
     
     // In a real implementation, we would wait for a response from the server
@@ -86,7 +98,7 @@ std::string RoomManager::sendCommand(const std::string& command, const std::stri
 }
 
 bool RoomManager::fetchAvailableRooms() {
-    std::string response = sendCommand("LIST_ROOMS", "");
+    requestRoomList();
     
     // In a real implementation, we would parse the actual response
     // For this demonstration, we'll create mock data
@@ -99,6 +111,11 @@ bool RoomManager::fetchAvailableRooms() {
     return true;
 }
 
+void RoomManager::requestRoomList() {
+    sendCommand("LIST_ROOMS");
+    std::cout << "Requested room list from server" << std::endl;
+}
+
 const std::vector<Room>& RoomManager::getAvailableRooms() const {
     return availableRooms;
 }
@@ -109,7 +126,11 @@ bool RoomManager::joinRoom(const std::string& roomId) {
         return false;
     }
     
-    std::string params = "RoomID:" + roomId + "|PlayerName:" + playerName;
+    std::map<std::string, std::string> params = {
+        {"RoomID", roomId},
+        {"PlayerName", playerName}
+    };
+    
     std::string response = sendCommand("JOIN_ROOM", params);
     
     // In a real implementation, we would check the actual response
@@ -125,14 +146,18 @@ bool RoomManager::leaveRoom() {
         return false;
     }
     
-    std::string params = "RoomID:" + currentRoomId;
+    std::map<std::string, std::string> params = {
+        {"RoomID", currentRoomId}
+    };
+    
     std::string response = sendCommand("LEAVE_ROOM", params);
     
     // In a real implementation, we would check the actual response
     // For this demonstration, we'll assume it succeeded
+    std::string oldRoomId = currentRoomId;
     currentRoomId = "";
     
-    std::cout << "Left room" << std::endl;
+    std::cout << "Left room: " << oldRoomId << std::endl;
     return true;
 }
 
@@ -151,4 +176,30 @@ std::string RoomManager::formatGestureMessage(const std::string& gestureData) {
     
     // Format: GESTURE|DeviceID:<device_id>|RoomID:<room_id>|<original_gesture_data>
     return "GESTURE|DeviceID:" + deviceId + "|RoomID:" + currentRoomId + "|" + gestureData;
+}
+
+std::string RoomManager::formatGestureDetection(const std::string& gesture, float confidence) {
+    // Format the gesture data as JSON
+    std::stringstream gestureJson;
+    gestureJson << "{\"gesture\":\"" << gesture << "\","
+                << "\"confidence\":" << confidence << "}";
+    
+    return formatGestureMessage(gestureJson.str());
+}
+
+bool RoomManager::sendGestureDetection(const std::string& gesture, float confidence) {
+    if (!isConnected()) {
+        std::cout << "Not in a room, gesture ignored" << std::endl;
+        return false;
+    }
+    
+    std::string message = formatGestureDetection(gesture, confidence);
+    udpSender->sendMessage(message);
+    std::cout << "Sent gesture detection: " << gesture << " (confidence: " << confidence << ")" << std::endl;
+    return true;
+}
+
+void RoomManager::sendHello() {
+    sendCommand("HELLO");
+    std::cout << "Sent hello message with Device ID: " << deviceId << std::endl;
 } 

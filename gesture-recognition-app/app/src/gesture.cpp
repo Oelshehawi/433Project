@@ -9,6 +9,9 @@
 #include <chrono>
 #include <thread>
 #include <random>
+#include <map>
+#include <unistd.h>
+#include <cstring>
 
 using namespace cv;
 
@@ -95,6 +98,11 @@ void GestureDetector::setRoomManager(RoomManager* manager) {
 
 // Start detection in a separate thread
 void GestureDetector::startDetection() {
+    if (!roomManager) {
+        std::cerr << "Error: Room manager not set. Call setRoomManager() before starting detection." << std::endl;
+        return;
+    }
+    
     running = true;
     detectionThread = std::thread(detectionLoop, this);
 }
@@ -107,14 +115,38 @@ void GestureDetector::stopDetection() {
 
 // Detection loop
 void GestureDetector::detectionLoop(GestureDetector* detector) {
-    UDPSender sender("192.168.7.1", 9090);  // Server IP and port
-
+    if (!detector->roomManager) {
+        std::cerr << "Error: Room manager not set. Cannot start detection." << std::endl;
+        return;
+    }
+    
+    // Get a reference to room manager for easier access
+    RoomManager& roomManager = *(detector->roomManager);
+    
+    std::cout << "Gesture detector started with Device ID: " << roomManager.getDeviceId() << std::endl;
+    
+    // Send a hello message to announce this device
+    roomManager.sendHello();
+    
     // Attempt to open the camera
     if (!detector->camera.openCamera()) {
         std::cerr << "Error: Could not open camera on /dev/video3" << std::endl;
-        sender.sendMessage("Error: Could not open camera!");
         return;
     }
+    
+    // Request available rooms from server
+    roomManager.requestRoomList();
+    
+    // Wait a moment for server to respond (in a real implementation, we'd listen for response)
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    
+    // Set a default player name if not already set
+    if (roomManager.getPlayerName().empty()) {
+        roomManager.setPlayerName("Player1");
+    }
+    
+    // Join a room (in a real implementation, we'd parse the server response and let user choose)
+    roomManager.joinRoom("room1");
 
     while (detector->running) {
         GestureResult result;
@@ -122,14 +154,6 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
         // Capture frame and verify
         cv::Mat frame;
         if (!detector->camera.captureFrame(frame)) {
-            std::string message = "Camera frame capture failed!";
-            
-            // If room manager is available, format the message with room info
-            if (detector->roomManager && detector->roomManager->isConnected()) {
-                message = detector->roomManager->formatGestureMessage(message);
-            }
-            
-            sender.sendMessage(message);
             std::cerr << "Error: Could not capture frame" << std::endl;
             continue;
         }
@@ -139,22 +163,16 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
             std::cout << "Detected Gesture: " << result.gesture_name 
                       << " (confidence: " << result.confidence << ")" << std::endl;
             
-            // Format the gesture data as JSON
-            std::stringstream gestureJson;
-            gestureJson << "{\"gesture\":\"" << result.gesture_name << "\","
-                        << "\"confidence\":" << result.confidence << "}";
-            
-            std::string message = gestureJson.str();
-            
-            // If room manager is available, format the message with room info
-            if (detector->roomManager && detector->roomManager->isConnected()) {
-                message = detector->roomManager->formatGestureMessage(message);
-            }
-            
-            sender.sendMessage(message);
+            // Send the gesture to the server via the room manager
+            roomManager.sendGestureDetection(result.gesture_name, result.confidence);
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    
+    // When stopping, leave the room if we're in one
+    if (roomManager.isConnected()) {
+        roomManager.leaveRoom();
     }
 
     detector->camera.closeCamera();
