@@ -121,8 +121,6 @@ handPosition ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landm
     return ret;
 }
         
-//Shamelessly stolen from the example code
-//bazel build -c opt --crosstool_top=@crosstool//:toolchains --compiler=gcc --cpu=aarch64 --define MEDIAPIPE_DISABLE_GPU=1 --compile_one_dependency --copt -DMEDIAPIPE_EDGE_TPU --copt=-flax-vector-conversions hand_recognition.cpp
 
 absl::Status RunMPPGraph() {
   std::string calculator_graph_config_contents;
