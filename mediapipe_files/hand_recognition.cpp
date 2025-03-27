@@ -89,8 +89,8 @@ handPosition ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landm
     const mediapipe::NormalizedLandmark& ring_bot = landmark_list.landmark(RING_BOT);
     const mediapipe::NormalizedLandmark& pinky_tip = landmark_list.landmark(PINKY_TIP);
     const mediapipe::NormalizedLandmark& pinky_bot = landmark_list.landmark(PINKY_BOT);
-    const mediapipe::NormalizedLandmark& thumb_tip = landmark_list.landmark(THUMB_BOT);
-    const mediapipe::NormalizedLandmark& thumb_bot = landmark_list.landmark(THUMB_TIP);
+    const mediapipe::NormalizedLandmark& thumb_tip = landmark_list.landmark(THUMB_TIP);
+    const mediapipe::NormalizedLandmark& thumb_bot = landmark_list.landmark(THUMB_BOT);
     if (index_bot.y() > index_tip.y()){
         ret.index_raised = true;
         ret.num_fingers_held_up++;
@@ -107,8 +107,8 @@ handPosition ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landm
         ret.pinky_raised = true;
         ret.num_fingers_held_up++;
     }
-    if (thumb_tip.y() < 0.5){
-        ret.pinky_raised = true;
+    if (thumb_tip.y() < 0.3){
+        ret.thumb_raised = true;
         ret.num_fingers_held_up++;
     }
     std::cout << "CURRENT HAND POSITION" << std::endl;
