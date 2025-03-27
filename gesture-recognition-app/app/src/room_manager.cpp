@@ -1,14 +1,22 @@
-#include "room_manager.h"
+#include "include/room_manager.h"
 #include <iostream>
 #include <sstream>
+#include <random>
 #include <nlohmann/json.hpp>
 #include <unistd.h>
 #include <cstring>
 
 using json = nlohmann::json;
 
-RoomManager::RoomManager(UDPSender* sender, const std::string& configPath)
-    : udpSender(sender), configPath(configPath), currentRoomId("") {
+RoomManager::RoomManager(UDPSender* sender, const std::string& configPath, int responsePort)
+    : udpSender(sender), configPath(configPath), currentRoomId(""), responseReceived(false) {
+    // Initialize UDP receiver for responses
+    udpReceiver = new UDPReceiver(responsePort);
+    udpReceiver->setMessageCallback([this](const std::string& message) {
+        this->handleMessage(message);
+    });
+    
+    // Initialize device ID
     initializeDeviceId();
 }
 
@@ -17,6 +25,45 @@ RoomManager::~RoomManager() {
     if (isConnected()) {
         leaveRoom();
     }
+    
+    // Stop and clean up the receiver
+    stopReceiver();
+    delete udpReceiver;
+}
+
+void RoomManager::handleMessage(const std::string& message) {
+    std::cout << "Received message: " << message << std::endl;
+    
+    // Process the message
+    bool success = processServerResponse(message);
+    
+    // Notify waiting threads
+    std::lock_guard<std::mutex> lock(responseMutex);
+    responseReceived = true;
+    responseCV.notify_all();
+    
+    if (success) {
+        std::cout << "Successfully processed server response" << std::endl;
+    } else {
+        std::cerr << "Failed to process server response" << std::endl;
+    }
+}
+
+bool RoomManager::startReceiver() {
+    return udpReceiver->start();
+}
+
+void RoomManager::stopReceiver() {
+    udpReceiver->stop();
+}
+
+bool RoomManager::waitForResponse(int timeoutMs) {
+    std::unique_lock<std::mutex> lock(responseMutex);
+    responseReceived = false;
+    
+    // Wait for response with timeout
+    return responseCV.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+                              [this]() { return responseReceived; });
 }
 
 void RoomManager::initializeDeviceId() {
@@ -98,15 +145,20 @@ std::string RoomManager::sendCommand(const std::string& command,
 }
 
 bool RoomManager::fetchAvailableRooms() {
+    // Request room list from the server
     requestRoomList();
     
-    // In a real implementation, we would parse the actual response
-    // For this demonstration, we'll create mock data
-    availableRooms.clear();
+    // Wait for response (with timeout)
+    bool received = waitForResponse(3000); // 3 second timeout
     
-    // Mock data - in real implementation, this would come from the server
-    availableRooms.push_back({"room1", "Game Room 1", 1, 2, "waiting"});
-    availableRooms.push_back({"room2", "Game Room 2", 0, 2, "waiting"});
+    if (!received) {
+        std::cerr << "Timeout waiting for room list response" << std::endl;
+        
+        // Fall back to mock data for now
+        availableRooms.clear();
+        availableRooms.push_back({"room1", "Game Room 1", 1, 2, "waiting"});
+        availableRooms.push_back({"room2", "Game Room 2", 0, 2, "waiting"});
+    }
     
     return true;
 }
@@ -131,14 +183,29 @@ bool RoomManager::joinRoom(const std::string& roomId) {
         {"PlayerName", playerName}
     };
     
-    std::string response = sendCommand("JOIN_ROOM", params);
+    // Send join room command
+    sendCommand("JOIN_ROOM", params);
     
-    // In a real implementation, we would check the actual response
-    // For this demonstration, we'll assume it succeeded
-    currentRoomId = roomId;
+    // Wait for response (with timeout)
+    bool received = waitForResponse(5000); // 5 second timeout
     
-    std::cout << "Joined room: " << roomId << " as " << playerName << std::endl;
-    return true;
+    if (received) {
+        // Response was processed by handleMessage
+        // If we got here and currentRoomId is set, it means we joined successfully
+        if (!currentRoomId.empty()) {
+            std::cout << "Successfully joined room: " << currentRoomId << std::endl;
+            return true;
+        }
+    } else {
+        std::cerr << "Timeout waiting for join room response" << std::endl;
+        
+        // For fallback, we'll set the room ID anyway
+        currentRoomId = roomId;
+        std::cout << "No server confirmation, assuming joined room: " << roomId << " as " << playerName << std::endl;
+        return true;
+    }
+    
+    return false;
 }
 
 bool RoomManager::leaveRoom() {
@@ -202,4 +269,98 @@ bool RoomManager::sendGestureDetection(const std::string& gesture, float confide
 void RoomManager::sendHello() {
     sendCommand("HELLO");
     std::cout << "Sent hello message with Device ID: " << deviceId << std::endl;
+}
+
+bool RoomManager::processServerResponse(const std::string& response) {
+    // Check if it's a valid response format
+    if (response.substr(0, 9) != "RESPONSE:") {
+        std::cerr << "Invalid response format: " << response << std::endl;
+        return false;
+    }
+    
+    // Parse the response parts
+    std::map<std::string, std::string> parts;
+    size_t pos = 9; // Start after "RESPONSE:"
+    size_t nextPos;
+    
+    while (pos < response.length()) {
+        nextPos = response.find('|', pos);
+        if (nextPos == std::string::npos) nextPos = response.length();
+        
+        std::string part = response.substr(pos, nextPos - pos);
+        size_t colonPos = part.find(':');
+        
+        if (colonPos != std::string::npos) {
+            std::string key = part.substr(0, colonPos);
+            std::string value = part.substr(colonPos + 1);
+            parts[key] = value;
+        }
+        
+        pos = nextPos + 1;
+    }
+    
+    // Extract the command type (first part after RESPONSE:)
+    std::string command = response.substr(9, response.find('|', 9) - 9);
+    
+    // Handle LIST_ROOMS response
+    if (command == "LIST_ROOMS") {
+        if (parts.find("Rooms") != parts.end()) {
+            std::string roomsJson = parts["Rooms"];
+            
+            try {
+                json roomsData = json::parse(roomsJson);
+                availableRooms.clear();
+                
+                for (const auto& item : roomsData) {
+                    Room room;
+                    room.id = item["id"];
+                    room.name = item["name"];
+                    room.playerCount = item["playerCount"];
+                    room.maxPlayers = item["maxPlayers"];
+                    room.status = item["status"];
+                    availableRooms.push_back(room);
+                }
+                
+                return true;
+            } catch (const std::exception& e) {
+                std::cerr << "Error parsing room list JSON: " << e.what() << std::endl;
+                return false;
+            }
+        }
+    } 
+    // Handle JOIN_ROOM response
+    else if (command == "JOIN_ROOM") {
+        std::string status = parts["status"];
+        std::string message = parts["message"];
+        
+        if (status == "SUCCESS") {
+            // Extract room ID from success message (format: "Joined room X successfully")
+            size_t roomStart = message.find("room ") + 5;
+            size_t roomEnd = message.find(" ", roomStart);
+            if (roomStart != std::string::npos && roomEnd != std::string::npos) {
+                currentRoomId = message.substr(roomStart, roomEnd - roomStart);
+            } else {
+                // If parsing fails, use the room ID from the request
+                currentRoomId = parts["RoomID"];
+            }
+            return true;
+        } else {
+            std::cerr << "Failed to join room: " << message << std::endl;
+            return false;
+        }
+    }
+    // Handle LEAVE_ROOM response
+    else if (command == "LEAVE_ROOM") {
+        std::string status = parts["status"];
+        if (status == "SUCCESS") {
+            // Clear the current room ID
+            currentRoomId = "";
+            return true;
+        } else {
+            std::cerr << "Failed to leave room: " << parts["message"] << std::endl;
+            return false;
+        }
+    }
+    
+    return false;
 } 

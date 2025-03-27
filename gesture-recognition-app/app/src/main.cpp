@@ -22,7 +22,16 @@ void displayHelp() {
 int main() {
     // Initialize UDP sender for the room manager
     UDPSender* udpSender = new UDPSender("192.168.7.1", 9090);  // Server IP and port
-    RoomManager roomManager(udpSender);
+    
+    // Create room manager with UDP sender
+    RoomManager roomManager(udpSender, ".device_id.cfg", 9091); // Listen on port 9091 for responses
+    
+    // Start the UDP receiver to listen for server responses
+    if (!roomManager.startReceiver()) {
+        std::cerr << "Failed to start UDP receiver. Some functionality may be limited." << std::endl;
+    } else {
+        std::cout << "UDP receiver started successfully." << std::endl;
+    }
     
     GestureDetector detector;
     // Set the room manager for the detector

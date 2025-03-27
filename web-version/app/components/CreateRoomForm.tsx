@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 
 interface CreateRoomFormProps {
-  onSubmit: (roomName: string, playerName: string) => void;
+  onSubmit: (roomName: string) => void;
   onCancel: () => void;
 }
 
@@ -11,11 +11,10 @@ export const CreateRoomForm: React.FC<CreateRoomFormProps> = ({
   onCancel,
 }) => {
   const [roomName, setRoomName] = useState('');
-  const [playerName, setPlayerName] = useState('');
-  const [errors, setErrors] = useState({ roomName: '', playerName: '' });
+  const [errors, setErrors] = useState({ roomName: '' });
 
   const validateForm = (): boolean => {
-    const newErrors = { roomName: '', playerName: '' };
+    const newErrors = { roomName: '' };
     let isValid = true;
 
     if (!roomName.trim()) {
@@ -23,14 +22,6 @@ export const CreateRoomForm: React.FC<CreateRoomFormProps> = ({
       isValid = false;
     } else if (roomName.length > 20) {
       newErrors.roomName = 'Room name must be 20 characters or less';
-      isValid = false;
-    }
-
-    if (!playerName.trim()) {
-      newErrors.playerName = 'Player name is required';
-      isValid = false;
-    } else if (playerName.length > 20) {
-      newErrors.playerName = 'Player name must be 20 characters or less';
       isValid = false;
     }
 
@@ -42,7 +33,7 @@ export const CreateRoomForm: React.FC<CreateRoomFormProps> = ({
     e.preventDefault();
 
     if (validateForm()) {
-      onSubmit(roomName, playerName);
+      onSubmit(roomName);
     }
   };
 
@@ -93,7 +84,6 @@ export const CreateRoomForm: React.FC<CreateRoomFormProps> = ({
       animate='animate'
       exit='exit'
       onClick={onCancel}
-      
     >
       <motion.div
         className='bg-background p-8 rounded-xl shadow-xl w-full max-w-md'
@@ -105,7 +95,7 @@ export const CreateRoomForm: React.FC<CreateRoomFormProps> = ({
         </h2>
 
         <form onSubmit={handleSubmit}>
-          <div className='mb-4'>
+          <div className='mb-6'>
             <label
               htmlFor='roomName'
               className='block text-sm font-medium text-foreground/80 mb-2'
@@ -131,35 +121,6 @@ export const CreateRoomForm: React.FC<CreateRoomFormProps> = ({
                 animate={{ opacity: 1, y: 0 }}
               >
                 {errors.roomName}
-              </motion.p>
-            )}
-          </div>
-
-          <div className='mb-6'>
-            <label
-              htmlFor='playerName'
-              className='block text-sm font-medium text-foreground/80 mb-2'
-            >
-              Your Name
-            </label>
-            <input
-              type='text'
-              id='playerName'
-              value={playerName}
-              onChange={(e) => {
-                setPlayerName(e.target.value);
-                if (errors.playerName) setErrors({ ...errors, playerName: '' });
-              }}
-              placeholder='Enter your name'
-              className='w-full px-4 py-3 rounded-lg bg-black/10 border border-primary/30 text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent'
-            />
-            {errors.playerName && (
-              <motion.p
-                className='text-danger text-sm mt-2'
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                {errors.playerName}
               </motion.p>
             )}
           </div>

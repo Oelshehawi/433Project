@@ -2,138 +2,129 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { RoomListItem } from '../lib/room/types';
+import { RoomListItem } from '../lib/types/room';
 
 interface RoomListProps {
   rooms: RoomListItem[];
   loading: boolean;
-  onJoinClick: (roomId: string) => void;
   onCreateClick: () => void;
 }
 
 export const RoomList: React.FC<RoomListProps> = ({
   rooms,
   loading,
-  onJoinClick,
   onCreateClick,
 }) => {
-  // Animation variants for the floating list
-  const floatingVariants = {
-    initial: { opacity: 0, y: 10 },
+  // Animation variants
+  const containerVariants = {
+    initial: { opacity: 0 },
     animate: {
       opacity: 1,
-      y: 0,
       transition: {
-        duration: 0.5,
-        ease: 'easeOut',
+        staggerChildren: 0.05,
       },
     },
   };
 
-  // Room item animation variants
   const itemVariants = {
-    initial: { opacity: 0, x: -5 },
+    initial: { y: 20, opacity: 0 },
     animate: {
+      y: 0,
       opacity: 1,
-      x: 0,
       transition: {
-        duration: 0.3,
+        type: 'spring',
+        stiffness: 300,
+        damping: 20,
       },
     },
+  };
+
+  const buttonVariants = {
     hover: {
-      scale: 1.02,
-      backgroundColor: 'rgba(124, 58, 237, 0.15)',
+      scale: 1.03,
       transition: {
-        duration: 0.2,
+        type: 'spring',
+        stiffness: 400,
+        damping: 10,
       },
     },
+    tap: { scale: 0.97 },
   };
 
   return (
-    <motion.div
-      className='fixed left-4 md:left-8 top-1/2 transform -translate-y-1/2 w-64 md:w-72 bg-black/60 backdrop-blur-md rounded-lg p-4 shadow-lg border border-primary/30'
-      variants={floatingVariants}
-      initial='initial'
-      animate='animate'
-    >
-      <h2 className='text-xl text-white font-bold mb-4 flex items-center justify-between'>
-        Available Rooms
-        {loading && (
-          <svg
-            className='animate-spin h-4 w-4 text-white ml-2'
-            xmlns='http://www.w3.org/2000/svg'
-            fill='none'
-            viewBox='0 0 24 24'
+    <div className='fixed left-0 bottom-0 w-full p-4 bg-gradient-to-t from-background to-transparent'>
+      <div className='max-w-screen-lg mx-auto'>
+        {/* Header with Create Room button */}
+        <div className='flex items-center justify-between mb-2'>
+          <h2 className='text-xl font-bold text-foreground/90'>
+            Available Rooms
+          </h2>
+          <motion.button
+            className='px-4 py-2 bg-primary text-white rounded-md shadow-md'
+            onClick={onCreateClick}
+            variants={buttonVariants}
+            whileHover='hover'
+            whileTap='tap'
           >
-            <circle
-              className='opacity-25'
-              cx='12'
-              cy='12'
-              r='10'
-              stroke='currentColor'
-              strokeWidth='4'
-            ></circle>
-            <path
-              className='opacity-75'
-              fill='currentColor'
-              d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'
-            ></path>
-          </svg>
-        )}
-      </h2>
+            Create Room
+          </motion.button>
+        </div>
 
-      <div className='custom-scrollbar max-h-96 overflow-y-auto pr-2 -mr-2'>
-        {loading ? (
-          <p className='text-gray-300 text-sm text-center py-4'>
-            Loading rooms...
-          </p>
-        ) : rooms.length > 0 ? (
-          <ul className='space-y-2'>
-            {rooms.map((room) => (
-              <motion.li
-                key={room.id}
-                className='bg-black/40 rounded-md p-3 cursor-pointer border border-primary/20'
-                onClick={() => onJoinClick(room.id)}
-                variants={itemVariants}
-                initial='initial'
-                animate='animate'
-                whileHover='hover'
-              >
-                <div className='flex items-center justify-between'>
-                  <span className='text-white font-medium truncate max-w-[70%]'>
-                    {room.name}
-                  </span>
-                  <span className='text-xs px-2 py-1 rounded-full bg-accent/80 text-white'>
-                    {room.playerCount}/{room.maxPlayers}
-                  </span>
-                </div>
-                <div className='mt-1 flex items-center'>
-                  <span
-                    className={`w-2 h-2 rounded-full mr-2 ${
-                      room.status === 'waiting'
-                        ? 'bg-green-500'
-                        : 'bg-yellow-500'
-                    }`}
-                  ></span>
-                  <span className='text-xs text-gray-300 capitalize'>
-                    {room.status}
-                  </span>
-                </div>
-              </motion.li>
-            ))}
-          </ul>
-        ) : (
-          <div className='text-center py-4'>
-            <p className='text-gray-300 text-sm mb-3'>No rooms available</p>
-            <button
-              className='bg-primary hover:bg-primary-dark text-white text-sm font-medium py-2 px-4 rounded-md'
-              onClick={onCreateClick}
+        {/* Room list */}
+        <div className='bg-black/20 backdrop-blur-sm rounded-lg p-2 border border-white/10'>
+          {loading ? (
+            <p className='text-center py-4 text-foreground/70'>
+              Loading rooms...
+            </p>
+          ) : rooms.length === 0 ? (
+            <p className='text-center py-4 text-foreground/70'>
+              No rooms available. Create a room to get started!
+            </p>
+          ) : (
+            <motion.div
+              className='grid grid-cols-1 md:grid-cols-2 gap-2'
+              variants={containerVariants}
+              initial='initial'
+              animate='animate'
             >
-              Create a Room
-            </button>
-          </div>
-        )}
+              {rooms.map((room) => (
+                <motion.div
+                  key={room.id}
+                  className='bg-black/30 p-3 rounded-md border border-white/5 flex justify-between items-center'
+                  variants={itemVariants}
+                >
+                  <div>
+                    <h3 className='font-medium text-foreground'>{room.name}</h3>
+                    <p className='text-sm text-foreground/70'>
+                      {room.playerCount}/{room.maxPlayers} players |{' '}
+                      {room.status}
+                    </p>
+                    <p className='text-xs text-foreground/50'>ID: {room.id}</p>
+                  </div>
+                  <div className='flex items-center'>
+                    <span
+                      className={`inline-block w-2 h-2 rounded-full mr-2 ${
+                        room.playerCount >= room.maxPlayers
+                          ? 'bg-red-500'
+                          : room.status === 'playing'
+                          ? 'bg-yellow-500'
+                          : 'bg-green-500'
+                      }`}
+                    ></span>
+                    <span className='text-xs text-foreground/70'>
+                      {room.playerCount >= room.maxPlayers
+                        ? 'Full'
+                        : room.status === 'playing'
+                        ? 'In Game'
+                        : 'Join on Device'}
+                    </span>
+                  </div>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+        </div>
       </div>
-    </motion.div>
+    </div>
   );
 };
