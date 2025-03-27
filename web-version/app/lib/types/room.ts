@@ -29,7 +29,7 @@ export interface RoomListItem {
 // Parameters for room actions
 export interface CreateRoomParams {
   name: string;
-  playerName: string;
+  playerName?: string;
 }
 
 export interface JoinRoomParams {

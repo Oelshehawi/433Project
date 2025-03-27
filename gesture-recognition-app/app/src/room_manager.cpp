@@ -1,4 +1,4 @@
-#include "include/room_manager.h"
+#include "../include/room_manager.h"
 #include <iostream>
 #include <sstream>
 #include <random>
@@ -145,17 +145,19 @@ std::string RoomManager::sendCommand(const std::string& command,
 }
 
 bool RoomManager::fetchAvailableRooms() {
+    // Clear previous room data
+    availableRooms.clear();
+    
     // Request room list from the server
     requestRoomList();
     
     // Wait for response (with timeout)
-    bool received = waitForResponse(3000); // 3 second timeout
+    bool received = waitForResponse(5000); // 5 second timeout for room list
     
     if (!received) {
         std::cerr << "Timeout waiting for room list response" << std::endl;
         
         // Fall back to mock data for now
-        availableRooms.clear();
         availableRooms.push_back({"room1", "Game Room 1", 1, 2, "waiting"});
         availableRooms.push_back({"room2", "Game Room 2", 0, 2, "waiting"});
     }
@@ -272,6 +274,8 @@ void RoomManager::sendHello() {
 }
 
 bool RoomManager::processServerResponse(const std::string& response) {
+    std::cout << "Processing server response: " << response << std::endl;
+    
     // Check if it's a valid response format
     if (response.substr(0, 9) != "RESPONSE:") {
         std::cerr << "Invalid response format: " << response << std::endl;
@@ -283,6 +287,19 @@ bool RoomManager::processServerResponse(const std::string& response) {
     size_t pos = 9; // Start after "RESPONSE:"
     size_t nextPos;
     
+    // Extract command type first (first part after RESPONSE:)
+    nextPos = response.find('|', pos);
+    if (nextPos == std::string::npos) {
+        std::cerr << "Invalid response format - no command found" << std::endl;
+        return false;
+    }
+    
+    std::string command = response.substr(pos, nextPos - pos);
+    std::cout << "Command: " << command << std::endl;
+    
+    pos = nextPos + 1; // Move past the first pipe
+    
+    // Now parse the rest of the parameters
     while (pos < response.length()) {
         nextPos = response.find('|', pos);
         if (nextPos == std::string::npos) nextPos = response.length();
@@ -294,22 +311,23 @@ bool RoomManager::processServerResponse(const std::string& response) {
             std::string key = part.substr(0, colonPos);
             std::string value = part.substr(colonPos + 1);
             parts[key] = value;
+            std::cout << "Parsed param: " << key << " = " << value << std::endl;
         }
         
         pos = nextPos + 1;
     }
     
-    // Extract the command type (first part after RESPONSE:)
-    std::string command = response.substr(9, response.find('|', 9) - 9);
-    
     // Handle LIST_ROOMS response
     if (command == "LIST_ROOMS") {
         if (parts.find("Rooms") != parts.end()) {
             std::string roomsJson = parts["Rooms"];
+            std::cout << "Rooms JSON: " << roomsJson << std::endl;
             
             try {
                 json roomsData = json::parse(roomsJson);
                 availableRooms.clear();
+                
+                std::cout << "Parsed " << roomsData.size() << " rooms" << std::endl;
                 
                 for (const auto& item : roomsData) {
                     Room room;
@@ -319,6 +337,8 @@ bool RoomManager::processServerResponse(const std::string& response) {
                     room.maxPlayers = item["maxPlayers"];
                     room.status = item["status"];
                     availableRooms.push_back(room);
+                    
+                    std::cout << "Added room: " << room.id << " - " << room.name << std::endl;
                 }
                 
                 return true;
@@ -326,6 +346,9 @@ bool RoomManager::processServerResponse(const std::string& response) {
                 std::cerr << "Error parsing room list JSON: " << e.what() << std::endl;
                 return false;
             }
+        } else {
+            std::cerr << "Rooms parameter not found in response" << std::endl;
+            return false;
         }
     } 
     // Handle JOIN_ROOM response
@@ -343,6 +366,7 @@ bool RoomManager::processServerResponse(const std::string& response) {
                 // If parsing fails, use the room ID from the request
                 currentRoomId = parts["RoomID"];
             }
+            std::cout << "Successfully joined room: " << currentRoomId << std::endl;
             return true;
         } else {
             std::cerr << "Failed to join room: " << message << std::endl;
@@ -355,6 +379,7 @@ bool RoomManager::processServerResponse(const std::string& response) {
         if (status == "SUCCESS") {
             // Clear the current room ID
             currentRoomId = "";
+            std::cout << "Successfully left room" << std::endl;
             return true;
         } else {
             std::cerr << "Failed to leave room: " << parts["message"] << std::endl;
@@ -362,5 +387,6 @@ bool RoomManager::processServerResponse(const std::string& response) {
         }
     }
     
+    std::cerr << "Unhandled command type: " << command << std::endl;
     return false;
 } 

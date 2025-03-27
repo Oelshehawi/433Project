@@ -45,32 +45,22 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
         throw new Error('WebSocket is not connected');
       }
 
-      // Generate IDs
-      const playerId = crypto.randomUUID();
+      // Generate room ID
       const roomId = generateShortRoomId(); // Generate short room ID
 
-      // Send create room message
+      // Send create room message - no player is created, just a room with a host
       await sendMessage('create_room', {
         room: {
           id: roomId,
           name: params.name,
-          hostId: playerId, // Same as player ID
+          hostId: 'system', // Use a special ID for system-created rooms
           maxPlayers: GAME_CONFIG.MAX_PLAYERS,
-          players: [
-            {
-              id: playerId,
-              name: params.playerName,
-            },
-          ],
+          players: [], // Empty players array - no initial players
         },
-        playerId: playerId, // Same ID used throughout
       });
 
-      // Save room info to localStorage for reconnection
-      storeRoomInfo(roomId, playerId, params.playerName);
+      // No need to save room info to localStorage since we're not joining as a player
 
-      // Wait for room created response
-      // Room state will be updated via events
       console.log('Create room request sent, waiting for server response');
     } catch (error) {
       console.error('Failed to create room:', error);

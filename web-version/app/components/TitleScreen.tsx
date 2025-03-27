@@ -203,9 +203,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
   const handleCreateRoomSubmit = async (roomName: string) => {
     console.log('Attempting to create room:', { roomName });
     try {
-      // Use a default/system-generated name for the web host
-      const systemPlayerName = `Host-${Math.floor(Math.random() * 10000)}`;
-      await createRoom({ name: roomName, playerName: systemPlayerName });
+      // No player name needed - we're creating an empty room
+      await createRoom({ name: roomName });
       console.log('Room creation request sent');
       setShowCreateForm(false);
     } catch (err) {

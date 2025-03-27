@@ -1,12 +1,14 @@
-#include "include/udp_receiver.h"
+#include "../include/udp_receiver.h"
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cstring>
 #include <iostream>
+#include <cerrno>
 
 UDPReceiver::UDPReceiver(int port)
     : portNumber(port), socketFd(-1), running(false) {
+    std::cout << "Created UDP Receiver on port " << port << std::endl;
 }
 
 UDPReceiver::~UDPReceiver() {
@@ -15,20 +17,26 @@ UDPReceiver::~UDPReceiver() {
 
 bool UDPReceiver::start() {
     if (running) {
+        std::cout << "UDP Receiver already running" << std::endl;
         return true; // Already running
     }
     
     // Create socket
     if ((socketFd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        std::cerr << "Failed to create socket for UDP receiver" << std::endl;
+        std::cerr << "Failed to create socket for UDP receiver: " << strerror(errno) << std::endl;
         return false;
     }
+    std::cout << "Created UDP socket: " << socketFd << std::endl;
 
     // Set receive timeout to make stop() more responsive
     struct timeval tv;
     tv.tv_sec = 1;
     tv.tv_usec = 0;
-    setsockopt(socketFd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    if (setsockopt(socketFd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+        std::cerr << "Failed to set socket timeout: " << strerror(errno) << std::endl;
+    } else {
+        std::cout << "Set socket timeout to 1 second" << std::endl;
+    }
     
     // Set up server address structure
     struct sockaddr_in serverAddr;
@@ -39,11 +47,12 @@ bool UDPReceiver::start() {
     
     // Bind socket to the port
     if (bind(socketFd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-        std::cerr << "Failed to bind socket for UDP receiver on port " << portNumber << std::endl;
+        std::cerr << "Failed to bind socket for UDP receiver on port " << portNumber << ": " << strerror(errno) << std::endl;
         close(socketFd);
         socketFd = -1;
         return false;
     }
+    std::cout << "Successfully bound socket to port " << portNumber << std::endl;
     
     // Set flag and start receiver thread
     running = true;
@@ -89,11 +98,14 @@ void UDPReceiver::receiverLoop() {
     struct sockaddr_in clientAddr;
     socklen_t addrLen = sizeof(clientAddr);
     
+    std::cout << "Receiver thread started, listening for messages" << std::endl;
+    
     while (running) {
         // Reset buffer
         memset(buffer, 0, BUF_SIZE);
         
         // Receive data (will timeout after 1 second if no data)
+        std::cout << "Waiting for data..." << std::endl;
         int bytesReceived = recvfrom(socketFd, buffer, BUF_SIZE - 1, 0, 
                                      (struct sockaddr*)&clientAddr, &addrLen);
         
@@ -106,18 +118,32 @@ void UDPReceiver::receiverLoop() {
             inet_ntop(AF_INET, &(clientAddr.sin_addr), clientIP, INET_ADDRSTRLEN);
             std::cout << "Received " << bytesReceived << " bytes from " 
                       << clientIP << ":" << ntohs(clientAddr.sin_port) << std::endl;
+            std::cout << "Message content: " << buffer << std::endl;
             
             // Create string from buffer and call callback if registered
             std::string message(buffer);
             if (messageCallback) {
+                std::cout << "Calling message callback" << std::endl;
                 messageCallback(message);
+            } else {
+                std::cout << "No message callback registered" << std::endl;
             }
-        } else if (bytesReceived < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-            // Error occurred (excluding timeout)
-            std::cerr << "Error receiving data: " << strerror(errno) << std::endl;
+        } else if (bytesReceived < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // Timeout - normal for non-blocking socket
+                std::cout << "Socket receive timeout (normal)" << std::endl;
+            } else {
+                // Error occurred
+                std::cerr << "Error receiving data: " << strerror(errno) << std::endl;
+            }
+        } else {
+            // bytesReceived == 0, connection closed?
+            std::cout << "Received empty packet" << std::endl;
         }
         
         // Small sleep to avoid hammering the CPU
         usleep(10000); // 10ms
     }
+    
+    std::cout << "Receiver thread stopped" << std::endl;
 }

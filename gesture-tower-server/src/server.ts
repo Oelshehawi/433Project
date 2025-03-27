@@ -248,10 +248,12 @@ const sendRoomListToBeagleBoard = (
   const roomList = getRoomList();
   console.log(roomList);
 
-  // Format as JSON response
+  // Make sure format exactly matches what client expects: RESPONSE:LIST_ROOMS|DeviceID:deviceId|Rooms:json
   const response = `RESPONSE:LIST_ROOMS|DeviceID:${deviceId}|Rooms:${JSON.stringify(
     roomList
   )}`;
+
+  console.log(`Sending response to ${rinfo.address}:${rinfo.port}:`, response);
 
   // Send the response back to the beagle board
   udpServer.send(response, rinfo.port, rinfo.address, (err) => {
@@ -564,22 +566,17 @@ const handleCreateRoom = (
   payload: CreateRoomPayload
 ) => {
   try {
-    const { room, playerId } = payload;
+    const { room } = payload;
 
     // Validate data
-    if (!room || !playerId) {
+    if (!room) {
       return sendToClient(client, 'error', {
         error: 'Missing required data',
       } as ErrorPayload);
     }
 
-    // Store the room ID and player ID in the client object
-    client.roomId = room.id;
-    client.playerId = playerId;
-    client.playerName = room.players[0].name;
-
     // Validate room data
-    if (!room || !room.id || !room.name || !playerId) {
+    if (!room || !room.id || !room.name) {
       return sendToClient(client, 'error', {
         error: 'Invalid room data',
       } as ErrorPayload);
@@ -592,16 +589,12 @@ const handleCreateRoom = (
       } as ErrorPayload);
     }
 
-    // Create the room
+    // Create the room (with empty players array if not provided)
     const newRoom: Room = {
       ...room,
       createdAt: Date.now(),
       status: 'waiting',
-      players: room.players.map((player) => ({
-        ...player,
-        isReady: false,
-        connected: true,
-      })),
+      players: room.players || [], // Use empty array if no players provided
     };
 
     // Add room to storage
