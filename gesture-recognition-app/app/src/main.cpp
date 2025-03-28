@@ -18,10 +18,12 @@ void displayHelp() {
     std::cout << "  notready            - Set your status to not ready" << std::endl;
     std::cout << "  start               - Start gesture detection" << std::endl;
     std::cout << "  stop                - Stop gesture detection" << std::endl;
+    std::cout << "  webcamtest          - Test Your Webcam to see if it works" << std::endl;
     std::cout << "  exit                - Exit the application" << std::endl;
 }
 
 int main() {
+
     // Initialize UDP sender for the room manager
     UDPSender* udpSender = new UDPSender("four33project.onrender.com", 9090);  // Server IP and port
     
@@ -150,6 +152,9 @@ int main() {
                 std::cout << "Gesture detection is already stopped." << std::endl;
             }
         }
+        else if (command == "webcamtest") {
+            detector.runTestingMode();
+        }
         else if (command == "exit") {
             if (detectionRunning) {
                 detector.stopDetection();
@@ -166,7 +171,7 @@ int main() {
             std::cout << "Unknown command: " << command << ". Type 'help' for available commands." << std::endl;
         }
     }
-    
+
     delete udpSender;
     return 0;
 }

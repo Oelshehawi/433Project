@@ -19,7 +19,7 @@ constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "landmarks";
 constexpr char kWindowName[] = "MediaPipe";
 int counter = 0;
-ABSL_FLAG(std::string, calculator_graph_config_file, "hand_tracking_desktop_live.pbtxt",
+ABSL_FLAG(std::string, calculator_graph_config_file, "hand_tracking_custom.pbtxt",
           "Name of file containing text format CalculatorGraphConfig proto.");
 ABSL_FLAG(std::string, input_video_path, "",
           "Full path of video to load. "

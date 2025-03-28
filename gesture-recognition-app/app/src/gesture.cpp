@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <cstring>
 
+
 using namespace cv;
 
 // Define simple gestures
@@ -176,4 +177,57 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     }
 
     detector->camera.closeCamera();
+}
+
+
+// Training section
+
+std::vector<float> normalize_landmarks(const std::vector<cv::Point>& landmarks) {
+    std::vector<float> flat;
+    int base_x = landmarks[0].x;
+    int base_y = landmarks[0].y;
+    for (auto& p : landmarks) {
+        flat.push_back(p.x - base_x);
+        flat.push_back(p.y - base_y);
+    }
+    float max_val = 1.0f;
+    for (float f : flat) max_val = std::max(max_val, std::abs(f));
+    for (auto& f : flat) f /= max_val;
+    return flat;
+}
+
+void save_gesture_to_csv(int label, const std::vector<float>& data) {
+    std::ofstream file("gesture_data.csv", std::ios::app);
+    file << label;
+    for (const auto& val : data) file << "," << val;
+    file << "\n";
+}
+
+void GestureDetector::runTestingMode() {
+    cv::VideoCapture cap("/dev/video3");
+    if (!cap.isOpened()) {
+        std::cerr << "ERROR: Cannot open /dev/video3\n";
+        return;
+    }
+
+    cv::Mat frame;
+    while (true) {
+        cap >> frame;
+        if (frame.empty()) break;
+
+
+        std::string text = "Test Screen.";
+        cv::putText(frame, text, {220, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+
+        std::string textExit = "Press ESC to Exit";
+        cv::putText(frame, textExit, {220, 430}, cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
+
+        cv::imshow("Test Screen", frame);
+        char key = static_cast<char>(cv::waitKey(10));
+
+        if (key == 27) break; // ESC
+    }
+
+    cap.release();
+    cv::destroyAllWindows();
 }
