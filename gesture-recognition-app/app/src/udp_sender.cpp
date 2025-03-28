@@ -66,7 +66,7 @@ void UDPSender::sendImageFile(const std::vector<unsigned char>& image) {
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET; 
     servaddr.sin_port = htons(portNumber); 
-    inet_pton(AF_INET, "192.168.7.1", &servaddr.sin_addr);
+    inet_pton(AF_INET, ipAddress.c_str(), &servaddr.sin_addr);
     
     // Packet configuration
     int info_len = 4;
