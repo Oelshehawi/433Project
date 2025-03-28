@@ -3,6 +3,8 @@ import express from "express";
 import WebSocket from "ws";
 import { v4 as uuidv4 } from "uuid";
 import dgram from "dgram";
+import cors from "cors";
+import dotenv from "dotenv";
 import {
   ExtendedWebSocket,
   Room,
@@ -22,8 +24,23 @@ import {
   BeagleBoardCommandPayload,
 } from "./types";
 
+// Load environment variables
+dotenv.config();
+
 // Initialize Express app and HTTP server
 const app = express();
+
+// Enable CORS for Vercel frontend
+app.use(
+  cors({
+    origin: process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(",")
+      : "*",
+    methods: ["GET", "POST"],
+    credentials: true,
+  })
+);
+
 const server = http.createServer(app);
 
 // Create WebSocket server
@@ -40,7 +57,7 @@ const beagleBoards: Map<
 
 // Create UDP server
 const udpServer = dgram.createSocket("udp4");
-const UDP_PORT = 9090;
+const UDP_PORT = parseInt(process.env.UDP_PORT || "9090");
 
 // Store client connections with custom properties
 const clients: Map<string, ExtendedWebSocket> = new Map();
@@ -1108,11 +1125,54 @@ app.get("/", (req, res) => {
   res.send("Gesture Tower WebSocket Server is running");
 });
 
+// Add a health check endpoint for monitoring
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "UP",
+    timestamp: new Date().toISOString(),
+    connections: {
+      websocket: wss.clients.size,
+      beagleBoards: beagleBoards.size,
+    },
+    rooms: rooms.size,
+  });
+});
+
 // Start the server
-const PORT = process.env.PORT || 8080;
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`WebSocket server is ready at ws://localhost:${PORT}`);
+const PORT = parseInt(process.env.PORT || "8080");
+const HOST = process.env.HOST || "0.0.0.0"; // Listen on all network interfaces by default
+
+server.listen(PORT, HOST, () => {
+  console.log(`Server is running on ${HOST}:${PORT}`);
+  console.log(`WebSocket server is ready at ws://${HOST}:${PORT}`);
+  console.log(`UDP server is listening on port ${UDP_PORT}`);
+});
+
+// Handle graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("SIGTERM signal received: shutting down...");
+
+  // Close WebSocket server
+  wss.close(() => {
+    console.log("WebSocket server closed");
+  });
+
+  // Close UDP server
+  udpServer.close(() => {
+    console.log("UDP server closed");
+  });
+
+  // Close HTTP server
+  server.close(() => {
+    console.log("HTTP server closed");
+    process.exit(0);
+  });
+
+  // Force exit after 10 seconds if graceful shutdown fails
+  setTimeout(() => {
+    console.error("Forced shutdown after timeout");
+    process.exit(1);
+  }, 10000);
 });
 
 // Add new function to set BeagleBoard player ready status
