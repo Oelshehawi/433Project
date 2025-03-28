@@ -1,6 +1,4 @@
 import http from 'http';
-import https from 'https';
-import fs from 'fs';
 import express from 'express';
 import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
@@ -41,44 +39,8 @@ app.use(
   })
 );
 
-// Create HTTP server (for fallback)
-const httpServer = http.createServer(app);
-
-// Try to create HTTPS server if certificates exist
-let server;
-try {
-  // Check if SSL certificates exist and create HTTPS server
-  if (
-    fs.existsSync('/etc/letsencrypt/live/your-app/privkey.pem') &&
-    fs.existsSync('/etc/letsencrypt/live/your-app/fullchain.pem')
-  ) {
-    // Load SSL certificates
-    const privateKey = fs.readFileSync(
-      '/etc/letsencrypt/live/your-app/privkey.pem',
-      'utf8'
-    );
-    const certificate = fs.readFileSync(
-      '/etc/letsencrypt/live/your-app/fullchain.pem',
-      'utf8'
-    );
-    const credentials = { key: privateKey, cert: certificate };
-
-    // Create HTTPS server
-    server = https.createServer(credentials, app);
-    console.log('HTTPS server created with SSL certificates');
-  } else {
-    // Use HTTP server if certificates don't exist
-    server = httpServer;
-    console.log('SSL certificates not found. Using HTTP server (insecure)');
-    console.log(
-      'Warning: Browser clients over HTTPS will not be able to connect'
-    );
-  }
-} catch (error) {
-  console.error('Error setting up HTTPS server:', error);
-  server = httpServer;
-  console.log('Falling back to HTTP server due to error');
-}
+// Create HTTP server
+const server = http.createServer(app);
 
 // Create WebSocket server
 const wss = new WebSocket.Server({ server });
@@ -1176,14 +1138,12 @@ app.get('/health', (req, res) => {
 });
 
 // Start the server
-const PORT = 8080;
+const PORT = parseInt(process.env.PORT || '8080', 10);
 const HOST = '0.0.0.0'; // Listen on all network interfaces by default
 
 server.listen(PORT, HOST, () => {
   console.log(`Server is running on ${HOST}:${PORT}`);
-  // Determine protocol based on server type
-  const protocol = server === httpServer ? 'ws' : 'wss';
-  console.log(`WebSocket server is ready at ${protocol}://${HOST}:${PORT}`);
+  console.log(`WebSocket server is ready at ws://${HOST}:${PORT}`);
   console.log(`UDP server is listening on port ${UDP_PORT}`);
 });
 

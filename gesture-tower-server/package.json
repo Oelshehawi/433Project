@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "prebuild": "npm install --save-dev @types/node @types/express @types/ws @types/uuid @types/cors",
     "start": "node dist/server.js",
     "build": "tsc",
     "dev": "npx nodemon --exec npx ts-node src/server.ts",
