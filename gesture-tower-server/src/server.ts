@@ -19,6 +19,7 @@ import {
   GestureEventPayload,
   ErrorPayload,
   UdpMessagePayload,
+  BeagleBoardCommandPayload,
 } from "./types";
 
 // Initialize Express app and HTTP server
@@ -31,51 +32,15 @@ const wss = new WebSocket.Server({ server });
 // Store active rooms
 const rooms: Map<string, Room> = new Map();
 
+// Store connected beagle boards with their device IDs
+const beagleBoards: Map<
+  string,
+  { deviceId: string; roomId?: string; playerName?: string }
+> = new Map();
+
 // Create UDP server
 const udpServer = dgram.createSocket("udp4");
 const UDP_PORT = 9090;
-
-// Initialize UDP server
-udpServer.on("error", (err) => {
-  console.error(`UDP server error:\n${err.stack}`);
-  udpServer.close();
-});
-
-udpServer.on("message", (msg, rinfo) => {
-  const message = msg.toString();
-  console.log(
-    `UDP server received message: ${message} from ${rinfo.address}:${rinfo.port}`
-  );
-
-  // Create a payload with the UDP message
-  const payload: UdpMessagePayload = {
-    message,
-    timestamp: Date.now(),
-  };
-
-  // Broadcast the UDP message to all connected WebSocket clients
-  broadcastToAllClients({
-    event: "udp_message",
-    payload,
-  });
-});
-
-udpServer.on("listening", () => {
-  const address = udpServer.address();
-  console.log(`UDP server listening on ${address.address}:${address.port}`);
-});
-
-// Bind UDP server to the specified port
-udpServer.bind(UDP_PORT);
-
-// Helper function to broadcast to all clients
-function broadcastToAllClients(message: WebSocketMessage) {
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(message));
-    }
-  });
-}
 
 // Store client connections with custom properties
 const clients: Map<string, ExtendedWebSocket> = new Map();
@@ -130,28 +95,556 @@ const broadcastToAll = (event: ServerEventType, payload: any) => {
   });
 };
 
+// Helper function to broadcast to all clients
+function broadcastToAllClients(message: WebSocketMessage) {
+  // Use the same method as broadcastToAll to ensure consistent formatting
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(message));
+    }
+  });
+}
+
+// Initialize UDP server
+udpServer.on("error", (err) => {
+  console.error(`UDP server error:\n${err.stack}`);
+  udpServer.close();
+});
+
+// Helper function to parse UDP command messages from Beagle boards
+const parseBeagleBoardCommand = (
+  message: string
+): {
+  command: string;
+  deviceId: string;
+  params: Record<string, string>;
+} | null => {
+  try {
+    if (!message.startsWith("CMD:")) {
+      return null;
+    }
+
+    const parts = message.split("|");
+    const cmdPart = parts[0].split(":");
+    const command = cmdPart[1];
+
+    const deviceIdPart = parts[1].split(":");
+    const deviceId = deviceIdPart[1];
+
+    const params: Record<string, string> = {};
+    for (let i = 2; i < parts.length; i++) {
+      const param = parts[i].split(":");
+      if (param.length === 2) {
+        params[param[0]] = param[1];
+      }
+    }
+
+    return { command, deviceId, params };
+  } catch (error) {
+    console.error("Error parsing Beagle board command:", error);
+    return null;
+  }
+};
+
+// Helper function to parse gesture messages from Beagle boards
+const parseGestureMessage = (
+  message: string
+): { deviceId: string; roomId: string; gestureData: string } | null => {
+  try {
+    if (!message.startsWith("GESTURE|")) {
+      return null;
+    }
+
+    const parts = message.split("|");
+    const deviceIdPart = parts[1].split(":");
+    const deviceId = deviceIdPart[1];
+
+    const roomIdPart = parts[2].split(":");
+    const roomId = roomIdPart[1];
+
+    // Extract the gesture data (everything after the third pipe)
+    const gestureData = parts.slice(3).join("|");
+
+    return { deviceId, roomId, gestureData };
+  } catch (error) {
+    console.error("Error parsing gesture message:", error);
+    return null;
+  }
+};
+
+// Handle Beagle board commands
+const handleBeagleBoardCommand = (
+  command: string,
+  deviceId: string,
+  params: Record<string, string>,
+  rinfo: dgram.RemoteInfo
+) => {
+  console.log(`Received command ${command} from device ${deviceId}`);
+
+  switch (command) {
+    case "LIST_ROOMS":
+      // Send room list to the Beagle board
+      sendRoomListToBeagleBoard(deviceId, rinfo);
+      break;
+
+    case "JOIN_ROOM":
+      // Join the Beagle board to a room
+      const { RoomID, PlayerName } = params;
+      if (RoomID && PlayerName) {
+        joinBeagleBoardToRoom(deviceId, RoomID, PlayerName, rinfo);
+      } else {
+        sendResponseToBeagleBoard(
+          "JOIN_ROOM",
+          "ERROR",
+          "Missing RoomID or PlayerName",
+          deviceId,
+          rinfo
+        );
+      }
+      break;
+
+    case "LEAVE_ROOM":
+      // Remove the Beagle board from a room
+      if (beagleBoards.has(deviceId)) {
+        const board = beagleBoards.get(deviceId)!;
+        if (board.roomId) {
+          leaveBeagleBoardFromRoom(deviceId, board.roomId, rinfo);
+        } else {
+          sendResponseToBeagleBoard(
+            "LEAVE_ROOM",
+            "ERROR",
+            "Not in a room",
+            deviceId,
+            rinfo
+          );
+        }
+      } else {
+        sendResponseToBeagleBoard(
+          "LEAVE_ROOM",
+          "ERROR",
+          "Device not registered",
+          deviceId,
+          rinfo
+        );
+      }
+      break;
+
+    case "SET_READY":
+      // Set the BeagleBoard player ready status
+      const { Ready } = params;
+      if (beagleBoards.has(deviceId)) {
+        const board = beagleBoards.get(deviceId)!;
+        if (board.roomId) {
+          const isReady = Ready === "true" || Ready === "1";
+          setBeagleBoardReady(deviceId, board.roomId, isReady, rinfo);
+        } else {
+          sendResponseToBeagleBoard(
+            "SET_READY",
+            "ERROR",
+            "Not in a room",
+            deviceId,
+            rinfo
+          );
+        }
+      } else {
+        sendResponseToBeagleBoard(
+          "SET_READY",
+          "ERROR",
+          "Device not registered",
+          deviceId,
+          rinfo
+        );
+      }
+      break;
+
+    default:
+      sendResponseToBeagleBoard(
+        command,
+        "ERROR",
+        `Unknown command: ${command}`,
+        deviceId,
+        rinfo
+      );
+  }
+};
+
+// Handle gesture data from Beagle board
+const handleGestureData = (
+  deviceId: string,
+  roomId: string,
+  gestureData: string
+) => {
+  try {
+    // Parse the gesture data as JSON
+    const gestureJson = JSON.parse(gestureData);
+
+    // Ensure a room exists with this ID
+    if (!rooms.has(roomId)) {
+      console.error(
+        `Room ${roomId} not found for gesture from device ${deviceId}`
+      );
+      return;
+    }
+
+    // Find the player ID associated with this device in the room
+    const room = rooms.get(roomId)!;
+    const board = beagleBoards.get(deviceId);
+
+    if (!board || !board.playerName) {
+      console.error(
+        `Device ${deviceId} not properly registered with a player name`
+      );
+      return;
+    }
+
+    // Find the player in the room
+    const player = room.players.find((p) => p.name === board.playerName);
+    if (!player) {
+      console.error(`Player ${board.playerName} not found in room ${roomId}`);
+      return;
+    }
+
+    // Create gesture event payload
+    const payload: GestureEventPayload = {
+      playerId: player.id,
+      gesture: gestureJson.gesture,
+      confidence: gestureJson.confidence || 1.0,
+    };
+
+    // Send the gesture event to all clients in the room
+    sendToRoom(roomId, "gesture_event", payload);
+
+    console.log(
+      `Processed gesture ${gestureJson.gesture} from device ${deviceId} in room ${roomId}`
+    );
+  } catch (error) {
+    console.error("Error handling gesture data:", error);
+  }
+};
+
+// Function to send room list to a Beagle board
+const sendRoomListToBeagleBoard = (
+  deviceId: string,
+  rinfo: dgram.RemoteInfo
+) => {
+  const roomList = getRoomList();
+  console.log(roomList);
+
+  // Make sure format exactly matches what client expects: RESPONSE:LIST_ROOMS|DeviceID:deviceId|Rooms:json
+  const response = `RESPONSE:LIST_ROOMS|DeviceID:${deviceId}|Rooms:${JSON.stringify(
+    roomList
+  )}`;
+
+  console.log(`Sending response to ${rinfo.address}:${rinfo.port}:`, response);
+
+  // Send the response back to the beagle board
+  udpServer.send(response, rinfo.port, rinfo.address, (err) => {
+    if (err) {
+      console.error(`Error sending room list to device ${deviceId}:`, err);
+    } else {
+      console.log(`Sent room list to device ${deviceId}`);
+    }
+  });
+};
+
+// Function to join a Beagle board to a room
+const joinBeagleBoardToRoom = (
+  deviceId: string,
+  roomId: string,
+  playerName: string,
+  rinfo: dgram.RemoteInfo
+) => {
+  // Find the room (case insensitive to be more forgiving with IDs)
+  const room = Array.from(rooms.values()).find(
+    (r) => r.id.toLowerCase() === roomId.toLowerCase()
+  );
+
+  if (!room) {
+    sendResponseToBeagleBoard(
+      "JOIN_ROOM",
+      "ERROR",
+      `Room ${roomId} not found`,
+      deviceId,
+      rinfo
+    );
+    return;
+  }
+
+  // Check if room is full
+  if (room.players.length >= room.maxPlayers) {
+    sendResponseToBeagleBoard(
+      "JOIN_ROOM",
+      "ERROR",
+      "Room is full",
+      deviceId,
+      rinfo
+    );
+    return;
+  }
+
+  // Create a unique player ID for the beagle board
+  const playerId = uuidv4();
+
+  // Add player to the room
+  const newPlayer: Player = {
+    id: playerId,
+    name: playerName,
+    isReady: false,
+    connected: true,
+  };
+
+  room.players.push(newPlayer);
+
+  // Register the beagle board with the room
+  beagleBoards.set(deviceId, {
+    deviceId,
+    roomId: room.id,
+    playerName,
+  });
+
+  // Send success response back to the beagle board
+  sendResponseToBeagleBoard(
+    "JOIN_ROOM",
+    "SUCCESS",
+    `Joined room ${room.id} successfully`,
+    deviceId,
+    rinfo
+  );
+
+  // Notify all clients about the room update
+  sendToRoom(room.id, "room_updated", { room });
+
+  // Also broadcast room_updated to ALL clients for better state synchronization
+  broadcastToAllClients({
+    event: "room_updated",
+    payload: { room },
+  });
+
+  // Also broadcast updated room list to ALL clients
+  broadcastToAllClients({
+    event: "room_list",
+    payload: {
+      rooms: getRoomList(),
+    },
+  });
+
+  console.log(
+    `Beagle board ${deviceId} joined room ${room.id} as player ${playerName}`
+  );
+};
+
+// Function to remove a Beagle board from a room
+const leaveBeagleBoardFromRoom = (
+  deviceId: string,
+  roomId: string,
+  rinfo: dgram.RemoteInfo
+) => {
+  if (!rooms.has(roomId)) {
+    sendResponseToBeagleBoard(
+      "LEAVE_ROOM",
+      "ERROR",
+      `Room ${roomId} not found`,
+      deviceId,
+      rinfo
+    );
+    return;
+  }
+
+  const room = rooms.get(roomId)!;
+  const board = beagleBoards.get(deviceId);
+
+  if (!board || !board.playerName) {
+    sendResponseToBeagleBoard(
+      "LEAVE_ROOM",
+      "ERROR",
+      "Device not properly registered",
+      deviceId,
+      rinfo
+    );
+    return;
+  }
+
+  // Find the player in the room
+  const playerIndex = room.players.findIndex(
+    (p) => p.name === board.playerName
+  );
+
+  if (playerIndex === -1) {
+    sendResponseToBeagleBoard(
+      "LEAVE_ROOM",
+      "ERROR",
+      `Player ${board.playerName} not found in room`,
+      deviceId,
+      rinfo
+    );
+    return;
+  }
+
+  // Remove the player
+  room.players.splice(playerIndex, 1);
+
+  // Update Beagle board record
+  beagleBoards.set(deviceId, { deviceId });
+
+  // If room is empty, remove it
+  if (room.players.length === 0) {
+    rooms.delete(roomId);
+    console.log(`Room ${roomId} removed as it's now empty`);
+  } else {
+    // Update room for all clients
+    sendToRoom(roomId, "room_updated", { room });
+  }
+
+  // Update room list for all clients
+  broadcastToAllClients({
+    event: "room_list",
+    payload: {
+      rooms: getRoomList(),
+    },
+  });
+
+  // Send success response to Beagle board
+  sendResponseToBeagleBoard(
+    "LEAVE_ROOM",
+    "SUCCESS",
+    `Left room ${roomId}`,
+    deviceId,
+    rinfo
+  );
+};
+
+// Function to send a standardized response to a Beagle board
+const sendResponseToBeagleBoard = (
+  command: string,
+  status: string,
+  message: string,
+  deviceId: string,
+  rinfo: dgram.RemoteInfo
+) => {
+  // Format: RESPONSE:COMMAND_NAME|DeviceID:device_id|status:SUCCESS/ERROR|message:details
+  const response = `RESPONSE:${command}|DeviceID:${deviceId}|status:${status}|message:${message}`;
+
+  udpServer.send(response, rinfo.port, rinfo.address, (err) => {
+    if (err) {
+      console.error(`Error sending response to device ${deviceId}:`, err);
+    } else {
+      console.log(
+        `Sent response to device ${deviceId}: ${status} - ${message}`
+      );
+    }
+  });
+};
+
+// Function to extract device ID from a message
+const extractDeviceId = (message: string): string | null => {
+  const deviceIdMatch = message.match(/DeviceID:([^|]+)/);
+  return deviceIdMatch ? deviceIdMatch[1] : null;
+};
+
+// Process BeagleBoard commands for web clients
+const processBeagleBoardCommandForWebClients = (
+  command: string,
+  deviceId: string,
+  message: string
+): void => {
+  // For join/leave room commands, broadcast an updated room list
+  if (command === "JOIN_ROOM" || command === "LEAVE_ROOM") {
+    broadcastToAllClients({
+      event: "room_list",
+      payload: {
+        rooms: getRoomList(),
+      },
+    });
+  }
+};
+
+// Handler for UDP messages
+udpServer.on("message", (msg, rinfo) => {
+  const message = msg.toString();
+  console.log(
+    `UDP server received: ${message} from ${rinfo.address}:${rinfo.port}`
+  );
+
+  // Store client info for this device ID if needed
+  const deviceId = extractDeviceId(message);
+
+  try {
+    // Check if it's a command from a Beagle board
+    const cmdResult = parseBeagleBoardCommand(message);
+    if (cmdResult) {
+      const { command, deviceId, params } = cmdResult;
+
+      // Add or update client info
+      const clientPort = 9091; // Beagle board client listens on port 9091
+
+      // Handle the command
+      handleBeagleBoardCommand(command, deviceId, params, {
+        address: rinfo.address,
+        port: clientPort, // Send responses to port 9091
+        family: rinfo.family,
+        size: rinfo.size,
+      });
+
+      // Broadcast the command to all web clients
+      broadcastToAllClients({
+        event: "beagle_board_command",
+        payload: {
+          message,
+          sender: deviceId,
+          port: rinfo.port,
+          timestamp: Date.now(),
+        },
+      });
+
+      // Process the command for web clients (ensure room list is updated)
+      processBeagleBoardCommandForWebClients(command, deviceId, message);
+    }
+    // Check if it's a gesture message
+    else if (message.startsWith("GESTURE|")) {
+      const gestureResult = parseGestureMessage(message);
+      if (gestureResult) {
+        const { deviceId, roomId, gestureData } = gestureResult;
+        handleGestureData(deviceId, roomId, gestureData);
+      }
+    }
+    // Send the message to all web clients
+    broadcastToAllClients({
+      event: "udp_message",
+      payload: {
+        message,
+        timestamp: Date.now(),
+      },
+    });
+  } catch (error) {
+    console.error("Error handling UDP message:", error);
+  }
+});
+
+udpServer.on("listening", () => {
+  const address = udpServer.address();
+  console.log(`UDP server listening on ${address.address}:${address.port}`);
+});
+
+// Bind UDP server to the specified port
+udpServer.bind(UDP_PORT);
+
 // Handle creating a new room
 const handleCreateRoom = (
   client: ExtendedWebSocket,
   payload: CreateRoomPayload
 ) => {
   try {
-    const { room, playerId } = payload;
+    const { room } = payload;
 
     // Validate data
-    if (!room || !playerId) {
+    if (!room) {
       return sendToClient(client, "error", {
         error: "Missing required data",
       } as ErrorPayload);
     }
 
-    // Store the room ID and player ID in the client object
-    client.roomId = room.id;
-    client.playerId = playerId;
-    client.playerName = room.players[0].name;
-
     // Validate room data
-    if (!room || !room.id || !room.name || !playerId) {
+    if (!room || !room.id || !room.name) {
       return sendToClient(client, "error", {
         error: "Invalid room data",
       } as ErrorPayload);
@@ -164,16 +657,12 @@ const handleCreateRoom = (
       } as ErrorPayload);
     }
 
-    // Create the room
+    // Create the room (with empty players array if not provided)
     const newRoom: Room = {
       ...room,
       createdAt: Date.now(),
       status: "waiting",
-      players: room.players.map((player) => ({
-        ...player,
-        isReady: false,
-        connected: true,
-      })),
+      players: room.players || [], // Use empty array if no players provided
     };
 
     // Add room to storage
@@ -185,7 +674,12 @@ const handleCreateRoom = (
     sendToClient(client, "room_updated", { room: newRoom });
 
     // Update room list for all clients
-    broadcastToAll("room_list", { rooms: getRoomList() });
+    broadcastToAllClients({
+      event: "room_list",
+      payload: {
+        rooms: getRoomList(),
+      },
+    });
   } catch (error) {
     console.error("Error creating room:", error);
     sendToClient(client, "error", {
@@ -253,7 +747,12 @@ const handleJoinRoom = (
     sendToRoom(roomId, "room_updated", { room });
 
     // Update room list for all clients
-    broadcastToAll("room_list", { rooms: getRoomList() });
+    broadcastToAllClients({
+      event: "room_list",
+      payload: {
+        rooms: getRoomList(),
+      },
+    });
   } catch (error) {
     console.error("Error joining room:", error);
     sendToClient(client, "error", {
@@ -318,7 +817,12 @@ const handleLeaveRoom = (
       }
 
       // Update room list for all clients
-      broadcastToAll("room_list", { rooms: getRoomList() });
+      broadcastToAllClients({
+        event: "room_list",
+        payload: {
+          rooms: getRoomList(),
+        },
+      });
     }
   } catch (error) {
     console.error("Error leaving room:", error);
@@ -443,7 +947,12 @@ const handleGameStart = (
     sendToRoom(roomId, "game_started", { roomId });
 
     // Update room list for all clients
-    broadcastToAll("room_list", { rooms: getRoomList() });
+    broadcastToAllClients({
+      event: "room_list",
+      payload: {
+        rooms: getRoomList(),
+      },
+    });
   } catch (error) {
     console.error("Error starting game:", error);
     sendToClient(client, "error", {
@@ -605,3 +1114,67 @@ server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   console.log(`WebSocket server is ready at ws://localhost:${PORT}`);
 });
+
+// Add new function to set BeagleBoard player ready status
+const setBeagleBoardReady = (
+  deviceId: string,
+  roomId: string,
+  isReady: boolean,
+  rinfo: dgram.RemoteInfo
+) => {
+  // Check if room exists
+  if (!rooms.has(roomId)) {
+    sendResponseToBeagleBoard(
+      "SET_READY",
+      "ERROR",
+      `Room ${roomId} not found`,
+      deviceId,
+      rinfo
+    );
+    return;
+  }
+
+  const room = rooms.get(roomId)!;
+  const board = beagleBoards.get(deviceId)!;
+
+  // Find the player in the room
+  const player = room.players.find((p) => p.name === board.playerName);
+
+  if (!player) {
+    sendResponseToBeagleBoard(
+      "SET_READY",
+      "ERROR",
+      `Player ${board.playerName} not found in room`,
+      deviceId,
+      rinfo
+    );
+    return;
+  }
+
+  // Update player ready status
+  player.isReady = isReady;
+
+  // Send success response to BeagleBoard
+  sendResponseToBeagleBoard(
+    "SET_READY",
+    "SUCCESS",
+    `Player is now ${isReady ? "ready" : "not ready"}`,
+    deviceId,
+    rinfo
+  );
+
+  // Notify all clients about the room update
+  sendToRoom(roomId, "room_updated", { room });
+
+  // Also broadcast room_updated to ALL clients for better state synchronization
+  broadcastToAllClients({
+    event: "room_updated",
+    payload: { room },
+  });
+
+  console.log(
+    `Beagle board ${deviceId} (${board.playerName}) in room ${roomId} is now ${
+      isReady ? "ready" : "not ready"
+    }`
+  );
+};

@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useRoomStore } from '../lib/room/store';
 import { CreateRoomForm } from './CreateRoomForm';
-import { JoinRoomForm } from './JoinRoomForm';
 import { RoomList } from './RoomList';
 import { useRouter } from 'next/navigation';
 import { initializeSocket } from '../lib/websocket';
@@ -26,7 +25,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
   } = useRoomStore();
 
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [showJoinForm, setShowJoinForm] = useState(false);
 
   // Initialize WebSocket and fetch rooms
   useEffect(() => {
@@ -200,16 +198,13 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
   const handleCreateRoom = () => {
     console.log('Opening create room form');
     setShowCreateForm(true);
-    setShowJoinForm(false);
   };
 
-  const handleCreateRoomSubmit = async (
-    roomName: string,
-    playerName: string
-  ) => {
-    console.log('Attempting to create room:', { roomName, playerName });
+  const handleCreateRoomSubmit = async (roomName: string) => {
+    console.log('Attempting to create room:', { roomName });
     try {
-      await createRoom({ name: roomName, playerName });
+      // No player name needed - we're creating an empty room
+      await createRoom({ name: roomName });
       console.log('Room creation request sent');
       setShowCreateForm(false);
     } catch (err) {
@@ -217,27 +212,30 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
     }
   };
 
+  // // No longer needed - joining is only done from Beagle Boards
   // const handleJoinRoomClick = () => {
   //   console.log('Opening join room form');
   //   setShowJoinForm(true);
   //   setShowCreateForm(false);
   // };
 
-  const handleJoinRoomSubmit = async (roomId: string, playerName: string) => {
-    console.log('Attempting to join room:', { roomId, playerName });
-    try {
-      await joinRoom({ roomId, playerName });
-      console.log('Room join request sent');
-      setShowJoinForm(false);
-    } catch (err) {
-      console.error('Failed to join room:', err);
-    }
-  };
+  // No longer needed - joining is only done from Beagle Boards
+  // const handleJoinRoomSubmit = async (roomId: string, playerName: string) => {
+  //   console.log('Attempting to join room:', { roomId, playerName });
+  //   try {
+  //     await joinRoom({ roomId, playerName });
+  //     console.log('Room join request sent');
+  //     setShowJoinForm(false);
+  //   } catch (err) {
+  //     console.error('Failed to join room:', err);
+  //   }
+  // };
 
-  const handleJoinRoomFromList = (roomId: string) => {
-    console.log('Selected room from list:', roomId);
-    setShowJoinForm(true);
-  };
+  // No longer needed - joining is only done from Beagle Boards
+  // const handleJoinRoomFromList = (roomId: string) => {
+  //   console.log('Selected room from list:', roomId);
+  //   setShowJoinForm(true);
+  // };
 
   return (
     <>
@@ -264,7 +262,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
           </motion.h1>
 
           {/* Only show tower graphic and main buttons when no forms are visible */}
-          {!showCreateForm && !showJoinForm && (
+          {!showCreateForm && (
             <>
               {/* Animated tower graphic */}
               <div className='flex items-end justify-center mt-4 mb-8 h-64 relative'>
@@ -359,7 +357,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
           )}
 
           {/* Join room form modal */}
-          {showJoinForm && (
+          {/* {showJoinForm && (
             <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4'>
               <div className='w-full max-w-md bg-background rounded-lg shadow-xl relative z-60'>
                 <h2 className='text-2xl text-white text-center py-4 border-b border-white/10'>
@@ -371,7 +369,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
                 />
               </div>
             </div>
-          )}
+          )} */}
 
           {error && (
             <div className='bg-danger/20 text-danger p-3 rounded-md mt-4 max-w-md'>
@@ -384,7 +382,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
       <RoomList
         rooms={availableRooms}
         loading={loading}
-        onJoinClick={handleJoinRoomFromList}
         onCreateClick={handleCreateRoom}
       />
     </>

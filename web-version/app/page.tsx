@@ -106,13 +106,28 @@ export default function Home() {
       logConnectionDetails();
     }, 1000);
 
+    // Check if user should be redirected to a saved room
+    if (typeof window !== "undefined") {
+      const roomId = localStorage.getItem("currentRoomId");
+      const playerId = localStorage.getItem("currentPlayerId");
+      const playerName = localStorage.getItem("currentPlayerName");
+
+      // If we have all the room data and we're on the home page, redirect to the room
+      if (roomId && playerId && playerName) {
+        console.log("Found saved room info, redirecting to room:", roomId);
+        setTimeout(() => {
+          router.push(`/rooms/${roomId}`);
+        }, 500);
+      }
+    }
+
     // Don't close WebSocket on component unmount as we need it for navigation
     return () => {
       console.log(
         "Home component unmounting, keeping WebSocket connection alive"
       );
     };
-  }, []);
+  }, [router]);
 
   return (
     <main className="min-h-screen">

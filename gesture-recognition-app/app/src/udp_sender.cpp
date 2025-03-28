@@ -1,4 +1,4 @@
-#include "udp_sender.h"
+#include "../include/udp_sender.h"
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <cstring>  
+#include <opencv2/opencv.hpp>
 
 UDPSender::UDPSender(const std::string& ip, int port)
     : ipAddress(ip), portNumber(port) {}
@@ -49,64 +50,76 @@ void UDPSender::sendFileWithText(const std::string& filename, const std::string&
     close(sock);
 }
 
-//Takes in a uchar vector, which contains the image
+//Takes in a vector of unsigned char, which contains the image
 //which can be obtained via the cv::imencode function
 //eg: cv::imencode(".jpg", frame, dest);, where ".jpg" is image format,
 //frame is a cv::Mat variable (Likely taken from the cameraHAL's captureFrame function),
-//and dest is a uchar vector that stores the jpg image
+//and dest is a vector that stores the jpg image
 //Does not have any protection against lost/out of order packets
-void UDPSender::sendImageFile(std::vector<uchar> image){
+void UDPSender::sendImageFile(const std::vector<unsigned char>& image) {
     int sockfd;
     struct sockaddr_in servaddr; 
-    if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) { 
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) { 
         perror("socket creation failed"); 
         exit(EXIT_FAILURE); 
     }
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET; 
     servaddr.sin_port = htons(portNumber); 
-    //#define PORT 8088
-    //servaddr.sin_port = htons(PORT); 
-    //Change if IP address, port is different
     inet_pton(AF_INET, "192.168.7.1", &servaddr.sin_addr);
-    //Alter packet size if needed
+    
+    // Packet configuration
     int info_len = 4;
     int size = 4096;
     int usable_size = size - info_len;
-    //Lets server know that we are sending an img, so it knows how to handle the request
-    //To distinguish it from other information that may be sent, eg. string describing the action
-    uchar buf[size] = "img";
-    //Not necessary if server distinguishes players by alternate means, i.e. ip
-    int client_id = 1;//Should be determined by the server hosting the game
+    
+    // Create a dynamic buffer
+    unsigned char* buf = new unsigned char[size];
+    
+    // Set the identifier "img"
+    buf[0] = 'i';
+    buf[1] = 'm';
+    buf[2] = 'g';
+    
+    // Set client ID
+    int client_id = 1;
     buf[3] = '0' + client_id;
-    int n;
-    socklen_t len;
-    int iterator = 0;
+    
+    // Process image data in chunks
+    size_t iterator = 0;
     int bufsize = 0;
-    while (iterator < image.size()){
-        if (image.size() - iterator > usable_size){
+    
+    while (iterator < image.size()) {
+        if (image.size() - iterator > usable_size) {
             memcpy(&buf[4], &image[iterator], usable_size);
             bufsize = size;
             iterator += usable_size;
-        }else{
-            int diff = image.size() - iterator;
+        } else {
+            int diff = static_cast<int>(image.size() - iterator);
             memcpy(&buf[4], &image[iterator], diff);
-            bufsize = diff+info_len;
+            bufsize = diff + info_len;
             iterator += diff;
         }
-        sendto(sockfd, &buf, bufsize, 
-            MSG_CONFIRM, (const struct sockaddr *) &servaddr,  
-                sizeof(servaddr)); 
-        //delay to make sure udp packets are sent in order, probably not necessary if done online vs locally
+        
+        sendto(sockfd, buf, bufsize, 
+            MSG_CONFIRM, (const struct sockaddr*)&servaddr,  
+            sizeof(servaddr)); 
+            
+        // Delay to ensure order
         usleep(1000);
     }
-    //Lets server know that we have finished sending the file
+    
+    // Free the buffer
+    delete[] buf;
+    
+    // Send completion message
     char msg[8] = "img fin";
     msg[3] = '0' + client_id;
     
     sendto(sockfd, msg, 8, 
-    MSG_CONFIRM, (const struct sockaddr *) &servaddr,  
-        sizeof(servaddr));  
+        MSG_CONFIRM, (const struct sockaddr*)&servaddr,  
+        sizeof(servaddr));
+        
     close(sockfd);
 }
 /*

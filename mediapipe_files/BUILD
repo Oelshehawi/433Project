@@ -4,8 +4,8 @@ package(default_visibility = ["//visibility:public"])
 
 
 cc_binary(
-    name = "hellomp",
-    srcs = ["hellomp.cpp"],
+    name = "hand_recognition",
+    srcs = ["hand_recognition.cpp"],
     deps = [
     	"//mediapipe/graphs/hand_tracking:desktop_tflite_calculators",
         "//mediapipe/calculators/core:pass_through_calculator",

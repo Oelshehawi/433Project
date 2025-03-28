@@ -7,6 +7,7 @@ import {
   GestureEventPayload,
   ErrorPayload,
   UdpMessagePayload,
+  BeagleBoardCommandPayload,
 } from "./types/index";
 
 // Function to clear any room data from localStorage
@@ -106,26 +107,41 @@ export const initializeSocket = (
         const data = JSON.parse(event.data);
         console.log("WebSocket message received:", data);
 
-        // Handle different event types - Updated to use event instead of type
-        if (data.event === "room_updated") {
-          handleRoomUpdated(data.payload);
-        } else if (data.event === "room_list") {
-          handleRoomList(data.payload);
-        } else if (data.event === "player_ready") {
-          handlePlayerReady(data.payload);
-        } else if (data.event === "game_started") {
-          handleGameStarted(data.payload);
-        } else if (data.event === "error") {
-          handleError(data.payload);
-        } else if (data.event === "gesture_event") {
-          handleGestureEvent(data.payload);
-        } else if (data.event === "udp_message") {
-          handleUdpMessage(data.payload as UdpMessagePayload);
-        } else {
-          console.warn("Unhandled WebSocket message event:", data.event);
+        try {
+          // Handle different event types - Updated to use event instead of type
+          if (data.event === "room_updated") {
+            handleRoomUpdated(data.payload);
+          } else if (data.event === "room_list") {
+            handleRoomList(data.payload);
+          } else if (data.event === "player_ready") {
+            handlePlayerReady(data.payload);
+          } else if (data.event === "game_started") {
+            handleGameStarted(data.payload);
+          } else if (data.event === "error") {
+            handleError(data.payload);
+          } else if (data.event === "gesture_event") {
+            handleGestureEvent(data.payload);
+          } else if (data.event === "udp_message") {
+            handleUdpMessage(data.payload as UdpMessagePayload);
+          } else if (data.event === "beagle_board_command") {
+            handleBeagleBoardCommand(data.payload as BeagleBoardCommandPayload);
+          } else {
+            console.warn("Unhandled WebSocket message event:", data.event);
+          }
+        } catch (handlerError) {
+          console.error(
+            "Error in WebSocket message handler:",
+            handlerError,
+            "for event:",
+            data.event
+          );
         }
-      } catch (error) {
-        console.error("Error parsing WebSocket message:", error, event.data);
+      } catch (parseError) {
+        console.error(
+          "Error parsing WebSocket message:",
+          parseError,
+          event.data
+        );
       }
     };
 
@@ -354,13 +370,24 @@ const handleRoomUpdated = (payload: RoomUpdatedPayload): void => {
 
 const handleRoomList = (payload: RoomListPayload): void => {
   console.log("Handling room_list event:", payload);
-  const { rooms } = payload;
 
-  // Dispatch to room store
-  const roomListEvent = new CustomEvent("room_list", {
-    detail: { rooms },
-  });
-  window.dispatchEvent(roomListEvent);
+  try {
+    // Make sure payload and rooms exist
+    if (!payload || !payload.rooms) {
+      console.warn("Invalid room_list payload received:", payload);
+      return;
+    }
+
+    const { rooms } = payload;
+
+    // Dispatch to room store
+    const roomListEvent = new CustomEvent("room_list", {
+      detail: { rooms },
+    });
+    window.dispatchEvent(roomListEvent);
+  } catch (error) {
+    console.error("Error handling room_list event:", error);
+  }
 };
 
 const handlePlayerReady = (payload: PlayerReadyPayload): void => {
@@ -417,6 +444,18 @@ const handleUdpMessage = (payload: UdpMessagePayload): void => {
     detail: { message, timestamp },
   });
   window.dispatchEvent(udpEvent);
+};
+
+// Handle BeagleBoard command events
+const handleBeagleBoardCommand = (payload: BeagleBoardCommandPayload): void => {
+  console.log("Handling beagle_board_command:", payload);
+  const { message, sender, timestamp } = payload || {};
+
+  // Create a BeagleBoard command event
+  const beagleBoardEvent = new CustomEvent("beagle_board_command", {
+    detail: { message, sender, timestamp },
+  });
+  window.dispatchEvent(beagleBoardEvent);
 };
 
 // Utility function to log connection details for debugging

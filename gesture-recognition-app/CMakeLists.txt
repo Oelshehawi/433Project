@@ -1,6 +1,12 @@
 # CMake Build Configuration for root of project
 cmake_minimum_required(VERSION 3.18)
 
+# Define cross-compilation settings before project() declaration
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR aarch64)
+set(CMAKE_C_COMPILER /usr/bin/aarch64-linux-gnu-gcc)
+set(CMAKE_CXX_COMPILER /usr/bin/aarch64-linux-gnu-g++)
+
 project(gesture_recognition_project VERSION 1.0
     DESCRIPTION "Gesture Recognition Project CMPT 433"
     LANGUAGES CXX)
@@ -24,11 +30,6 @@ set(OpenCV_DIR "/usr/lib/aarch64-linux-gnu/cmake/opencv4/")
 # Find and Include OpenCV
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
-
-set(CMAKE_SYSTEM_NAME Linux)
-set(CMAKE_SYSTEM_PROCESSOR aarch64)
-set(CMAKE_C_COMPILER /usr/bin/aarch64-linux-gnu-gcc)
-set(CMAKE_CXX_COMPILER /usr/bin/aarch64-linux-gnu-g++)
 
 # Add project subdirectories
 add_subdirectory(hal)

@@ -11,6 +11,15 @@ include_directories(${CMAKE_SOURCE_DIR}/hal/include)
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
+# Add nlohmann/json as a dependency
+include(FetchContent)
+FetchContent_Declare(
+  json
+  GIT_REPOSITORY https://github.com/nlohmann/json.git
+  GIT_TAG v3.11.2
+)
+FetchContent_MakeAvailable(json)
+
 # Collect all App source files
 file(GLOB MY_SOURCES "src/*.cpp")
 
@@ -21,8 +30,7 @@ add_executable(gesture_recognition ${MY_SOURCES})
 target_link_libraries(gesture_recognition LINK_PRIVATE hal)
 target_link_libraries(gesture_recognition LINK_PRIVATE ${OpenCV_LIBS})
 target_link_libraries(gesture_recognition LINK_PRIVATE pthread)
-
-
+target_link_libraries(gesture_recognition LINK_PRIVATE nlohmann_json::nlohmann_json)
 
 # Copy executable to NFS directory after build
 add_custom_command(TARGET gesture_recognition POST_BUILD

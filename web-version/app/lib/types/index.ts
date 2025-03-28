@@ -3,14 +3,14 @@
  */
 
 // Export from common types
-export * from './common';
+export * from "./common";
 
 // Export from room types
-export * from './room';
+export * from "./room";
 
 // Export from game types
-export * from './game';
-export { GESTURES } from './game';
+export * from "./game";
+export { GESTURES } from "./game";
 
 // Game configuration with consolidated constants
 export const GAME_CONFIG = {
@@ -38,3 +38,11 @@ export const GAME_CONFIG = {
   TOWER_WIDTH: 300, // pixels
   TOWER_BASE_HEIGHT: 50, // pixels
 };
+
+// Add after UdpMessagePayload or similar place
+export interface BeagleBoardCommandPayload {
+  message: string;
+  sender: string;
+  port?: number;
+  timestamp: number;
+}
