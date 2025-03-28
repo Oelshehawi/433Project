@@ -30,7 +30,7 @@ declare global {
 
 // Initialize WebSocket connection
 export const initializeSocket = (
-  url: string = "ws://159.54.171.194:8080"
+  url: string = "wss://159.54.171.194:8080"
 ): WebSocket | null => {
   // Check if we're in a browser environment
   if (typeof window === "undefined") {
