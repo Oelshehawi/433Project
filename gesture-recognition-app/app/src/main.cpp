@@ -24,8 +24,8 @@ void displayHelp() {
 
 int main() {
 
-    // Initialize UDP sender for the room manager
-    UDPSender* udpSender = new UDPSender("four33project.onrender.com", 9090);  // Server IP and port
+    // Initialize UDP sender with server IP and port
+    UDPSender* udpSender = new UDPSender("four33project.onrender.com", 9090);
     
     // Create room manager with UDP sender
     RoomManager roomManager(udpSender, ".device_id.cfg", 9091); // Listen on port 9091 for responses
