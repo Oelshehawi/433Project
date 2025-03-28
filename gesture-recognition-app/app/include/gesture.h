@@ -22,6 +22,7 @@ public:
     
     void startDetection();
     void stopDetection();
+    void runTestingMode();
     
     // Set the room manager to use for sending gestures with room information
     void setRoomManager(RoomManager* manager);
