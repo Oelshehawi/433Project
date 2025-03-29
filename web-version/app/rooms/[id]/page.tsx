@@ -1,18 +1,18 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { useRoomStore } from "../../lib/room/store";
-import { initializeSocket } from "../../lib/websocket";
-import { Player } from "../../lib/types/index";
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
+import { useRoomStore } from '../../lib/room/store';
+import { initializeSocket } from '../../lib/websocket';
+import { Player } from '../../lib/types/index';
 // Helper function to get saved room info
 const getSavedRoomInfo = () => {
-  if (typeof window !== "undefined") {
+  if (typeof window !== 'undefined') {
     return {
-      roomId: localStorage.getItem("currentRoomId"),
-      playerId: localStorage.getItem("currentPlayerId"),
-      playerName: localStorage.getItem("currentPlayerName"),
+      roomId: localStorage.getItem('currentRoomId'),
+      playerId: localStorage.getItem('currentPlayerId'),
+      playerName: localStorage.getItem('currentPlayerName'),
     };
   }
   return { roomId: null, playerId: null, playerName: null };
@@ -29,7 +29,7 @@ export default function RoomPage() {
   // Initialize WebSocket and fetch room data
   useEffect(() => {
     const socket = initializeSocket();
-    console.log("WebSocket initialized in room page", socket);
+    console.log('WebSocket initialized in room page', socket);
 
     // If we don't have a current room, try to recover from localStorage
     if (!currentRoom) {
@@ -41,17 +41,17 @@ export default function RoomPage() {
         savedInfo.roomId === roomId &&
         savedInfo.playerName
       ) {
-        console.log("Rejoining room from saved session:", savedInfo.roomId);
+        console.log('Rejoining room from saved session:', savedInfo.roomId);
 
         // Re-join the room
         joinRoom({
           roomId: savedInfo.roomId,
-          playerName: savedInfo.playerName || "Player",
-          playerType: "webadmin",
+          playerName: savedInfo.playerName || 'Player',
+          playerType: 'webadmin',
         });
       } else {
         // No saved info or different room, redirect to home
-        router.push("/");
+        router.push('/');
         return;
       }
     }
@@ -63,7 +63,7 @@ export default function RoomPage() {
 
   // Handle game start
   useEffect(() => {
-    if (currentRoom?.status === "playing") {
+    if (currentRoom?.status === 'playing') {
       // Navigate to the game page
       router.push(`/game/${roomId}`);
     }
@@ -75,31 +75,31 @@ export default function RoomPage() {
       // This prevents accidental navigation away but allows intentional navigation
       if (currentRoom) {
         e.preventDefault();
-        e.returnValue = "";
-        return "";
+        e.returnValue = '';
+        return '';
       }
       return undefined;
     };
 
     const handlePopState = (e: PopStateEvent) => {
       // If user is navigating back/forward with browser buttons
-      console.log("Navigation event detected", e);
+      console.log('Navigation event detected', e);
       if (currentRoom) {
         // Attempt to leave the room cleanly
         leaveRoom().catch((err: Error) =>
-          console.error("Error leaving room during navigation:", err)
+          console.error('Error leaving room during navigation:', err)
         );
       }
     };
 
     // Add event listeners
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    window.addEventListener("popstate", handlePopState);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('popstate', handlePopState);
 
     // Cleanup on component unmount
     return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('popstate', handlePopState);
     };
   }, [currentRoom, leaveRoom]);
 
@@ -110,31 +110,32 @@ export default function RoomPage() {
 
       // If this is an update for our current room
       if (room && room.id === roomId) {
-        console.log("Room update received for current room:", room);
+        console.log('Room update received for current room:', room);
 
-        // If the update shows a different number of players, it's likely a join/leave event
-        if (currentRoom && room.players.length !== currentRoom.players.length) {
-          console.log("Player count changed, refreshing room data");
+        // Force refresh room data to ensure we see the latest state
+        useRoomStore.getState().fetchRooms();
 
-          // Force a re-fetch of the room data
-          const savedInfo = getSavedRoomInfo();
-          if (savedInfo.roomId && savedInfo.playerId) {
-            // This will trigger a re-fetch of the room data
-            useRoomStore.getState().fetchRooms();
-          }
+        // Use a more robust method to refresh the current room
+        const savedInfo = getSavedRoomInfo();
+        if (savedInfo.roomId && savedInfo.playerId) {
+          // This directly updates the current room in the store
+          useRoomStore.setState({ currentRoom: room });
+
+          // Trigger UI refresh
+          window.dispatchEvent(new Event('room_data_changed'));
         }
       }
     };
 
-    window.addEventListener("room_updated", handleRoomUpdated as EventListener);
+    window.addEventListener('room_updated', handleRoomUpdated as EventListener);
 
     return () => {
       window.removeEventListener(
-        "room_updated",
+        'room_updated',
         handleRoomUpdated as EventListener
       );
     };
-  }, [roomId, currentRoom]);
+  }, [roomId]);
 
   // Add this effect to listen for manual room updates
   useEffect(() => {
@@ -143,52 +144,52 @@ export default function RoomPage() {
 
       // If this update is for our room
       if (room && room.id === roomId) {
-        console.log("Manual room update received:", room);
+        console.log('Manual room update received:', room);
 
         // Force refresh room data
         useRoomStore.getState().fetchRooms();
 
         // If in a room component, we can directly update our local state
-        if (typeof window !== "undefined") {
+        if (typeof window !== 'undefined') {
           // This will trigger a full page refresh if needed
-          window.dispatchEvent(new Event("room_data_changed"));
+          window.dispatchEvent(new Event('room_data_changed'));
         }
       }
     };
 
     window.addEventListener(
-      "manual_room_update",
+      'manual_room_update',
       handleManualRoomUpdate as EventListener
     );
 
     return () => {
       window.removeEventListener(
-        "manual_room_update",
+        'manual_room_update',
         handleManualRoomUpdate as EventListener
       );
     };
   }, [roomId]);
 
   const handleLeaveRoom = async () => {
-    console.log("Leaving room...");
+    console.log('Leaving room...');
 
     // Clear localStorage data first for immediate UI feedback
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("currentRoomId");
-      localStorage.removeItem("currentPlayerId");
-      localStorage.removeItem("currentPlayerName");
-      console.log("Cleared room data from localStorage");
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('currentRoomId');
+      localStorage.removeItem('currentPlayerId');
+      localStorage.removeItem('currentPlayerName');
+      console.log('Cleared room data from localStorage');
     }
 
     try {
       // Send leave room message to server
       await leaveRoom();
-      console.log("Successfully left room");
+      console.log('Successfully left room');
     } catch (error) {
-      console.error("Error leaving room:", error);
+      console.error('Error leaving room:', error);
     } finally {
       // Navigate back to home page
-      router.push("/");
+      router.push('/');
     }
   };
 
@@ -200,7 +201,7 @@ export default function RoomPage() {
     const currentPlayerId = savedInfo.playerId;
 
     if (!currentPlayerId) {
-      console.error("Cannot toggle ready: No player ID found in localStorage");
+      console.error('Cannot toggle ready: No player ID found in localStorage');
       return;
     }
 
@@ -217,7 +218,7 @@ export default function RoomPage() {
       );
       await setPlayerReady(!currentPlayer.isReady);
     } else {
-      console.error("Current player not found in room");
+      console.error('Current player not found in room');
     }
   };
 
@@ -239,10 +240,10 @@ export default function RoomPage() {
     return (
       currentRoom.players.find((p: Player) => p.id === savedInfo.playerId) || {
         id: savedInfo.playerId,
-        name: savedInfo.playerName || "Web Admin",
+        name: savedInfo.playerName || 'Web Admin',
         isReady: false,
         connected: true,
-        playerType: "webadmin", // Explicitly identify as web admin
+        playerType: 'webadmin', // Explicitly identify as web admin
         isAdmin: true, // Flag to identify web admin
       }
     );
@@ -256,24 +257,31 @@ export default function RoomPage() {
   // Helper to check if the current user is an admin (web client)
   const isWebAdmin = () => {
     const savedInfo = getSavedRoomInfo();
-    return savedInfo.playerId?.startsWith("admin-") || false;
+    return savedInfo.playerId?.startsWith('admin-') || false;
+  };
+
+  // Helper to count BeagleBoard players
+  const getBeagleBoardPlayerCount = () => {
+    if (!currentRoom) return 0;
+    return currentRoom.players.filter((p) => p.playerType === 'beagleboard')
+      .length;
   };
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      <div className='min-h-screen flex items-center justify-center'>
+        <div className='animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary'></div>
       </div>
     );
   }
 
   if (!currentRoom) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <h2 className="game-title text-3xl font-bold mb-4">Room not found</h2>
+      <div className='min-h-screen flex flex-col items-center justify-center'>
+        <h2 className='game-title text-3xl font-bold mb-4'>Room not found</h2>
         <button
-          className="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg"
-          onClick={() => router.push("/")}
+          className='bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg'
+          onClick={() => router.push('/')}
         >
           Back to Home
         </button>
@@ -282,26 +290,26 @@ export default function RoomPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-8">
-      <div className="bg-black/30 backdrop-blur-sm rounded-lg p-6 w-full max-w-4xl border border-white/10">
+    <div className='min-h-screen flex flex-col items-center justify-center p-8'>
+      <div className='bg-black/30 backdrop-blur-sm rounded-lg p-6 w-full max-w-4xl border border-white/10'>
         <motion.div
-          className="flex flex-col gap-4"
+          className='flex flex-col gap-4'
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
+          <div className='flex flex-col md:flex-row justify-between items-start md:items-center mb-4'>
             <div>
-              <h1 className="game-title text-3xl font-bold">
+              <h1 className='game-title text-3xl font-bold'>
                 {currentRoom.name}
               </h1>
-              <p className="text-foreground/70">
-                Room ID: <span className="font-mono">{currentRoom.id}</span>
+              <p className='text-foreground/70'>
+                Room ID: <span className='font-mono'>{currentRoom.id}</span>
               </p>
             </div>
 
             <motion.button
-              className="mt-2 md:mt-0 px-4 py-2 bg-danger text-white rounded-md shadow-md"
+              className='mt-2 md:mt-0 px-4 py-2 bg-danger text-white rounded-md shadow-md'
               onClick={handleLeaveRoom}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -310,58 +318,58 @@ export default function RoomPage() {
             </motion.button>
           </div>
 
-          <div className="bg-black/40 rounded-md p-4 mb-4">
-            <h2 className="text-lg font-semibold mb-2">Players</h2>
+          <div className='bg-black/40 rounded-md p-4 mb-4'>
+            <h2 className='text-lg font-semibold mb-2'>Players</h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-2'>
               {/* Filter to only show BeagleBoard players */}
               {currentRoom.players
-                .filter((player) => player.playerType === "beagleboard")
+                .filter((player) => player.playerType === 'beagleboard')
                 .map((player) => (
                   <div
                     key={player.id}
-                    className="flex items-center justify-between p-3 rounded-md border border-white/10 bg-black/20"
+                    className='flex items-center justify-between p-3 rounded-md border border-white/10 bg-black/20'
                   >
-                    <div className="flex items-center gap-2">
+                    <div className='flex items-center gap-2'>
                       <div
                         className={`w-3 h-3 rounded-full ${
-                          player.connected ? "bg-green-500" : "bg-gray-500"
+                          player.connected ? 'bg-green-500' : 'bg-gray-500'
                         }`}
                       />
                       <span>
                         {player.name}
-                        {currentRoom.hostId === player.id && " (Host)"}
+                        {currentRoom.hostId === player.id && ' (Host)'}
                       </span>
                     </div>
                     <div
                       className={`px-2 py-1 text-sm rounded ${
                         player.isReady
-                          ? "bg-green-800/70 text-green-200"
-                          : "bg-gray-700/50 text-gray-300"
+                          ? 'bg-green-800/70 text-green-200'
+                          : 'bg-gray-700/50 text-gray-300'
                       }`}
                     >
-                      {player.isReady ? "Ready" : "Not Ready"}
+                      {player.isReady ? 'Ready' : 'Not Ready'}
                     </div>
                   </div>
                 ))}
             </div>
           </div>
 
-          <div className="flex flex-col space-y-3">
+          <div className='flex flex-col space-y-3'>
             {/* Current player actions */}
-            <div className="flex space-x-3">
+            <div className='flex space-x-3'>
               {/* Only show Ready button for BeagleBoard players (not for web admin) */}
               {!isWebAdmin() && (
                 <button
-                  className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg"
+                  className='flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg'
                   onClick={handleToggleReady}
                 >
-                  {currentPlayer?.isReady ? "Not Ready" : "Ready Up"}
+                  {currentPlayer?.isReady ? 'Not Ready' : 'Ready Up'}
                 </button>
               )}
 
               <button
-                className="flex-1 bg-danger hover:bg-danger/80 text-white font-bold py-2 px-4 rounded-lg"
+                className='flex-1 bg-danger hover:bg-danger/80 text-white font-bold py-2 px-4 rounded-lg'
                 onClick={handleLeaveRoom}
               >
                 Leave Room
@@ -373,8 +381,8 @@ export default function RoomPage() {
               <button
                 className={`w-full font-bold py-2 px-4 rounded-lg ${
                   canStartGame
-                    ? "bg-success hover:bg-success/80 text-white"
-                    : "bg-gray-500 cursor-not-allowed text-white/50"
+                    ? 'bg-success hover:bg-success/80 text-white'
+                    : 'bg-gray-500 cursor-not-allowed text-white/50'
                 }`}
                 onClick={handleStartGame}
                 disabled={!canStartGame}
@@ -385,17 +393,17 @@ export default function RoomPage() {
           </div>
 
           {/* Room info */}
-          <div className="mt-6 text-sm text-white/70">
+          <div className='mt-6 text-sm text-white/70'>
             <p>Room ID: {currentRoom.id}</p>
             <p>Status: {currentRoom.status}</p>
             <p>
-              Players: {currentRoom.players.length}/{currentRoom.maxPlayers}
+              Players: {getBeagleBoardPlayerCount()}/{currentRoom.maxPlayers}
             </p>
           </div>
 
           {/* Error message */}
           {error && (
-            <div className="bg-danger/20 text-danger p-3 rounded-md mt-4">
+            <div className='bg-danger/20 text-danger p-3 rounded-md mt-4'>
               {error}
             </div>
           )}

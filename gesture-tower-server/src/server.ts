@@ -165,8 +165,10 @@ const getRoomList = (): RoomListItem[] => {
   const roomList = Array.from(rooms.values()).map((room) => ({
     id: room.id,
     name: room.name,
-    // Count all players, not just BeagleBoard players for display
-    playerCount: room.players.length,
+    // Only count BeagleBoard players, not web admin clients
+    playerCount: room.players.filter(
+      (player) => player.playerType === 'beagleboard'
+    ).length,
     maxPlayers: room.maxPlayers,
     status: room.status,
   }));
@@ -456,8 +458,11 @@ const joinBeagleBoardToRoom = (
     return;
   }
 
-  // Check if room is full (count all players, not just BeagleBoard players)
-  if (room.players.length >= room.maxPlayers) {
+  // Check if room is full (only count BeagleBoard players, not web admins)
+  const beagleBoardPlayerCount = room.players.filter(
+    (player) => player.playerType === 'beagleboard'
+  ).length;
+  if (beagleBoardPlayerCount >= room.maxPlayers) {
     sendResponseToBeagleBoard('JOIN_ROOM', 'ERROR', 'Room is full', deviceId);
     return;
   }
