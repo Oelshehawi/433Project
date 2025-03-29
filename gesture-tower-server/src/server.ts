@@ -443,12 +443,17 @@ const joinBeagleBoardToRoom = (
   roomId: string,
   playerName: string
 ) => {
+  console.log(
+    `BeagleBoard ${deviceId} joining room ${roomId} as ${playerName}`
+  );
+
   // Find the room (case insensitive to be more forgiving with IDs)
   const room = Array.from(rooms.values()).find(
     (r) => r.id.toLowerCase() === roomId.toLowerCase()
   );
 
   if (!room) {
+    console.error(`Room ${roomId} not found for BeagleBoard join request`);
     sendResponseToBeagleBoard(
       'JOIN_ROOM',
       'ERROR',
@@ -462,7 +467,15 @@ const joinBeagleBoardToRoom = (
   const beagleBoardPlayerCount = room.players.filter(
     (player) => player.playerType === 'beagleboard'
   ).length;
+
+  console.log(
+    `Room ${roomId} current BeagleBoard player count: ${beagleBoardPlayerCount}/${room.maxPlayers}`
+  );
+
   if (beagleBoardPlayerCount >= room.maxPlayers) {
+    console.error(
+      `Room ${roomId} is full, cannot add more BeagleBoard players`
+    );
     sendResponseToBeagleBoard('JOIN_ROOM', 'ERROR', 'Room is full', deviceId);
     return;
   }
@@ -505,6 +518,14 @@ const joinBeagleBoardToRoom = (
   console.log(
     `Room ${room.id} now has ${updatedPlayerCount} BeagleBoard players`
   );
+  console.log(
+    `Total players in room: ${room.players.length} (including web admins)`
+  );
+  console.log(
+    `Players in room: ${JSON.stringify(
+      room.players.map((p) => ({ name: p.name, type: p.playerType }))
+    )}`
+  );
 
   // Send success response back to the beagle board
   sendResponseToBeagleBoard(
@@ -514,24 +535,38 @@ const joinBeagleBoardToRoom = (
     deviceId
   );
 
-  // First broadcast the updated room to all clients
-  broadcastToAllClients({
-    event: 'room_updated',
-    payload: { room },
-  });
+  try {
+    // CRITICAL: Update room list first so clients have the latest room counts
+    const updatedRoomList = getRoomList();
+    console.log(
+      `Broadcasting updated room list: ${JSON.stringify(updatedRoomList)}`
+    );
 
-  // Then broadcast the updated room list to all clients
-  // (This ensures the room_list contains the updated player count)
-  const updatedRoomList = getRoomList();
-  broadcastToAllClients({
-    event: 'room_list',
-    payload: {
-      rooms: updatedRoomList,
-    },
-  });
+    broadcastToAllClients({
+      event: 'room_list',
+      payload: {
+        rooms: updatedRoomList,
+      },
+    });
 
-  // Also send the room update to clients in the room
-  sendToRoom(room.id, 'room_updated', { room });
+    // Then broadcast the specific room update to ALL clients
+    console.log(`Broadcasting room update for room ${room.id}`);
+
+    broadcastToAllClients({
+      event: 'room_updated',
+      payload: { room },
+    });
+
+    // Finally send a direct update to clients in the room
+    // This ensures clients in the room get the update even if they missed the broadcast
+    sendToRoom(room.id, 'room_updated', { room });
+
+    console.log(
+      `Successfully broadcast updates for BeagleBoard ${deviceId} joining room ${room.id}`
+    );
+  } catch (error) {
+    console.error(`Error broadcasting room updates: ${error}`);
+  }
 
   console.log(
     `Beagle board ${deviceId} joined room ${room.id} as player ${playerName}`

@@ -25,6 +25,8 @@ declare global {
   interface Window {
     _socket: WebSocket | null;
     _isConnecting: boolean;
+    useRoomStore?: any; // Add this for the store references
+    __NEXT_DATA__?: any; // Add this for Next.js data references
   }
 }
 
@@ -345,11 +347,28 @@ const handleRoomUpdated = (payload: RoomUpdatedPayload): void => {
       return;
     }
 
+    // Log detailed room info for debugging
+    console.log(`Room ${room.id} update: ${room.players.length} players`);
+    console.log(
+      'Players:',
+      JSON.stringify(
+        room.players.map((p) => ({
+          id: p.id,
+          name: p.name,
+          type: p.playerType,
+        }))
+      )
+    );
+
     // Get saved room info
     const savedInfo = getSavedRoomInfo();
     const isInThisRoom = savedInfo.roomId === room.id;
 
-    // If user is in this room, dispatch a custom event
+    // Always dispatch a global event for any room update
+    // This helps components stay in sync regardless of which room they're watching
+    dispatchCustomEvent('global_room_updated', { room });
+
+    // If user is in this room, dispatch a specific room event
     if (isInThisRoom) {
       console.log('Current room updated:', room);
 
@@ -360,16 +379,28 @@ const handleRoomUpdated = (payload: RoomUpdatedPayload): void => {
       });
       window.dispatchEvent(customEvent);
 
-      // Force an immediate update of the UI by directly updating the store
-      // This ensures components reflect the latest changes from BeagleBoard players
-      const currentRoomStore =
-        window.__NEXT_DATA__?.props?.pageProps?.rooms?.find?.(
-          (r: any) => r.id === room.id
-        );
-      if (currentRoomStore) {
-        console.log('Updating room in Next.js store:', room);
-        currentRoomStore.players = room.players;
-        currentRoomStore.status = room.status;
+      // Force a refresh of the UI
+      try {
+        // Try to directly update store if possible
+        if (typeof window !== 'undefined' && window.__NEXT_DATA__) {
+          const currentRoomStore =
+            window.__NEXT_DATA__?.props?.pageProps?.rooms?.find?.(
+              (r: any) => r.id === room.id
+            );
+          if (currentRoomStore) {
+            console.log('Updating room in Next.js store:', room);
+            currentRoomStore.players = room.players;
+            currentRoomStore.status = room.status;
+          }
+        }
+
+        // Try to update using Zustand store if available
+        if (typeof window !== 'undefined' && window.useRoomStore) {
+          console.log('Updating room in Zustand store');
+          window.useRoomStore.setState({ currentRoom: room });
+        }
+      } catch (error) {
+        console.error('Error updating store:', error);
       }
 
       // Dispatch a room data changed event to trigger component updates
@@ -392,11 +423,39 @@ const handleRoomList = (payload: RoomListPayload): void => {
 
     const { rooms } = payload;
 
+    // Log detailed room list for debugging
+    console.log('Room list received:');
+    rooms.forEach((room) => {
+      // Use RoomListItem properties which include playerCount
+      console.log(
+        `Room ${room.id}: ${room.name}, ${(room as any).playerCount}/${
+          room.maxPlayers
+        } players, status: ${room.status}`
+      );
+    });
+
+    // Try to update using Zustand store if available
+    if (typeof window !== 'undefined' && window.useRoomStore) {
+      console.log('Updating availableRooms in Zustand store');
+      window.useRoomStore.setState({ availableRooms: rooms });
+    }
+
     // Dispatch to room store
     const roomListEvent = new CustomEvent('room_list', {
       detail: { rooms },
     });
     window.dispatchEvent(roomListEvent);
+
+    // Force a refresh if in a room to update player counts
+    const savedInfo = getSavedRoomInfo();
+    if (savedInfo.roomId) {
+      const currentRoom = rooms.find((r) => r.id === savedInfo.roomId);
+      if (currentRoom) {
+        // Force a refresh of room data
+        dispatchCustomEvent('room_list_updated', { rooms });
+        window.dispatchEvent(new Event('room_data_changed'));
+      }
+    }
   } catch (error) {
     console.error('Error handling room_list event:', error);
   }

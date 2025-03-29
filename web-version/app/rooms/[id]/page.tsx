@@ -103,7 +103,39 @@ export default function RoomPage() {
     };
   }, [currentRoom, leaveRoom]);
 
-  // Listen for room updates from BeagleBoard joins
+  // Add this effect to periodically refresh room data
+  useEffect(() => {
+    // Set up an interval to refresh room data every few seconds
+    // This ensures that even if we miss any updates, we'll eventually get the latest state
+    const refreshInterval = setInterval(() => {
+      if (currentRoom) {
+        console.log('Periodic room refresh');
+        useRoomStore.getState().fetchRooms();
+      }
+    }, 5000); // Refresh every 5 seconds while in the room
+
+    // Listen for global BeagleBoard events
+    const handleBeagleBoardCommand = () => {
+      console.log('BeagleBoard command received, refreshing room data');
+      // Force refresh on any BeagleBoard activity
+      useRoomStore.getState().fetchRooms();
+    };
+
+    window.addEventListener(
+      'beagle_board_command',
+      handleBeagleBoardCommand as EventListener
+    );
+
+    return () => {
+      clearInterval(refreshInterval);
+      window.removeEventListener(
+        'beagle_board_command',
+        handleBeagleBoardCommand as EventListener
+      );
+    };
+  }, [currentRoom]);
+
+  // Make the existing room updated handler more robust
   useEffect(() => {
     const handleRoomUpdated = (event: CustomEvent) => {
       const { room } = event.detail || {};
@@ -112,31 +144,43 @@ export default function RoomPage() {
       if (room && room.id === roomId) {
         console.log('Room update received for current room:', room);
 
-        // Force refresh room data to ensure we see the latest state
-        useRoomStore.getState().fetchRooms();
-
-        // Directly update the current room in the store
-        // This ensures immediate UI updates without waiting for the fetch to complete
+        // Immediately update current room in the store
         useRoomStore.setState({ currentRoom: room });
 
-        // Trigger UI refresh
+        // Also refresh the rooms list to ensure consistent state
+        useRoomStore.getState().fetchRooms();
+
+        // Force UI refresh
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('room_data_changed'));
         }
       }
     };
 
-    // Add an immediate check for possible missed updates
-    setTimeout(() => {
-      // Force a refresh of room data after component mount
-      useRoomStore.getState().fetchRooms();
-    }, 500);
+    // Add an immediate refresh on mount
+    useRoomStore.getState().fetchRooms();
 
     window.addEventListener('room_updated', handleRoomUpdated as EventListener);
+
+    // Also listen for global room updates (added in our websocket handler)
+    window.addEventListener(
+      'global_room_updated',
+      handleRoomUpdated as EventListener
+    );
+
+    // Also listen for room list updates
+    window.addEventListener('room_list_updated', () => {
+      console.log('Room list updated, refreshing current room');
+      useRoomStore.getState().fetchRooms();
+    });
 
     return () => {
       window.removeEventListener(
         'room_updated',
+        handleRoomUpdated as EventListener
+      );
+      window.removeEventListener(
+        'global_room_updated',
         handleRoomUpdated as EventListener
       );
     };
