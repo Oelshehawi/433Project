@@ -136,6 +136,39 @@ export default function RoomPage() {
     };
   }, [roomId, currentRoom]);
 
+  // Add this effect to listen for manual room updates
+  useEffect(() => {
+    const handleManualRoomUpdate = (event: CustomEvent) => {
+      const { room } = event.detail || {};
+
+      // If this update is for our room
+      if (room && room.id === roomId) {
+        console.log("Manual room update received:", room);
+
+        // Force refresh room data
+        useRoomStore.getState().fetchRooms();
+
+        // If in a room component, we can directly update our local state
+        if (typeof window !== "undefined") {
+          // This will trigger a full page refresh if needed
+          window.dispatchEvent(new Event("room_data_changed"));
+        }
+      }
+    };
+
+    window.addEventListener(
+      "manual_room_update",
+      handleManualRoomUpdate as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        "manual_room_update",
+        handleManualRoomUpdate as EventListener
+      );
+    };
+  }, [roomId]);
+
   const handleLeaveRoom = async () => {
     console.log("Leaving room...");
 
@@ -250,114 +283,124 @@ export default function RoomPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-8">
-      <motion.div
-        className="bg-background/20 backdrop-blur-md rounded-xl p-8 w-full max-w-2xl"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <h1 className="game-title text-3xl font-bold mb-6 text-center">
-          Room: {currentRoom.name}
-        </h1>
+      <div className="bg-black/30 backdrop-blur-sm rounded-lg p-6 w-full max-w-4xl border border-white/10">
+        <motion.div
+          className="flex flex-col gap-4"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
+            <div>
+              <h1 className="game-title text-3xl font-bold">
+                {currentRoom.name}
+              </h1>
+              <p className="text-foreground/70">
+                Room ID: <span className="font-mono">{currentRoom.id}</span>
+              </p>
+            </div>
 
-        <div className="mb-8">
-          <h2 className="text-xl font-bold mb-2">Players</h2>
-          <div className="space-y-2">
-            {currentRoom.players.map((player: Player) => (
-              <div
-                key={player.id}
-                className="flex items-center justify-between bg-background/30 p-3 rounded-lg"
-              >
-                <div className="flex items-center">
-                  <div
-                    className={`w-3 h-3 rounded-full mr-2 ${
-                      player.connected ? "bg-success" : "bg-danger"
-                    }`}
-                  ></div>
-                  <span>{player.name}</span>
-                  {currentRoom.hostId === player.id && (
-                    <span className="ml-2 text-xs bg-accent text-white px-2 py-0.5 rounded">
-                      Host
-                    </span>
-                  )}
-                  {/* Add label for BeagleBoard players vs Admin */}
-                  {player.id.startsWith("admin-") ? (
-                    <span className="ml-2 text-xs bg-purple-600 text-white px-2 py-0.5 rounded">
-                      Admin
-                    </span>
-                  ) : (
-                    <span className="ml-2 text-xs bg-orange-600 text-white px-2 py-0.5 rounded">
-                      BeagleBoard
-                    </span>
-                  )}
-                </div>
-                <div
-                  className={`px-3 py-1 rounded text-sm ${
-                    player.isReady
-                      ? "bg-success/20 text-success"
-                      : "bg-danger/20 text-danger"
-                  }`}
-                >
-                  {player.isReady ? "Ready" : "Not Ready"}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-col space-y-3">
-          {/* Current player actions */}
-          <div className="flex space-x-3">
-            {/* Only show Ready button for BeagleBoard players (not for web admin) */}
-            {!isWebAdmin() && (
-              <button
-                className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg"
-                onClick={handleToggleReady}
-              >
-                {currentPlayer?.isReady ? "Not Ready" : "Ready Up"}
-              </button>
-            )}
-
-            <button
-              className="flex-1 bg-danger hover:bg-danger/80 text-white font-bold py-2 px-4 rounded-lg"
+            <motion.button
+              className="mt-2 md:mt-0 px-4 py-2 bg-danger text-white rounded-md shadow-md"
               onClick={handleLeaveRoom}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
             >
               Leave Room
-            </button>
+            </motion.button>
           </div>
 
-          {/* Host-only actions */}
-          {isHost && (
-            <button
-              className={`w-full font-bold py-2 px-4 rounded-lg ${
-                canStartGame
-                  ? "bg-success hover:bg-success/80 text-white"
-                  : "bg-gray-500 cursor-not-allowed text-white/50"
-              }`}
-              onClick={handleStartGame}
-              disabled={!canStartGame}
-            >
-              Start Game
-            </button>
+          <div className="bg-black/40 rounded-md p-4 mb-4">
+            <h2 className="text-lg font-semibold mb-2">Players</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {/* Filter to only show BeagleBoard players */}
+              {currentRoom.players
+                .filter((player) => player.playerType === "beagleboard")
+                .map((player) => (
+                  <div
+                    key={player.id}
+                    className="flex items-center justify-between p-3 rounded-md border border-white/10 bg-black/20"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-3 h-3 rounded-full ${
+                          player.connected ? "bg-green-500" : "bg-gray-500"
+                        }`}
+                      />
+                      <span>
+                        {player.name}
+                        {currentRoom.hostId === player.id && " (Host)"}
+                      </span>
+                    </div>
+                    <div
+                      className={`px-2 py-1 text-sm rounded ${
+                        player.isReady
+                          ? "bg-green-800/70 text-green-200"
+                          : "bg-gray-700/50 text-gray-300"
+                      }`}
+                    >
+                      {player.isReady ? "Ready" : "Not Ready"}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col space-y-3">
+            {/* Current player actions */}
+            <div className="flex space-x-3">
+              {/* Only show Ready button for BeagleBoard players (not for web admin) */}
+              {!isWebAdmin() && (
+                <button
+                  className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg"
+                  onClick={handleToggleReady}
+                >
+                  {currentPlayer?.isReady ? "Not Ready" : "Ready Up"}
+                </button>
+              )}
+
+              <button
+                className="flex-1 bg-danger hover:bg-danger/80 text-white font-bold py-2 px-4 rounded-lg"
+                onClick={handleLeaveRoom}
+              >
+                Leave Room
+              </button>
+            </div>
+
+            {/* Host-only actions */}
+            {isHost && (
+              <button
+                className={`w-full font-bold py-2 px-4 rounded-lg ${
+                  canStartGame
+                    ? "bg-success hover:bg-success/80 text-white"
+                    : "bg-gray-500 cursor-not-allowed text-white/50"
+                }`}
+                onClick={handleStartGame}
+                disabled={!canStartGame}
+              >
+                Start Game
+              </button>
+            )}
+          </div>
+
+          {/* Room info */}
+          <div className="mt-6 text-sm text-white/70">
+            <p>Room ID: {currentRoom.id}</p>
+            <p>Status: {currentRoom.status}</p>
+            <p>
+              Players: {currentRoom.players.length}/{currentRoom.maxPlayers}
+            </p>
+          </div>
+
+          {/* Error message */}
+          {error && (
+            <div className="bg-danger/20 text-danger p-3 rounded-md mt-4">
+              {error}
+            </div>
           )}
-        </div>
-
-        {/* Room info */}
-        <div className="mt-6 text-sm text-white/70">
-          <p>Room ID: {currentRoom.id}</p>
-          <p>Status: {currentRoom.status}</p>
-          <p>
-            Players: {currentRoom.players.length}/{currentRoom.maxPlayers}
-          </p>
-        </div>
-
-        {/* Error message */}
-        {error && (
-          <div className="bg-danger/20 text-danger p-3 rounded-md mt-4">
-            {error}
-          </div>
-        )}
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 }

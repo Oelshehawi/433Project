@@ -66,7 +66,13 @@ const tcpServer = net.createServer((socket) => {
     buffer = messages.pop() || ""; // Keep the last incomplete message in the buffer
 
     messages.forEach((message) => {
-      if (message.trim()) {
+      if (
+        message.trim() &&
+        !message.startsWith("HEAD") &&
+        !message.startsWith("Host:") &&
+        !message.startsWith("User-Agent:")
+      ) {
+        // Only log meaningful messages, not HTTP headers
         console.log(`Received from BeagleBoard: ${message}`);
         handleBeagleBoardMessage(message, socket);
       }
@@ -462,8 +468,11 @@ const joinBeagleBoardToRoom = (
     return;
   }
 
-  // Check if room is full
-  if (room.players.length >= room.maxPlayers) {
+  // Check if room is full (only counting BeagleBoard players)
+  if (
+    room.players.filter((p) => p.playerType === "beagleboard").length >=
+    room.maxPlayers
+  ) {
     sendResponseToBeagleBoard("JOIN_ROOM", "ERROR", "Room is full", deviceId);
     return;
   }
@@ -477,7 +486,7 @@ const joinBeagleBoardToRoom = (
     name: playerName,
     isReady: false,
     connected: true,
-    playerType: "beagleboard",
+    playerType: "beagleboard", // Mark as BeagleBoard player
   };
 
   room.players.push(newPlayer);

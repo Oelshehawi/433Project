@@ -111,6 +111,8 @@ export const initializeSocket = (
           // Handle different event types - Updated to use event instead of type
           if (data.event === "room_updated") {
             handleRoomUpdated(data.payload);
+            // Dispatch a custom event to notify components about a room update
+            dispatchCustomEvent("manual_room_update", data.payload);
           } else if (data.event === "room_list") {
             handleRoomList(data.payload);
           } else if (data.event === "player_ready") {
@@ -480,4 +482,13 @@ export const logConnectionDetails = (): void => {
 
   const savedInfo = getSavedRoomInfo();
   console.log("Saved room info:", savedInfo);
+};
+
+// Helper to dispatch custom events
+const dispatchCustomEvent = (eventName: string, detail: any): void => {
+  if (typeof window !== "undefined") {
+    const event = new CustomEvent(eventName, { detail });
+    window.dispatchEvent(event);
+    console.log(`Dispatched custom event: ${eventName}`, detail);
+  }
 };
