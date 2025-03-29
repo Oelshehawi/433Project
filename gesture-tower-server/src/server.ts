@@ -1,10 +1,10 @@
-import http from "http";
-import express from "express";
-import WebSocket from "ws";
-import { v4 as uuidv4 } from "uuid";
-import net from "net";
-import cors from "cors";
-import dotenv from "dotenv";
+import http from 'http';
+import express from 'express';
+import WebSocket from 'ws';
+import { v4 as uuidv4 } from 'uuid';
+import net from 'net';
+import cors from 'cors';
+import dotenv from 'dotenv';
 import {
   ExtendedWebSocket,
   Room,
@@ -23,7 +23,7 @@ import {
   UdpMessagePayload,
   BeagleBoardCommandPayload,
   BeagleBoardsMap,
-} from "./types";
+} from './types';
 
 // Load environment variables
 dotenv.config();
@@ -34,8 +34,8 @@ const app = express();
 // Enable CORS for Vercel frontend
 app.use(
   cors({
-    origin: "https://433-project.vercel.app",
-    methods: ["GET", "POST"],
+    origin: 'https://433-project.vercel.app',
+    methods: ['GET', 'POST'],
     credentials: true,
   })
 );
@@ -54,23 +54,21 @@ const beagleBoards: BeagleBoardsMap = new Map();
 
 // Create TCP server for BeagleBoard communication
 const tcpServer = net.createServer((socket) => {
-  console.log("BeagleBoard connected");
+  let buffer = '';
 
-  let buffer = "";
-
-  socket.on("data", (data) => {
+  socket.on('data', (data) => {
     buffer += data.toString();
 
     // Process complete messages (separated by newlines)
-    const messages = buffer.split("\n");
-    buffer = messages.pop() || ""; // Keep the last incomplete message in the buffer
+    const messages = buffer.split('\n');
+    buffer = messages.pop() || ''; // Keep the last incomplete message in the buffer
 
     messages.forEach((message) => {
       if (
         message.trim() &&
-        !message.startsWith("HEAD") &&
-        !message.startsWith("Host:") &&
-        !message.startsWith("User-Agent:")
+        !message.startsWith('HEAD') &&
+        !message.startsWith('Host:') &&
+        !message.startsWith('User-Agent:')
       ) {
         // Only log meaningful messages, not HTTP headers
         console.log(`Received from BeagleBoard: ${message}`);
@@ -79,12 +77,11 @@ const tcpServer = net.createServer((socket) => {
     });
   });
 
-  socket.on("error", (err) => {
-    console.error("BeagleBoard socket error:", err);
+  socket.on('error', (err) => {
+    console.error('BeagleBoard socket error:', err);
   });
 
-  socket.on("close", () => {
-    console.log("BeagleBoard disconnected");
+  socket.on('close', () => {
     // Remove from beagleBoards map
     for (const [deviceId, board] of beagleBoards.entries()) {
       if (board.socket === socket) {
@@ -131,7 +128,7 @@ const handleBeagleBoardMessage = (message: string, socket: net.Socket) => {
 
       // Broadcast the command to all web clients
       broadcastToAllClients({
-        event: "beagle_board_command",
+        event: 'beagle_board_command',
         payload: {
           message,
           sender: deviceId,
@@ -143,7 +140,7 @@ const handleBeagleBoardMessage = (message: string, socket: net.Socket) => {
       processBeagleBoardCommandForWebClients(command, deviceId, message);
     }
     // Check if it's a gesture message
-    else if (message.startsWith("GESTURE|")) {
+    else if (message.startsWith('GESTURE|')) {
       const gestureResult = parseGestureMessage(message);
       if (gestureResult) {
         const { deviceId, roomId, gestureData } = gestureResult;
@@ -151,12 +148,12 @@ const handleBeagleBoardMessage = (message: string, socket: net.Socket) => {
       }
     }
   } catch (error) {
-    console.error("Error handling BeagleBoard message:", error);
+    console.error('Error handling BeagleBoard message:', error);
   }
 };
 
 // Start TCP server
-tcpServer.listen(TCP_PORT, "0.0.0.0", () => {
+tcpServer.listen(TCP_PORT, '0.0.0.0', () => {
   console.log(`TCP server listening on port ${TCP_PORT}`);
 });
 
@@ -165,26 +162,17 @@ const clients: Map<string, ExtendedWebSocket> = new Map();
 
 // Generate room list for clients
 const getRoomList = (): RoomListItem[] => {
-  console.log(
-    Array.from(rooms.values()).map((room) => ({
-      id: room.id,
-      name: room.name,
-      playerCount: room.players.filter(
-        (player) => player.playerType === "beagleboard"
-      ).length,
-      maxPlayers: room.maxPlayers,
-      status: room.status,
-    }))
-  );
-  return Array.from(rooms.values()).map((room) => ({
+  const roomList = Array.from(rooms.values()).map((room) => ({
     id: room.id,
     name: room.name,
-    playerCount: room.players.filter(
-      (player) => player.playerType === "beagleboard"
-    ).length,
+    // Count all players, not just BeagleBoard players for display
+    playerCount: room.players.length,
     maxPlayers: room.maxPlayers,
     status: room.status,
   }));
+
+  console.log(roomList);
+  return roomList;
 };
 
 // Send message to a specific client
@@ -236,20 +224,20 @@ const parseBeagleBoardCommand = (
   params: Record<string, string>;
 } | null => {
   try {
-    if (!message.startsWith("CMD:")) {
+    if (!message.startsWith('CMD:')) {
       return null;
     }
 
-    const parts = message.split("|");
-    const cmdPart = parts[0].split(":");
+    const parts = message.split('|');
+    const cmdPart = parts[0].split(':');
     const command = cmdPart[1];
 
-    const deviceIdPart = parts[1].split(":");
+    const deviceIdPart = parts[1].split(':');
     const deviceId = deviceIdPart[1];
 
     const params: Record<string, string> = {};
     for (let i = 2; i < parts.length; i++) {
-      const param = parts[i].split(":");
+      const param = parts[i].split(':');
       if (param.length === 2) {
         params[param[0]] = param[1];
       }
@@ -257,7 +245,7 @@ const parseBeagleBoardCommand = (
 
     return { command, deviceId, params };
   } catch (error) {
-    console.error("Error parsing Beagle board command:", error);
+    console.error('Error parsing Beagle board command:', error);
     return null;
   }
 };
@@ -267,23 +255,23 @@ const parseGestureMessage = (
   message: string
 ): { deviceId: string; roomId: string; gestureData: string } | null => {
   try {
-    if (!message.startsWith("GESTURE|")) {
+    if (!message.startsWith('GESTURE|')) {
       return null;
     }
 
-    const parts = message.split("|");
-    const deviceIdPart = parts[1].split(":");
+    const parts = message.split('|');
+    const deviceIdPart = parts[1].split(':');
     const deviceId = deviceIdPart[1];
 
-    const roomIdPart = parts[2].split(":");
+    const roomIdPart = parts[2].split(':');
     const roomId = roomIdPart[1];
 
     // Extract the gesture data (everything after the third pipe)
-    const gestureData = parts.slice(3).join("|");
+    const gestureData = parts.slice(3).join('|');
 
     return { deviceId, roomId, gestureData };
   } catch (error) {
-    console.error("Error parsing gesture message:", error);
+    console.error('Error parsing gesture message:', error);
     return null;
   }
 };
@@ -297,27 +285,27 @@ const handleBeagleBoardCommand = (
   console.log(`Received command ${command} from device ${deviceId}`);
 
   switch (command) {
-    case "LIST_ROOMS":
+    case 'LIST_ROOMS':
       // Send room list to the Beagle board
       sendRoomListToBeagleBoard(deviceId);
       break;
 
-    case "JOIN_ROOM":
+    case 'JOIN_ROOM':
       // Join the Beagle board to a room
       const { RoomID, PlayerName } = params;
       if (RoomID && PlayerName) {
         joinBeagleBoardToRoom(deviceId, RoomID, PlayerName);
       } else {
         sendResponseToBeagleBoard(
-          "JOIN_ROOM",
-          "ERROR",
-          "Missing RoomID or PlayerName",
+          'JOIN_ROOM',
+          'ERROR',
+          'Missing RoomID or PlayerName',
           deviceId
         );
       }
       break;
 
-    case "LEAVE_ROOM":
+    case 'LEAVE_ROOM':
       // Remove the Beagle board from a room
       if (beagleBoards.has(deviceId)) {
         const board = beagleBoards.get(deviceId)!;
@@ -325,43 +313,43 @@ const handleBeagleBoardCommand = (
           leaveBeagleBoardFromRoom(deviceId, board.roomId);
         } else {
           sendResponseToBeagleBoard(
-            "LEAVE_ROOM",
-            "ERROR",
-            "Not in a room",
+            'LEAVE_ROOM',
+            'ERROR',
+            'Not in a room',
             deviceId
           );
         }
       } else {
         sendResponseToBeagleBoard(
-          "LEAVE_ROOM",
-          "ERROR",
-          "Device not registered",
+          'LEAVE_ROOM',
+          'ERROR',
+          'Device not registered',
           deviceId
         );
       }
       break;
 
-    case "SET_READY":
+    case 'SET_READY':
       // Set the BeagleBoard player ready status
       const { Ready } = params;
       if (beagleBoards.has(deviceId)) {
         const board = beagleBoards.get(deviceId)!;
         if (board.roomId) {
-          const isReady = Ready === "true" || Ready === "1";
+          const isReady = Ready === 'true' || Ready === '1';
           setBeagleBoardReady(deviceId, board.roomId, isReady);
         } else {
           sendResponseToBeagleBoard(
-            "SET_READY",
-            "ERROR",
-            "Not in a room",
+            'SET_READY',
+            'ERROR',
+            'Not in a room',
             deviceId
           );
         }
       } else {
         sendResponseToBeagleBoard(
-          "SET_READY",
-          "ERROR",
-          "Device not registered",
+          'SET_READY',
+          'ERROR',
+          'Device not registered',
           deviceId
         );
       }
@@ -370,7 +358,7 @@ const handleBeagleBoardCommand = (
     default:
       sendResponseToBeagleBoard(
         command,
-        "ERROR",
+        'ERROR',
         `Unknown command: ${command}`,
         deviceId
       );
@@ -421,13 +409,13 @@ const handleGestureData = (
     };
 
     // Send the gesture event to all clients in the room
-    sendToRoom(roomId, "gesture_event", payload);
+    sendToRoom(roomId, 'gesture_event', payload);
 
     console.log(
       `Processed gesture ${gestureJson.gesture} from device ${deviceId} in room ${roomId}`
     );
   } catch (error) {
-    console.error("Error handling gesture data:", error);
+    console.error('Error handling gesture data:', error);
   }
 };
 
@@ -444,7 +432,7 @@ const sendRoomListToBeagleBoard = (deviceId: string) => {
   console.log(`Sending response to device ${deviceId}:`, response);
 
   // Send the response back to the beagle board
-  sendResponseToBeagleBoard("LIST_ROOMS", "SUCCESS", response, deviceId);
+  sendResponseToBeagleBoard('LIST_ROOMS', 'SUCCESS', response, deviceId);
 };
 
 // Function to join a Beagle board to a room
@@ -460,20 +448,17 @@ const joinBeagleBoardToRoom = (
 
   if (!room) {
     sendResponseToBeagleBoard(
-      "JOIN_ROOM",
-      "ERROR",
+      'JOIN_ROOM',
+      'ERROR',
       `Room ${roomId} not found`,
       deviceId
     );
     return;
   }
 
-  // Check if room is full (only counting BeagleBoard players)
-  if (
-    room.players.filter((p) => p.playerType === "beagleboard").length >=
-    room.maxPlayers
-  ) {
-    sendResponseToBeagleBoard("JOIN_ROOM", "ERROR", "Room is full", deviceId);
+  // Check if room is full (count all players, not just BeagleBoard players)
+  if (room.players.length >= room.maxPlayers) {
+    sendResponseToBeagleBoard('JOIN_ROOM', 'ERROR', 'Room is full', deviceId);
     return;
   }
 
@@ -486,7 +471,7 @@ const joinBeagleBoardToRoom = (
     name: playerName,
     isReady: false,
     connected: true,
-    playerType: "beagleboard", // Mark as BeagleBoard player
+    playerType: 'beagleboard', // Mark as BeagleBoard player
   };
 
   room.players.push(newPlayer);
@@ -501,24 +486,24 @@ const joinBeagleBoardToRoom = (
 
   // Send success response back to the beagle board
   sendResponseToBeagleBoard(
-    "JOIN_ROOM",
-    "SUCCESS",
+    'JOIN_ROOM',
+    'SUCCESS',
     `Joined room ${room.id} successfully`,
     deviceId
   );
 
   // Notify all clients about the room update
-  sendToRoom(room.id, "room_updated", { room });
+  sendToRoom(room.id, 'room_updated', { room });
 
   // Also broadcast room_updated to ALL clients for better state synchronization
   broadcastToAllClients({
-    event: "room_updated",
+    event: 'room_updated',
     payload: { room },
   });
 
   // Also broadcast updated room list to ALL clients
   broadcastToAllClients({
-    event: "room_list",
+    event: 'room_list',
     payload: {
       rooms: getRoomList(),
     },
@@ -533,8 +518,8 @@ const joinBeagleBoardToRoom = (
 const leaveBeagleBoardFromRoom = (deviceId: string, roomId: string) => {
   if (!rooms.has(roomId)) {
     sendResponseToBeagleBoard(
-      "LEAVE_ROOM",
-      "ERROR",
+      'LEAVE_ROOM',
+      'ERROR',
       `Room ${roomId} not found`,
       deviceId
     );
@@ -546,9 +531,9 @@ const leaveBeagleBoardFromRoom = (deviceId: string, roomId: string) => {
 
   if (!board || !board.playerName) {
     sendResponseToBeagleBoard(
-      "LEAVE_ROOM",
-      "ERROR",
-      "Device not properly registered",
+      'LEAVE_ROOM',
+      'ERROR',
+      'Device not properly registered',
       deviceId
     );
     return;
@@ -561,8 +546,8 @@ const leaveBeagleBoardFromRoom = (deviceId: string, roomId: string) => {
 
   if (playerIndex === -1) {
     sendResponseToBeagleBoard(
-      "LEAVE_ROOM",
-      "ERROR",
+      'LEAVE_ROOM',
+      'ERROR',
       `Player ${board.playerName} not found in room`,
       deviceId
     );
@@ -581,12 +566,12 @@ const leaveBeagleBoardFromRoom = (deviceId: string, roomId: string) => {
     console.log(`Room ${roomId} removed as it's now empty`);
   } else {
     // Update room for all clients
-    sendToRoom(roomId, "room_updated", { room });
+    sendToRoom(roomId, 'room_updated', { room });
   }
 
   // Update room list for all clients
   broadcastToAllClients({
-    event: "room_list",
+    event: 'room_list',
     payload: {
       rooms: getRoomList(),
     },
@@ -594,8 +579,8 @@ const leaveBeagleBoardFromRoom = (deviceId: string, roomId: string) => {
 
   // Send success response to Beagle board
   sendResponseToBeagleBoard(
-    "LEAVE_ROOM",
-    "SUCCESS",
+    'LEAVE_ROOM',
+    'SUCCESS',
     `Left room ${roomId}`,
     deviceId
   );
@@ -610,8 +595,8 @@ const setBeagleBoardReady = (
   // Check if room exists
   if (!rooms.has(roomId)) {
     sendResponseToBeagleBoard(
-      "SET_READY",
-      "ERROR",
+      'SET_READY',
+      'ERROR',
       `Room ${roomId} not found`,
       deviceId
     );
@@ -626,8 +611,8 @@ const setBeagleBoardReady = (
 
   if (!player) {
     sendResponseToBeagleBoard(
-      "SET_READY",
-      "ERROR",
+      'SET_READY',
+      'ERROR',
       `Player ${board.playerName} not found in room`,
       deviceId
     );
@@ -639,24 +624,24 @@ const setBeagleBoardReady = (
 
   // Send success response to BeagleBoard
   sendResponseToBeagleBoard(
-    "SET_READY",
-    "SUCCESS",
-    `Player is now ${isReady ? "ready" : "not ready"}`,
+    'SET_READY',
+    'SUCCESS',
+    `Player is now ${isReady ? 'ready' : 'not ready'}`,
     deviceId
   );
 
   // Notify all clients about the room update
-  sendToRoom(roomId, "room_updated", { room });
+  sendToRoom(roomId, 'room_updated', { room });
 
   // Also broadcast room_updated to ALL clients for better state synchronization
   broadcastToAllClients({
-    event: "room_updated",
+    event: 'room_updated',
     payload: { room },
   });
 
   console.log(
     `Beagle board ${deviceId} (${board.playerName}) in room ${roomId} is now ${
-      isReady ? "ready" : "not ready"
+      isReady ? 'ready' : 'not ready'
     }`
   );
 };
@@ -667,14 +652,29 @@ const processBeagleBoardCommandForWebClients = (
   deviceId: string,
   message: string
 ): void => {
-  // For join/leave room commands, broadcast an updated room list
-  if (command === "JOIN_ROOM" || command === "LEAVE_ROOM") {
-    broadcastToAllClients({
-      event: "room_list",
-      payload: {
-        rooms: getRoomList(),
-      },
-    });
+  // For any BeagleBoard commands, broadcast an updated room list
+  // This ensures that the room list is always up to date
+  broadcastToAllClients({
+    event: 'room_list',
+    payload: {
+      rooms: getRoomList(),
+    },
+  });
+
+  // If the command affects specific rooms, update those rooms individually
+  if (
+    command === 'JOIN_ROOM' ||
+    command === 'LEAVE_ROOM' ||
+    command === 'SET_READY'
+  ) {
+    const board = beagleBoards.get(deviceId);
+    if (board && board.roomId && rooms.has(board.roomId)) {
+      const room = rooms.get(board.roomId)!;
+      broadcastToAllClients({
+        event: 'room_updated',
+        payload: { room },
+      });
+    }
   }
 };
 
@@ -688,25 +688,25 @@ const handleMessage = (
   console.log(`Received event: ${event}`);
 
   switch (event as ClientEventType) {
-    case "create_room":
+    case 'create_room':
       handleCreateRoom(client, payload);
       break;
-    case "join_room":
+    case 'join_room':
       handleJoinRoom(client, payload);
       break;
-    case "leave_room":
+    case 'leave_room':
       handleLeaveRoom(client, payload);
       break;
-    case "player_ready":
+    case 'player_ready':
       handlePlayerReady(client, payload);
       break;
-    case "game_started":
+    case 'game_started':
       handleGameStart(client, payload);
       break;
-    case "gesture_event":
+    case 'gesture_event':
       handleGestureEvent(client, payload);
       break;
-    case "room_list":
+    case 'room_list':
       handleRoomList(client);
       break;
     default:
@@ -716,7 +716,7 @@ const handleMessage = (
 };
 
 // Set up WebSocket connection handler
-wss.on("connection", (ws: WebSocket) => {
+wss.on('connection', (ws: WebSocket) => {
   // Create extended client with custom properties
   const client = ws as ExtendedWebSocket;
   client.id = uuidv4();
@@ -728,22 +728,22 @@ wss.on("connection", (ws: WebSocket) => {
   console.log(`Client connected: ${client.id}`);
 
   // Set up ping/pong for connection health check
-  client.on("pong", () => {
+  client.on('pong', () => {
     client.isAlive = true;
   });
 
   // Handle incoming messages
-  client.on("message", (data: WebSocket.Data) => {
+  client.on('message', (data: WebSocket.Data) => {
     try {
       const message = JSON.parse(data.toString()) as WebSocketMessage;
       handleMessage(client, message);
     } catch (error) {
-      console.error("Error parsing message:", error);
+      console.error('Error parsing message:', error);
     }
   });
 
   // Handle client disconnection
-  client.on("close", () => {
+  client.on('close', () => {
     console.log(`Client disconnected: ${client.id}`);
 
     // If client was in a room, handle leaving
@@ -781,19 +781,19 @@ const interval = setInterval(() => {
 }, 30000);
 
 // Clean up interval on server close
-wss.on("close", () => {
+wss.on('close', () => {
   clearInterval(interval);
 });
 
 // Add a basic route for health check
-app.get("/", (req, res) => {
-  res.send("Gesture Tower WebSocket Server is running");
+app.get('/', (req, res) => {
+  res.send('Gesture Tower WebSocket Server is running');
 });
 
 // Add a health check endpoint for monitoring
-app.get("/health", (req, res) => {
+app.get('/health', (req, res) => {
   res.status(200).json({
-    status: "UP",
+    status: 'UP',
     timestamp: new Date().toISOString(),
     connections: {
       websocket: wss.clients.size,
@@ -804,8 +804,8 @@ app.get("/health", (req, res) => {
 });
 
 // Start the server
-const PORT = parseInt(process.env.PORT || "8080", 10);
-const HOST = "0.0.0.0"; // Listen on all network interfaces by default
+const PORT = parseInt(process.env.PORT || '8080', 10);
+const HOST = '0.0.0.0'; // Listen on all network interfaces by default
 
 server.listen(PORT, HOST, () => {
   console.log(`Server is running on ${HOST}:${PORT}`);
@@ -814,28 +814,28 @@ server.listen(PORT, HOST, () => {
 });
 
 // Handle graceful shutdown
-process.on("SIGTERM", () => {
-  console.log("SIGTERM signal received: shutting down...");
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: shutting down...');
 
   // Close WebSocket server
   wss.close(() => {
-    console.log("WebSocket server closed");
+    console.log('WebSocket server closed');
   });
 
   // Close TCP server
   tcpServer.close(() => {
-    console.log("TCP server closed");
+    console.log('TCP server closed');
   });
 
   // Close HTTP server
   server.close(() => {
-    console.log("HTTP server closed");
+    console.log('HTTP server closed');
     process.exit(0);
   });
 
   // Force exit after 10 seconds if graceful shutdown fails
   setTimeout(() => {
-    console.error("Forced shutdown after timeout");
+    console.error('Forced shutdown after timeout');
     process.exit(1);
   }, 10000);
 });
@@ -850,22 +850,22 @@ const handleCreateRoom = (
 
     // Validate data
     if (!room) {
-      return sendToClient(client, "error", {
-        error: "Missing required data",
+      return sendToClient(client, 'error', {
+        error: 'Missing required data',
       } as ErrorPayload);
     }
 
     // Validate room data
     if (!room || !room.id || !room.name) {
-      return sendToClient(client, "error", {
-        error: "Invalid room data",
+      return sendToClient(client, 'error', {
+        error: 'Invalid room data',
       } as ErrorPayload);
     }
 
     // Check if room already exists
     if (rooms.has(room.id)) {
-      return sendToClient(client, "error", {
-        error: "Room already exists",
+      return sendToClient(client, 'error', {
+        error: 'Room already exists',
       } as ErrorPayload);
     }
 
@@ -873,14 +873,14 @@ const handleCreateRoom = (
     const newRoom: Room = {
       ...room,
       createdAt: Date.now(),
-      status: "waiting",
+      status: 'waiting',
       players: room.players || [], // Use empty array if no players provided
     };
 
     // Make sure all players have the playerType field set
     newRoom.players.forEach((player) => {
       if (!player.playerType) {
-        player.playerType = "webadmin"; // Assume any existing players are web admins
+        player.playerType = 'webadmin'; // Assume any existing players are web admins
       }
     });
 
@@ -890,19 +890,19 @@ const handleCreateRoom = (
     console.log(`Room created: ${newRoom.id} - ${newRoom.name}`);
 
     // Notify the client
-    sendToClient(client, "room_updated", { room: newRoom });
+    sendToClient(client, 'room_updated', { room: newRoom });
 
     // Update room list for all clients
     broadcastToAllClients({
-      event: "room_list",
+      event: 'room_list',
       payload: {
         rooms: getRoomList(),
       },
     });
   } catch (error) {
-    console.error("Error creating room:", error);
-    sendToClient(client, "error", {
-      error: "Failed to create room",
+    console.error('Error creating room:', error);
+    sendToClient(client, 'error', {
+      error: 'Failed to create room',
     } as ErrorPayload);
   }
 };
@@ -917,8 +917,8 @@ const handleJoinRoom = (
 
     // Validate data
     if (!roomId || !playerId || !playerName) {
-      return sendToClient(client, "error", {
-        error: "Missing required data",
+      return sendToClient(client, 'error', {
+        error: 'Missing required data',
       } as ErrorPayload);
     }
 
@@ -929,8 +929,8 @@ const handleJoinRoom = (
 
     // Check if room exists
     if (!rooms.has(roomId)) {
-      return sendToClient(client, "error", {
-        error: "Room not found",
+      return sendToClient(client, 'error', {
+        error: 'Room not found',
       } as ErrorPayload);
     }
 
@@ -938,15 +938,15 @@ const handleJoinRoom = (
 
     // Check if room is full
     if (room.players.length >= room.maxPlayers) {
-      return sendToClient(client, "error", {
-        error: "Room is full",
+      return sendToClient(client, 'error', {
+        error: 'Room is full',
       } as ErrorPayload);
     }
 
     // Check if room is already playing
-    if (room.status === "playing") {
-      return sendToClient(client, "error", {
-        error: "Game is already in progress",
+    if (room.status === 'playing') {
+      return sendToClient(client, 'error', {
+        error: 'Game is already in progress',
       } as ErrorPayload);
     }
 
@@ -956,7 +956,7 @@ const handleJoinRoom = (
       name: playerName,
       isReady: false,
       connected: true,
-      playerType: "webadmin",
+      playerType: 'webadmin',
     };
 
     room.players.push(newPlayer);
@@ -964,19 +964,19 @@ const handleJoinRoom = (
     console.log(`Player ${playerName} joined room ${room.name} (${roomId})`);
 
     // Notify all clients in the room
-    sendToRoom(roomId, "room_updated", { room });
+    sendToRoom(roomId, 'room_updated', { room });
 
     // Update room list for all clients
     broadcastToAllClients({
-      event: "room_list",
+      event: 'room_list',
       payload: {
         rooms: getRoomList(),
       },
     });
   } catch (error) {
-    console.error("Error joining room:", error);
-    sendToClient(client, "error", {
-      error: "Failed to join room",
+    console.error('Error joining room:', error);
+    sendToClient(client, 'error', {
+      error: 'Failed to join room',
     } as ErrorPayload);
   }
 };
@@ -992,8 +992,8 @@ const handleLeaveRoom = (
 
     // Validate data
     if (!roomId) {
-      return sendToClient(client, "error", {
-        error: "Missing room ID",
+      return sendToClient(client, 'error', {
+        error: 'Missing room ID',
       } as ErrorPayload);
     }
 
@@ -1033,19 +1033,19 @@ const handleLeaveRoom = (
 
       // Notify remaining clients in the room if it still exists
       if (rooms.has(roomId)) {
-        sendToRoom(roomId, "room_updated", { room });
+        sendToRoom(roomId, 'room_updated', { room });
       }
 
       // Update room list for all clients
       broadcastToAllClients({
-        event: "room_list",
+        event: 'room_list',
         payload: {
           rooms: getRoomList(),
         },
       });
     }
   } catch (error) {
-    console.error("Error leaving room:", error);
+    console.error('Error leaving room:', error);
   }
 };
 
@@ -1065,22 +1065,22 @@ const handlePlayerReady = (
 
     // Validate data
     if (!effectiveRoomId || !effectivePlayerId) {
-      console.error("Missing roomId or playerId in player ready event", {
+      console.error('Missing roomId or playerId in player ready event', {
         payloadRoomId: roomId,
         payloadPlayerId: playerId,
         clientRoomId: client.roomId,
         clientPlayerId: client.playerId,
       });
-      return sendToClient(client, "error", {
-        error: "Missing required data",
+      return sendToClient(client, 'error', {
+        error: 'Missing required data',
       } as ErrorPayload);
     }
 
     // Check if room exists
     if (!rooms.has(effectiveRoomId)) {
       console.error(`Room not found: ${effectiveRoomId}`);
-      return sendToClient(client, "error", {
-        error: "Room not found",
+      return sendToClient(client, 'error', {
+        error: 'Room not found',
       } as ErrorPayload);
     }
 
@@ -1093,8 +1093,8 @@ const handlePlayerReady = (
       console.error(
         `Player ${effectivePlayerId} not found in room ${effectiveRoomId}`
       );
-      return sendToClient(client, "error", {
-        error: "Player not found in room",
+      return sendToClient(client, 'error', {
+        error: 'Player not found in room',
       } as ErrorPayload);
     }
 
@@ -1102,17 +1102,31 @@ const handlePlayerReady = (
     player.isReady = isReady;
 
     // Send room updated event to all clients in the room
-    sendToRoom(effectiveRoomId, "room_updated", { room });
+    sendToRoom(effectiveRoomId, 'room_updated', { room });
+
+    // Also broadcast room_updated to ALL clients for better state synchronization
+    broadcastToAllClients({
+      event: 'room_updated',
+      payload: { room },
+    });
+
+    // Update room list for all clients
+    broadcastToAllClients({
+      event: 'room_list',
+      payload: {
+        rooms: getRoomList(),
+      },
+    });
 
     console.log(
       `Player ${player.name} (${effectivePlayerId}) in room ${
         room.name
-      } (${effectiveRoomId}) is now ${isReady ? "ready" : "not ready"}`
+      } (${effectiveRoomId}) is now ${isReady ? 'ready' : 'not ready'}`
     );
   } catch (error) {
-    console.error("Error handling player ready:", error);
-    sendToClient(client, "error", {
-      error: "Internal server error",
+    console.error('Error handling player ready:', error);
+    sendToClient(client, 'error', {
+      error: 'Internal server error',
     } as ErrorPayload);
   }
 };
@@ -1127,15 +1141,15 @@ const handleGameStart = (
 
     // Validate data
     if (!roomId) {
-      return sendToClient(client, "error", {
-        error: "Missing room ID",
+      return sendToClient(client, 'error', {
+        error: 'Missing room ID',
       } as ErrorPayload);
     }
 
     // Check if room exists
     if (!rooms.has(roomId)) {
-      return sendToClient(client, "error", {
-        error: "Room not found",
+      return sendToClient(client, 'error', {
+        error: 'Room not found',
       } as ErrorPayload);
     }
 
@@ -1145,38 +1159,38 @@ const handleGameStart = (
     const allPlayersReady = room.players.every((player) => player.isReady);
 
     if (!allPlayersReady) {
-      return sendToClient(client, "error", {
-        error: "Not all players are ready",
+      return sendToClient(client, 'error', {
+        error: 'Not all players are ready',
       } as ErrorPayload);
     }
 
     // Check if client is the host
     if (client.playerId !== room.hostId) {
-      return sendToClient(client, "error", {
-        error: "Only the host can start the game",
+      return sendToClient(client, 'error', {
+        error: 'Only the host can start the game',
       } as ErrorPayload);
     }
 
     // Update room status
-    room.status = "playing";
+    room.status = 'playing';
 
     console.log(`Game started in room ${room.name} (${roomId})`);
 
     // Notify all clients in the room
-    sendToRoom(roomId, "room_updated", { room });
-    sendToRoom(roomId, "game_started", { roomId });
+    sendToRoom(roomId, 'room_updated', { room });
+    sendToRoom(roomId, 'game_started', { roomId });
 
     // Update room list for all clients
     broadcastToAllClients({
-      event: "room_list",
+      event: 'room_list',
       payload: {
         rooms: getRoomList(),
       },
     });
   } catch (error) {
-    console.error("Error starting game:", error);
-    sendToClient(client, "error", {
-      error: "Failed to start game",
+    console.error('Error starting game:', error);
+    sendToClient(client, 'error', {
+      error: 'Failed to start game',
     } as ErrorPayload);
   }
 };
@@ -1196,7 +1210,7 @@ const handleGestureEvent = (
     }
 
     // Check if room exists and is playing
-    if (!rooms.has(roomId) || rooms.get(roomId)!.status !== "playing") {
+    if (!rooms.has(roomId) || rooms.get(roomId)!.status !== 'playing') {
       return;
     }
 
@@ -1205,13 +1219,13 @@ const handleGestureEvent = (
     );
 
     // Broadcast gesture event to all players in the room
-    sendToRoom(roomId, "gesture_event", { playerId, gesture, confidence });
+    sendToRoom(roomId, 'gesture_event', { playerId, gesture, confidence });
   } catch (error) {
-    console.error("Error handling gesture event:", error);
+    console.error('Error handling gesture event:', error);
   }
 };
 
 // Send room list to a client
 const handleRoomList = (client: ExtendedWebSocket) => {
-  sendToClient(client, "room_list", { rooms: getRoomList() });
+  sendToClient(client, 'room_list', { rooms: getRoomList() });
 };
