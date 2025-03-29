@@ -35,6 +35,7 @@ export interface CreateRoomParams {
 export interface JoinRoomParams {
   roomId: string;
   playerName: string;
+  playerType?: 'webadmin' | 'beagleboard';
 }
 
 // WebSocket events and payloads for room operations

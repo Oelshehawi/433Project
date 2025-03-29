@@ -115,17 +115,22 @@ export default function RoomPage() {
         // Force refresh room data to ensure we see the latest state
         useRoomStore.getState().fetchRooms();
 
-        // Use a more robust method to refresh the current room
-        const savedInfo = getSavedRoomInfo();
-        if (savedInfo.roomId && savedInfo.playerId) {
-          // This directly updates the current room in the store
-          useRoomStore.setState({ currentRoom: room });
+        // Directly update the current room in the store
+        // This ensures immediate UI updates without waiting for the fetch to complete
+        useRoomStore.setState({ currentRoom: room });
 
-          // Trigger UI refresh
+        // Trigger UI refresh
+        if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('room_data_changed'));
         }
       }
     };
+
+    // Add an immediate check for possible missed updates
+    setTimeout(() => {
+      // Force a refresh of room data after component mount
+      useRoomStore.getState().fetchRooms();
+    }, 500);
 
     window.addEventListener('room_updated', handleRoomUpdated as EventListener);
 

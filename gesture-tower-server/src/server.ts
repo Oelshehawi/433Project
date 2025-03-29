@@ -481,6 +481,12 @@ const joinBeagleBoardToRoom = (
 
   room.players.push(newPlayer);
 
+  // If no host set yet, make this player the host
+  if (!room.hostId && room.players.length > 0) {
+    room.hostId = playerId;
+    console.log(`Player ${playerName} set as host of room ${room.id}`);
+  }
+
   // Register the beagle board with the room
   beagleBoards.set(deviceId, {
     deviceId,
@@ -488,6 +494,17 @@ const joinBeagleBoardToRoom = (
     playerName,
     socket: undefined,
   });
+
+  // Update the room in the map to ensure latest state
+  rooms.set(room.id, room);
+
+  // Log updated player count for verification
+  const updatedPlayerCount = room.players.filter(
+    (p) => p.playerType === 'beagleboard'
+  ).length;
+  console.log(
+    `Room ${room.id} now has ${updatedPlayerCount} BeagleBoard players`
+  );
 
   // Send success response back to the beagle board
   sendResponseToBeagleBoard(
@@ -497,22 +514,24 @@ const joinBeagleBoardToRoom = (
     deviceId
   );
 
-  // Notify all clients about the room update
-  sendToRoom(room.id, 'room_updated', { room });
-
-  // Also broadcast room_updated to ALL clients for better state synchronization
+  // First broadcast the updated room to all clients
   broadcastToAllClients({
     event: 'room_updated',
     payload: { room },
   });
 
-  // Also broadcast updated room list to ALL clients
+  // Then broadcast the updated room list to all clients
+  // (This ensures the room_list contains the updated player count)
+  const updatedRoomList = getRoomList();
   broadcastToAllClients({
     event: 'room_list',
     payload: {
-      rooms: getRoomList(),
+      rooms: updatedRoomList,
     },
   });
+
+  // Also send the room update to clients in the room
+  sendToRoom(room.id, 'room_updated', { room });
 
   console.log(
     `Beagle board ${deviceId} joined room ${room.id} as player ${playerName}`
