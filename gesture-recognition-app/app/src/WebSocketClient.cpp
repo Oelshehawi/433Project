@@ -3,6 +3,9 @@
 #include <cstring>
 #include <sstream>
 #include <vector>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 // Per-session data
 struct ClientData {
@@ -241,6 +244,73 @@ bool WebSocketClient::sendMessage(const std::string& message) {
     // Check if message is already JSON (starts with '{')
     if (message.length() > 0 && message[0] == '{') {
         jsonMessage = message;
+    } else if (message.length() > 0 && message.find("CMD:") == 0) {
+        // Convert BeagleBoard command format to proper WebSocket event
+        // Extract parts from the command format
+        size_t cmdDelim = message.find('|');
+        if (cmdDelim != std::string::npos) {
+            std::string cmdPart = message.substr(0, cmdDelim);
+            std::string cmdName = cmdPart.substr(4); // Skip "CMD:"
+            std::string paramsStr = message.substr(cmdDelim + 1);
+            
+            // Parse parameters
+            json params = json::object();
+            size_t start = 0;
+            size_t end = paramsStr.find('|');
+            
+            while (start < paramsStr.length()) {
+                std::string param = paramsStr.substr(start, (end == std::string::npos) ? end : end - start);
+                size_t colonPos = param.find(':');
+                
+                if (colonPos != std::string::npos) {
+                    std::string key = param.substr(0, colonPos);
+                    std::string value = param.substr(colonPos + 1);
+                    
+                    // Map BeagleBoard keys to WebSocket format
+                    if (key == "DeviceID") {
+                        params["playerId"] = value;
+                    } else if (key == "RoomID") {
+                        params["roomId"] = value;
+                    } else if (key == "PlayerName") {
+                        params["playerName"] = value;
+                    } else {
+                        params[key] = value;
+                    }
+                }
+                
+                if (end == std::string::npos) break;
+                start = end + 1;
+                end = paramsStr.find('|', start);
+            }
+            
+            // Create proper JSON event based on command
+            json j = json::object();
+            if (cmdName == "JOIN_ROOM") {
+                j["event"] = "join_room";
+                j["payload"] = params;
+            } else if (cmdName == "LIST_ROOMS") {
+                j["event"] = "room_list";
+                j["payload"] = json::object();
+            } else if (cmdName == "LEAVE_ROOM") {
+                j["event"] = "leave_room";
+                j["payload"] = params;
+            } else if (cmdName == "SET_READY") {
+                j["event"] = "player_ready";
+                bool ready = (params.value("Ready", "") == "true" || params.value("Ready", "") == "1");
+                params["isReady"] = ready;
+                j["payload"] = params;
+            } else {
+                // Default mapping
+                j["event"] = commandToEventName(cmdName);
+                j["payload"] = params;
+            }
+            jsonMessage = j.dump();
+            std::cout << "Converted BeagleBoard command to WebSocket JSON: " << jsonMessage << std::endl;
+        } else {
+            // Invalid command format
+            std::cerr << "Invalid BeagleBoard command format: " << message << std::endl;
+            return false;
+        }
     } else {
         // Parse command format and convert to JSON
         size_t pipePos = message.find('|');
@@ -249,84 +319,96 @@ bool WebSocketClient::sendMessage(const std::string& message) {
         
         if (pipePos != std::string::npos) {
             command = message.substr(0, pipePos);
-            // Extract parameters (we'll process simple key:value pairs)
-            if (pipePos + 1 < message.length()) {
-                std::string paramsStr = message.substr(pipePos + 1);
-                payload = "{";
-                
-                size_t start = 0;
-                size_t end = paramsStr.find('|');
-                bool first = true;
-                
-                while (start < paramsStr.length()) {
-                    std::string param = paramsStr.substr(start, (end == std::string::npos) ? end : end - start);
-                    size_t colonPos = param.find(':');
-                    
-                    if (colonPos != std::string::npos) {
-                        std::string key = param.substr(0, colonPos);
-                        std::string value = param.substr(colonPos + 1);
-                        
-                        // Rename keys to match server expectations
-                        if (key == "RoomID") key = "roomId";
-                        else if (key == "DeviceID") key = "playerId";
-                        else if (key == "Name") key = "playerName";
-                        else if (key == "Ready") key = "isReady";
-                        
-                        if (!first) payload += ",";
-                        payload += "\"" + key + "\":\"" + value + "\"";
-                        first = false;
-                    }
-                    
-                    if (end == std::string::npos) break;
-                    start = end + 1;
-                    end = paramsStr.find('|', start);
-                }
-                
-                payload += "}";
-            }
+            payload = parseCommandPayload(message.substr(pipePos + 1));
         }
         
-        // Convert commands to appropriate event names
-        std::string event;
-        if (command == "LISTROOMS") {
-            event = "room_list";
-        } else if (command == "JOIN") {
-            event = "join_room";
-        } else if (command == "JOINROOM") {
-            event = "join_room";
-        } else if (command == "LEAVE") {
-            event = "leave_room";
-        } else if (command == "LEAVEROOM") {
-            event = "leave_room";
-        } else if (command == "READY") {
-            event = "player_ready";
-        } else if (command == "NOTREADY") {
-            event = "player_ready"; // Same event, different payload
-        } else {
-            // Default event name matches command in lowercase
-            event = command;
-            for (char& c : event) c = std::tolower(c);
-        }
+        // Convert to camelCase command for server (e.g., JOINROOM -> join_room)
+        std::string eventName = commandToEventName(command);
         
-        jsonMessage = "{\"event\":\"" + event + "\",\"payload\":" + payload + "}";
-        std::cout << "Converted to JSON: " << jsonMessage << std::endl;
+        // Create JSON message
+        json j;
+        j["event"] = eventName;
+        j["payload"] = json::parse(payload);
+        jsonMessage = j.dump();
     }
     
-    // Add message to queue
-    {
-        std::lock_guard<std::mutex> lock(queueMutex);
-        messageQueue.push(jsonMessage);
-    }
+    // Queue message for sending
+    std::lock_guard<std::mutex> lock(queueMutex);
+    messageQueue.push(jsonMessage);
     
-    // Request writable callback
+    // Request write callback
     if (wsi) {
         lws_callback_on_writable(wsi);
-        return true;
     }
     
-    return false;
+    return true;
 }
 
 void WebSocketClient::setMessageCallback(std::function<void(const std::string&)> callback) {
     messageCallback = callback;
+}
+
+// Helper method to parse command payload into JSON
+std::string WebSocketClient::parseCommandPayload(const std::string& payload) {
+    json j = json::object();
+    
+    size_t start = 0;
+    size_t end = payload.find('|');
+    
+    while (start < payload.length()) {
+        std::string param = payload.substr(start, (end == std::string::npos) ? end : end - start);
+        size_t colonPos = param.find(':');
+        
+        if (colonPos != std::string::npos) {
+            std::string key = param.substr(0, colonPos);
+            std::string value = param.substr(colonPos + 1);
+            
+            // Map BeagleBoard keys to server expected keys
+            if (key == "RoomID" || key == "roomId") {
+                key = "roomId";
+            } else if (key == "DeviceID" || key == "playerId") {
+                key = "playerId";
+            } else if (key == "PlayerName" || key == "playerName") {
+                key = "playerName";
+            } else if (key == "isReady") {
+                key = "isReady";
+                // Convert string to boolean
+                value = (value == "true" || value == "1") ? "true" : "false";
+            }
+            
+            j[key] = value;
+        }
+        
+        if (end == std::string::npos) break;
+        start = end + 1;
+        end = payload.find('|', start);
+    }
+    
+    return j.dump();
+}
+
+// Helper method to convert command to event name
+std::string WebSocketClient::commandToEventName(const std::string& command) {
+    if (command == "LISTROOMS") {
+        return "room_list";
+    } else if (command == "JOIN" || command == "JOINROOM") {
+        return "join_room";
+    } else if (command == "LEAVE" || command == "LEAVEROOM") {
+        return "leave_room";
+    } else if (command == "READY" || command == "NOTREADY") {
+        return "player_ready";
+    } else if (command == "GESTURE") {
+        return "gesture_event";
+    }
+    
+    // Default: convert to lowercase with underscores
+    std::string result;
+    for (char c : command) {
+        if (c == '_') {
+            result += '_';
+        } else {
+            result += std::tolower(c);
+        }
+    }
+    return result;
 } 

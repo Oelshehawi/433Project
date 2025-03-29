@@ -85,20 +85,55 @@ void RoomManager::handleMessage(const std::string& message) {
                 auto& room = j["payload"]["room"];
                 
                 // If this is our current room
-                if (room.contains("id") && (currentRoomId == room["id"] || currentRoomId.empty())) {
+                if (room.contains("id") && room["id"] == currentRoomId) {
                     // Check if we're in the player list
                     if (room.contains("players") && room["players"].is_array()) {
+                        bool foundSelf = false;
                         for (const auto& player : room["players"]) {
-                            if (player.contains("id") && player["id"] == deviceId) {
+                            if ((player.contains("id") && player["id"] == deviceId) ||
+                                (player.contains("name") && player["name"] == playerName)) {
                                 // We're in this room
                                 connected = true;
-                                currentRoomId = room["id"];
+                                foundSelf = true;
                                 std::cout << "You're now connected to room: " << room["name"] << std::endl;
                                 break;
                             }
                         }
+                        
+                        // If we didn't find ourselves in the player list
+                        if (!foundSelf && connected) {
+                            std::cout << "You're no longer in room: " << room["name"] << std::endl;
+                            connected = false;
+                            currentRoomId = "";
+                        }
                     }
                 }
+            }
+        }
+        else if (j.contains("event") && j["event"] == "join_room") {
+            // Handle join_room response
+            if (j.contains("payload") && j["payload"].contains("roomId")) {
+                std::string roomId = j["payload"]["roomId"];
+                if (roomId == currentRoomId) {
+                    connected = true;
+                    std::cout << "Successfully joined room: " << roomId << std::endl;
+                }
+            }
+        }
+        else if (j.contains("event") && j["event"] == "leave_room") {
+            // Handle leave_room response
+            if (connected && j.contains("payload") && j["payload"].contains("roomId") && 
+                j["payload"]["roomId"] == currentRoomId) {
+                connected = false;
+                currentRoomId = "";
+                std::cout << "Successfully left room" << std::endl;
+            }
+        }
+        else if (j.contains("event") && j["event"] == "error") {
+            // Handle error messages
+            if (j.contains("payload") && j["payload"].contains("error")) {
+                std::string error = j["payload"]["error"];
+                std::cerr << "Server error: " << error << std::endl;
             }
         }
         else if (j.contains("event") && j["event"] == "gesture_event") {
@@ -119,6 +154,21 @@ void RoomManager::handleMessage(const std::string& message) {
             std::cout << "Successfully left room" << std::endl;
             connected = false;
             currentRoomId = "";
+        }
+        else if (message.find("RESPONSE:JOIN_ROOM") == 0) {
+            if (message.find("status:SUCCESS") != std::string::npos) {
+                std::cout << "Successfully joined room" << std::endl;
+                connected = true;
+            } else {
+                std::cerr << "Failed to join room: " << message << std::endl;
+            }
+        }
+        else if (message.find("RESPONSE:LEAVE_ROOM") == 0) {
+            if (message.find("status:SUCCESS") != std::string::npos) {
+                std::cout << "Successfully left room" << std::endl;
+                connected = false;
+                currentRoomId = "";
+            }
         }
     }
 }
@@ -176,7 +226,8 @@ bool RoomManager::fetchAvailableRooms() {
         return false;
     }
     
-    std::string cmd = "LISTROOMS|DeviceID:" + deviceId;
+    // Use correct BeagleBoard command format for list rooms
+    std::string cmd = "CMD:LIST_ROOMS|DeviceID:" + deviceId;
     return client->sendMessage(cmd);
 }
 
@@ -191,9 +242,10 @@ bool RoomManager::joinRoom(const std::string& roomId) {
         return false;
     }
     
-    std::string cmd = "JOINROOM|roomId:" + roomId + 
-                     "|playerName:" + playerName + 
-                     "|playerId:" + deviceId;
+    // Use BeagleBoard command format to ensure it's recognized as a BeagleBoard player
+    std::string cmd = "CMD:JOIN_ROOM|DeviceID:" + deviceId + 
+                     "|RoomID:" + roomId + 
+                     "|PlayerName:" + playerName;
     
     if (client->sendMessage(cmd)) {
         currentRoomId = roomId;
@@ -212,7 +264,8 @@ bool RoomManager::leaveRoom() {
         return false;
     }
     
-    std::string cmd = "LEAVEROOM|roomId:" + currentRoomId;
+    // Use proper command format for leaving room
+    std::string cmd = "CMD:LEAVE_ROOM|DeviceID:" + deviceId + "|RoomID:" + currentRoomId;
     
     return client->sendMessage(cmd);
 }
@@ -224,9 +277,10 @@ void RoomManager::setReady(bool isReady) {
     
     ready = isReady;
     
-    std::string cmd = "READY|roomId:" + currentRoomId + 
-                     "|playerId:" + deviceId + 
-                     "|isReady:" + (isReady ? "true" : "false");
+    // Use correct BeagleBoard command format for SET_READY
+    std::string cmd = "CMD:SET_READY|DeviceID:" + deviceId + 
+                     "|RoomID:" + currentRoomId + 
+                     "|Ready:" + (isReady ? "true" : "false");
     
     client->sendMessage(cmd);
 }
@@ -236,6 +290,7 @@ bool RoomManager::sendGestureData(const std::string& gestureData) {
         return false;
     }
 
+    // Keep the GESTURE command format as it's expected by the server
     std::string cmd = "GESTURE|DeviceID:" + deviceId + 
                      "|RoomID:" + currentRoomId + 
                      "|" + gestureData;

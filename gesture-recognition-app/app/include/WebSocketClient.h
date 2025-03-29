@@ -27,6 +27,10 @@ private:
     
     // Thread function to run the event loop
     void run();
+    
+    // Helper methods
+    std::string parseCommandPayload(const std::string& payload);
+    std::string commandToEventName(const std::string& command);
 
 public:
     // These need to be accessible by the protocol handler
