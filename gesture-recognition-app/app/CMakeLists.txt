@@ -11,6 +11,13 @@ include_directories(${CMAKE_SOURCE_DIR}/hal/include)
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
+# Find libwebsockets
+find_package(libwebsockets QUIET)
+if(NOT libwebsockets_FOUND)
+  # Try alternative names
+  find_library(LIBWEBSOCKETS_LIBRARY websockets)
+endif()
+
 # Add nlohmann/json as a dependency
 include(FetchContent)
 FetchContent_Declare(
@@ -31,6 +38,12 @@ target_link_libraries(gesture_recognition LINK_PRIVATE hal)
 target_link_libraries(gesture_recognition LINK_PRIVATE ${OpenCV_LIBS})
 target_link_libraries(gesture_recognition LINK_PRIVATE pthread)
 target_link_libraries(gesture_recognition LINK_PRIVATE nlohmann_json::nlohmann_json)
+# Link against libwebsockets
+if(libwebsockets_FOUND)
+  target_link_libraries(gesture_recognition LINK_PRIVATE ${LIBWEBSOCKETS_LIBRARIES})
+else()
+  target_link_libraries(gesture_recognition LINK_PRIVATE websockets)
+endif()
 
 # Copy executable to NFS directory after build
 add_custom_command(TARGET gesture_recognition POST_BUILD

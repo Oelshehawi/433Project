@@ -1,44 +1,49 @@
 #ifndef GESTURE_H
 #define GESTURE_H
 
-#include <opencv2/opencv.hpp>
-#include <vector>
+#include "RoomManager.h"
+#include <hal/camera_hal.h>
 #include <thread>
 #include <atomic>
-#include <mutex>
-#include "hal/camera_hal.h"
-#include "udp_sender.h"
-#include "room_manager.h"
+#include <string>
 
+// Define gesture result structure
 struct GestureResult {
-    std::string gesture_name;
+    const char* gesture_name;
     float confidence;
 };
 
 class GestureDetector {
+private:
+    std::thread detectionThread;
+    std::atomic<bool> running;
+    RoomManager* roomManager;
+    CameraHAL camera;
+
+    // Helper function for the detection thread
+    static void detectionLoop(GestureDetector* detector);
+
 public:
     GestureDetector();
     ~GestureDetector();
-    
-    void startDetection();
-    void stopDetection();
-    void runTestingMode();
-    
-    // Set the room manager to use for sending gestures with room information
-    void setRoomManager(RoomManager* manager);
-    
-    static void detectionLoop(GestureDetector* detector);
 
-private:
-    std::atomic<bool> running;
-    std::thread detectionThread;
-    std::mutex landmark_mutex;
-    CameraHAL camera;
-    RoomManager* roomManager;  // Pointer to the room manager
+    // Start gesture detection in a separate thread
+    void startDetection();
+
+    // Stop gesture detection
+    void stopDetection();
+
+    // Set room manager
+    void setRoomManager(RoomManager* manager) { roomManager = manager; }
+
+    // Test if the camera is accessible
+    bool testCameraAccess();
+
+    // Run webcam in testing mode (shows camera preview)
+    void runTestingMode();
 };
 
-bool detect_gesture(GestureResult *result, CameraHAL &camera);
-std::vector<cv::Point> detect_hand_landmarks(cv::Mat frame);
-int recognize_gesture(const std::vector<cv::Point>& landmarks);
+// Function to detect gesture
+bool detect_gesture(GestureResult* result, CameraHAL& camera);
 
-#endif
+#endif // GESTURE_H

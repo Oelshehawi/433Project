@@ -47,6 +47,7 @@ export default function RoomPage() {
         joinRoom({
           roomId: savedInfo.roomId,
           playerName: savedInfo.playerName || "Player",
+          playerType: "webadmin",
         });
       } else {
         // No saved info or different room, redirect to home
@@ -208,6 +209,7 @@ export default function RoomPage() {
         name: savedInfo.playerName || "Web Admin",
         isReady: false,
         connected: true,
+        playerType: "webadmin", // Explicitly identify as web admin
         isAdmin: true, // Flag to identify web admin
       }
     );

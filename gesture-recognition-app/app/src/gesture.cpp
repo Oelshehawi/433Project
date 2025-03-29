@@ -1,5 +1,4 @@
 #include "gesture.h"
-#include "udp_sender.h"
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
@@ -86,15 +85,10 @@ bool detect_gesture(GestureResult *result, CameraHAL &camera) {
 }
 
 // GestureDetector class implementation
-GestureDetector::GestureDetector() : running(false), camera("/dev/video3"), roomManager(nullptr) {}
+GestureDetector::GestureDetector() : running(false), roomManager(nullptr), camera("/dev/video3") {}
 
 GestureDetector::~GestureDetector() {
     stopDetection();
-}
-
-// Set the room manager
-void GestureDetector::setRoomManager(RoomManager* manager) {
-    roomManager = manager;
 }
 
 // Start detection in a separate thread
@@ -114,6 +108,18 @@ void GestureDetector::stopDetection() {
     if (detectionThread.joinable()) detectionThread.join();
 }
 
+// Test if the camera is accessible
+bool GestureDetector::testCameraAccess() {
+    if (camera.openCamera()) {
+        // Successfully opened camera, close it again
+        cv::Mat testFrame;
+        bool frameSuccess = camera.captureFrame(testFrame);
+        camera.closeCamera();
+        return frameSuccess;
+    }
+    return false;
+}
+
 // Detection loop
 void GestureDetector::detectionLoop(GestureDetector* detector) {
     if (!detector->roomManager) {
@@ -126,9 +132,6 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     
     std::cout << "Gesture detector started with Device ID: " << roomManager.getDeviceId() << std::endl;
     
-    // Send a hello message to announce this device
-    roomManager.sendHello();
-    
     // Attempt to open the camera
     if (!detector->camera.openCamera()) {
         std::cerr << "Error: Could not open camera on /dev/video3" << std::endl;
@@ -136,7 +139,7 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     }
     
     // Request available rooms from server
-    roomManager.requestRoomList();
+    roomManager.fetchAvailableRooms();
     
     // Wait a moment for server to respond (in a real implementation, we'd listen for response)
     std::this_thread::sleep_for(std::chrono::seconds(2));
@@ -146,8 +149,7 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
         roomManager.setPlayerName("Player1");
     }
     
-    // Join a room (in a real implementation, we'd parse the server response and let user choose)
-    roomManager.joinRoom("room1");
+    // Don't join a room here, let the main thread handle room management
 
     while (detector->running) {
         GestureResult result;
@@ -164,8 +166,10 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
             std::cout << "Detected Gesture: " << result.gesture_name 
                       << " (confidence: " << result.confidence << ")" << std::endl;
             
-            // Send the gesture to the server via the room manager
-            roomManager.sendGestureDetection(result.gesture_name, result.confidence);
+            // Send the gesture to the server via the room manager - use sendGestureData instead
+            std::string gestureData = "Gesture:" + std::string(result.gesture_name) + 
+                                   "|Confidence:" + std::to_string(result.confidence);
+            roomManager.sendGestureData(gestureData);
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));

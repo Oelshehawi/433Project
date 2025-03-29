@@ -163,7 +163,9 @@ const getRoomList = (): RoomListItem[] => {
     Array.from(rooms.values()).map((room) => ({
       id: room.id,
       name: room.name,
-      playerCount: room.players.length,
+      playerCount: room.players.filter(
+        (player) => player.playerType === "beagleboard"
+      ).length,
       maxPlayers: room.maxPlayers,
       status: room.status,
     }))
@@ -171,7 +173,9 @@ const getRoomList = (): RoomListItem[] => {
   return Array.from(rooms.values()).map((room) => ({
     id: room.id,
     name: room.name,
-    playerCount: room.players.length,
+    playerCount: room.players.filter(
+      (player) => player.playerType === "beagleboard"
+    ).length,
     maxPlayers: room.maxPlayers,
     status: room.status,
   }));
@@ -473,6 +477,7 @@ const joinBeagleBoardToRoom = (
     name: playerName,
     isReady: false,
     connected: true,
+    playerType: "beagleboard",
   };
 
   room.players.push(newPlayer);
@@ -863,6 +868,13 @@ const handleCreateRoom = (
       players: room.players || [], // Use empty array if no players provided
     };
 
+    // Make sure all players have the playerType field set
+    newRoom.players.forEach((player) => {
+      if (!player.playerType) {
+        player.playerType = "webadmin"; // Assume any existing players are web admins
+      }
+    });
+
     // Add room to storage
     rooms.set(newRoom.id, newRoom);
 
@@ -935,6 +947,7 @@ const handleJoinRoom = (
       name: playerName,
       isReady: false,
       connected: true,
+      playerType: "webadmin",
     };
 
     room.players.push(newPlayer);

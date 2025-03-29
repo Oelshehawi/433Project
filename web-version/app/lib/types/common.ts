@@ -8,6 +8,7 @@ export interface Player {
   name: string;
   isReady: boolean;
   connected: boolean;
+  playerType?: "beagleboard" | "webadmin";
 }
 
 // Basic event types for custom events
