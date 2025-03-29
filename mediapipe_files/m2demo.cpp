@@ -241,15 +241,53 @@ absl::Status RunMPPGraph() {
     MP_RETURN_IF_ERROR(graph.AddPacketToInputStream(
         kInputStream, mediapipe::Adopt(input_frame.release())
                           .At(mediapipe::Timestamp(frame_timestamp_us))));
-
+                          
+    MP_RETURN_IF_ERROR(graph.WaitUntilIdle()); // prevents off-by-one error of .jpg processing during runtime
+    std::cout << "Frame processed and graph is idle." << std::endl;
 
     mediapipe::Packet detection_packet;
-    if (!poller.Next(&detection_packet))
+    
+    if (!poller.QueueSize()) {
+        std::cout << "No new landmarks available. Skipping...\n" << std::endl;
+        continue;
+    }
+    
+    std::cout << "Queue size: " << poller.QueueSize() << std::endl;
+
+    if (!poller.Next(&detection_packet)) {
+      std::cout << "Poller failed. Skipping...\n" << std::endl;
       break;
+    } 
 
     auto &output_landmarks = detection_packet.Get<std::vector<::mediapipe::NormalizedLandmarkList>>();
+    
+    if (output_landmarks.empty()) {
+        std::cout << "No hand detected. Skipping this frame.\n" << std::endl;
+        continue;  // Go to next countdown/frame if no fingers detected (no landmarks detected)
+    }
 
     mediapipe::NormalizedLandmarkList landmarks = output_landmarks[0];
+    
+    if (landmarks.landmark_size() < 21) {
+      std::cout << "Detected hand has insufficient landmarks. Skipping...\n" << std::endl;
+      continue;
+    }
+    
+    // Skip processing if landmarks look invalid (likely no hand)
+    bool all_landmarks_invalid = true;
+    for (int i = 0; i < landmarks.landmark_size(); ++i) {
+        const auto& lm = landmarks.landmark(i);
+        if (lm.x() > 0.0f && lm.x() < 1.0f &&
+            lm.y() > 0.0f && lm.y() < 1.0f) {
+            all_landmarks_invalid = false;
+            break;
+        }
+    }
+    if (all_landmarks_invalid) {
+        std::cout << "No valid hand landmarks detected. Skipping...\n" << std::endl;
+        continue;
+    }
+
     ProcessHandLandmarks(landmarks);
 
   }
