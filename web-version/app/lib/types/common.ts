@@ -42,17 +42,10 @@ export type WebSocketEventName =
   | "error"
   | "gesture_event"
   | "navigate_to_room"
-  | "navigate_to_game"
-  | "udp_message";
+  | "navigate_to_game";
 
 export interface ErrorPayload {
   error: string;
   code?: string;
   details?: Record<string, unknown>;
-}
-
-// UDP message payload
-export interface UdpMessagePayload {
-  message: string;
-  timestamp: number;
 }

@@ -39,7 +39,6 @@ export const GAME_CONFIG = {
   TOWER_BASE_HEIGHT: 50, // pixels
 };
 
-// Add after UdpMessagePayload or similar place
 export interface BeagleBoardCommandPayload {
   message: string;
   sender: string;

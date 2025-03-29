@@ -46,7 +46,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       }
 
       // Generate room ID
-      const roomId = generateShortRoomId(); // Generate short room ID
+      const roomId = generateShortRoomId();
 
       // Generate a special admin ID for the web client (not a player)
       const adminId = "admin-" + crypto.randomUUID();
@@ -56,9 +56,9 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
         room: {
           id: roomId,
           name: params.name,
-          hostId: adminId, // Use the admin ID as the host
+          hostId: adminId,
           maxPlayers: GAME_CONFIG.MAX_PLAYERS,
-          players: [], // Empty players array - web client isn't a player
+          players: [],
         },
       });
 

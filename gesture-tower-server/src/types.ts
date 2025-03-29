@@ -9,7 +9,8 @@ export type ClientEventType =
   | "room_list"
   | "player_ready"
   | "game_started"
-  | "gesture_event";
+  | "gesture_event"
+  | "beagleboard_command";
 
 // Server message types
 export type ServerEventType =
@@ -20,7 +21,6 @@ export type ServerEventType =
   | "game_ended"
   | "error"
   | "gesture_event"
-  | "udp_message"
   | "beagle_board_command";
 
 // WebSocket client extended with custom properties
@@ -29,6 +29,7 @@ export interface ExtendedWebSocket extends WebSocket {
   roomId?: string;
   playerId?: string;
   playerName?: string;
+  deviceId?: string;
   isAlive: boolean;
 }
 
@@ -124,12 +125,6 @@ export interface ErrorPayload {
   error: string;
 }
 
-// UDP message payload type
-export interface UdpMessagePayload {
-  message: string;
-  timestamp: number;
-}
-
 // New Beagle board command payload type
 export interface BeagleBoardCommandPayload {
   message: string;
@@ -143,6 +138,7 @@ export type BeagleBoard = {
   roomId?: string;
   playerName?: string;
   socket?: net.Socket;
+  client?: ExtendedWebSocket;
 };
 
 // Update the beagleBoards map type

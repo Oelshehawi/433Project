@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TitleScreen } from "./components/TitleScreen";
-import UdpMessageDisplay from "./components/UdpMessageDisplay";
 import {
   initializeSocket,
   getSocketStatus,
@@ -132,7 +131,6 @@ export default function Home() {
   return (
     <main className="min-h-screen">
       <TitleScreen />
-      <UdpMessageDisplay />
 
       {connectionStatus !== "connected" && (
         <div

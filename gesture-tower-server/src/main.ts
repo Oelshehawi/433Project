@@ -2,10 +2,9 @@ import http from "http";
 import express from "express";
 import WebSocket from "ws";
 import cors from "cors";
-import { WebSocketMessage } from "./types";
 import { initializeWebSocketServer } from "./webSocketManager";
+import { rooms } from "./roomManager";
 import { beagleBoards } from "./messaging";
-import { rooms, getRoomList } from "./roomManager";
 
 // Initialize Express app
 const app = express();
@@ -25,18 +24,8 @@ const server = http.createServer(app);
 // Create WebSocket server
 const wss = new WebSocket.Server({ server });
 
-// Initialize WebSocket handler with the server
+// Initialize WebSocket server
 initializeWebSocketServer(wss);
-
-// Helper function to broadcast to all clients
-export function broadcastToAllClients(message: WebSocketMessage) {
-  // Use the same method as broadcastToAll to ensure consistent formatting
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(message));
-    }
-  });
-}
 
 // Add a basic route for health check
 app.get("/", (req, res) => {
