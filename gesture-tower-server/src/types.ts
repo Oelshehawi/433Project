@@ -30,6 +30,7 @@ export interface ExtendedWebSocket extends WebSocket {
   playerId?: string;
   playerName?: string;
   deviceId?: string;
+  playerType?: string;
   isAlive: boolean;
 }
 
@@ -98,6 +99,7 @@ export interface JoinRoomPayload {
   roomId: string;
   playerId: string;
   playerName: string;
+  playerType?: string;
 }
 
 export interface LeaveRoomPayload {

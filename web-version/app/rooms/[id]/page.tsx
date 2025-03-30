@@ -103,109 +103,38 @@ export default function RoomPage() {
     };
   }, [currentRoom, leaveRoom]);
 
-  // Set up event listeners for room events
+  // Set up a single unified event listener for all room updates
   useEffect(() => {
-    // Listen for global BeagleBoard events
-    const handleBeagleBoardCommand = () => {
-      console.log("BeagleBoard command received, refreshing room data");
-      // Force refresh on any BeagleBoard activity
-      useRoomStore.getState().fetchRooms();
-    };
-
-    window.addEventListener(
-      "beagle_board_command",
-      handleBeagleBoardCommand as EventListener
-    );
-
-    return () => {
-      window.removeEventListener(
-        "beagle_board_command",
-        handleBeagleBoardCommand as EventListener
-      );
-    };
-  }, []);
-
-  // Make the existing room updated handler more robust
-  useEffect(() => {
-    const handleRoomUpdated = (event: CustomEvent) => {
+    // Unified room update handler that handles all room events
+    const handleRoomUpdate = (event: CustomEvent) => {
       const { room } = event.detail || {};
 
       // If this is an update for our current room
       if (room && room.id === roomId) {
-        console.log("Room update received for current room:", room);
+        console.log("Room update received:", room);
 
-        // Immediately update current room in the store
+        // Update current room in the store
         useRoomStore.setState({ currentRoom: room });
-
-        // Also refresh the rooms list to ensure consistent state
-        useRoomStore.getState().fetchRooms();
-
-        // Force UI refresh
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new Event("room_data_changed"));
-        }
       }
     };
 
-    // Add an immediate refresh on mount
-    useRoomStore.getState().fetchRooms();
+    // Listen for room_updated events
+    window.addEventListener("room_updated", handleRoomUpdate as EventListener);
 
-    window.addEventListener("room_updated", handleRoomUpdated as EventListener);
-
-    // Also listen for global room updates (added in our websocket handler)
-    window.addEventListener(
-      "global_room_updated",
-      handleRoomUpdated as EventListener
-    );
-
-    // Also listen for room list updates
-    window.addEventListener("room_list_updated", () => {
-      console.log("Room list updated, refreshing current room");
+    // Also listen for room list events to ensure consistent state
+    const handleRoomList = () => {
+      console.log("Room list updated, checking for our room");
       useRoomStore.getState().fetchRooms();
-    });
+    };
+
+    window.addEventListener("room_list", handleRoomList);
 
     return () => {
       window.removeEventListener(
         "room_updated",
-        handleRoomUpdated as EventListener
+        handleRoomUpdate as EventListener
       );
-      window.removeEventListener(
-        "global_room_updated",
-        handleRoomUpdated as EventListener
-      );
-    };
-  }, [roomId]);
-
-  // Add this effect to listen for manual room updates
-  useEffect(() => {
-    const handleManualRoomUpdate = (event: CustomEvent) => {
-      const { room } = event.detail || {};
-
-      // If this update is for our room
-      if (room && room.id === roomId) {
-        console.log("Manual room update received:", room);
-
-        // Force refresh room data
-        useRoomStore.getState().fetchRooms();
-
-        // If in a room component, we can directly update our local state
-        if (typeof window !== "undefined") {
-          // This will trigger a full page refresh if needed
-          window.dispatchEvent(new Event("room_data_changed"));
-        }
-      }
-    };
-
-    window.addEventListener(
-      "manual_room_update",
-      handleManualRoomUpdate as EventListener
-    );
-
-    return () => {
-      window.removeEventListener(
-        "manual_room_update",
-        handleManualRoomUpdate as EventListener
-      );
+      window.removeEventListener("room_list", handleRoomList);
     };
   }, [roomId]);
 

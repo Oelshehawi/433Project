@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from "uuid";
 import {
   ExtendedWebSocket,
   Room,
@@ -107,7 +106,7 @@ export const handleJoinRoom = (
   payload: JoinRoomPayload
 ) => {
   try {
-    const { roomId, playerId, playerName } = payload;
+    const { roomId, playerId, playerName, playerType } = payload;
 
     // Validate data
     if (!roomId || !playerId || !playerName) {
@@ -120,6 +119,7 @@ export const handleJoinRoom = (
     client.roomId = roomId;
     client.playerId = playerId;
     client.playerName = playerName;
+    client.playerType = playerType;
 
     // Check if room exists
     if (!rooms.has(roomId)) {
@@ -150,7 +150,7 @@ export const handleJoinRoom = (
       name: playerName,
       isReady: false,
       connected: true,
-      playerType: "webadmin",
+      playerType: (playerType || "webadmin") as "beagleboard" | "webadmin", // Cast to the correct type
     };
 
     room.players.push(newPlayer);
@@ -159,6 +159,9 @@ export const handleJoinRoom = (
 
     // Notify all clients in the room
     sendToRoom(roomId, "room_updated", { room });
+
+    // Also broadcast to ALL clients to ensure web clients see the update
+    broadcastToAll("room_updated", { room });
 
     // Update room list for all clients
     broadcastToAllClients({

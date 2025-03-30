@@ -287,6 +287,8 @@ bool WebSocketClient::sendMessage(const std::string& message) {
             json j = json::object();
             if (cmdName == "JOIN_ROOM") {
                 j["event"] = "join_room";
+                // Add playerType to identify this as a BeagleBoard client
+                params["playerType"] = "beagleboard";
                 j["payload"] = params;
             } else if (cmdName == "LIST_ROOMS") {
                 j["event"] = "room_list";

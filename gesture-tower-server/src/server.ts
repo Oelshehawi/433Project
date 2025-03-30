@@ -58,6 +58,3 @@ app.get("/health", (req, res) => {
 
 // Export server, app, and wss for external use
 export { server, app, wss };
-
-// IMPORTANT: Don't start the server here!
-// Server will be started in main.ts

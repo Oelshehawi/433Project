@@ -32,19 +32,32 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
     console.log("Initializing WebSocket connection from TitleScreen...");
     initializeSocket();
 
-    // Fetch rooms when component mounts and periodically
+    // Fetch rooms when component mounts
     console.log("Fetching available rooms...");
     fetchRooms();
 
-    const intervalId = setInterval(() => {
-      console.log("Periodic room refresh...");
+    // Add event listeners for room updates
+    const handleRoomUpdated = (event: any) => {
+      console.log("Room updated event received:", event.detail);
+      // Refresh room list when a room is updated
       fetchRooms();
-    }, 5000);
+    };
+
+    const handleRoomList = (event: any) => {
+      console.log("Room list event received:", event.detail);
+      // Update rooms state directly from the event payload
+      if (event.detail && event.detail.rooms) {
+        useRoomStore.setState({ availableRooms: event.detail.rooms });
+      }
+    };
+
+    window.addEventListener("room_updated", handleRoomUpdated);
+    window.addEventListener("room_list", handleRoomList);
 
     return () => {
-      console.log("Cleaning up TitleScreen, clearing interval");
-      clearInterval(intervalId);
-      // No need to remove socket event listeners
+      console.log("Cleaning up TitleScreen");
+      window.removeEventListener("room_updated", handleRoomUpdated);
+      window.removeEventListener("room_list", handleRoomList);
     };
   }, [fetchRooms]);
 
