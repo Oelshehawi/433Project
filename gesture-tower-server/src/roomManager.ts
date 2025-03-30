@@ -213,25 +213,13 @@ export const handleLeaveRoom = (
     const playerIndex = room.players.findIndex((p) => p.id === playerId);
 
     if (playerIndex !== -1) {
+      // Get player name before removing for logging
+      const playerName = room.players[playerIndex].name || playerId;
+
+      // Remove the player
       room.players.splice(playerIndex, 1);
 
-      console.log(
-        `Player ${client.playerName || playerId} left room ${
-          room.name
-        } (${roomId})`
-      );
-
-      // If room is empty, remove it
-      if (room.players.length === 0) {
-        rooms.delete(roomId);
-        console.log(`Room ${roomId} deleted (no players left)`);
-      } else {
-        // Otherwise, update host if needed
-        if (room.hostId === playerId) {
-          room.hostId = room.players[0].id;
-          console.log(`New host in room ${roomId}: ${room.players[0].name}`);
-        }
-      }
+      console.log(`Player ${playerName} left room ${room.name} (${roomId})`);
 
       // Clear client properties
       client.roomId = undefined;
@@ -240,7 +228,13 @@ export const handleLeaveRoom = (
 
       // Notify remaining clients in the room if it still exists
       if (rooms.has(roomId)) {
+        // Send updates to all clients in the room
         sendToRoom(roomId, "room_updated", { room });
+      } else {
+        // If the room was deleted, send room_list update to refresh UI for all clients
+        broadcastToAll("room_list", {
+          rooms: getRoomList(),
+        });
       }
 
       // Update room list for all clients

@@ -54,10 +54,11 @@ int main() {
             std::cout << "WebSocket receiver started successfully." << std::endl;
         }
         
-        // Test connection with listrooms command
+        // Test connection by sending a simple ping message (without fetching rooms)
         std::cout << "Testing server connection..." << std::endl;
-        if (!roomManager->fetchAvailableRooms()) {
-            std::cerr << "WARNING: Failed to fetch rooms from server. Check your network connection." << std::endl;
+        // We'll use a simple message send to test the connection instead of fetching rooms
+        if (!webSocketClient->sendMessage("{\"event\":\"ping\",\"payload\":{}}")) {
+            std::cerr << "WARNING: Failed to send test message to server. Check your network connection." << std::endl;
         } else {
             std::cout << "Successfully connected to server." << std::endl;
         }

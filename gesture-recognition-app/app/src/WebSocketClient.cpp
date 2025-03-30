@@ -197,7 +197,7 @@ void WebSocketClient::run() {
     
     // Main event loop
     while (running) {
-        lws_service(context, 100); // 100ms timeout
+        lws_service(context, 50); // 50ms timeout for more responsive handling
     }
     
     // Cleanup
@@ -216,8 +216,8 @@ bool WebSocketClient::connect() {
     running = true;
     clientThread = std::thread(&WebSocketClient::run, this);
     
-    // Wait a short time for connection to initialize
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    // Wait a shorter time for connection to initialize
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Reduced from 2 seconds to 1 second
     
     return running && connected;
 }

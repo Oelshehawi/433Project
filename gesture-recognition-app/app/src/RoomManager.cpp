@@ -268,8 +268,8 @@ bool RoomManager::fetchAvailableRooms() {
     
     std::string jsonMessage = message.dump();
     
-    // We'll avoid displaying here as the command handler already shows a message
-    return client->sendMessage(jsonMessage);
+    // Use sendMessageWithTracking to properly handle timeouts and responses
+    return sendMessageWithTracking(jsonMessage, "room_list");
 }
 
 bool RoomManager::joinRoom(const std::string& roomId) {
@@ -300,7 +300,7 @@ bool RoomManager::joinRoom(const std::string& roomId) {
     // as we need server confirmation for that
     currentRoomId = roomId;
     
-    return client->sendMessage(jsonMessage);
+    return sendMessageWithTracking(jsonMessage, "join_room");
 }
 
 bool RoomManager::leaveRoom() {
@@ -324,21 +324,13 @@ bool RoomManager::leaveRoom() {
     std::string jsonMessage = message.dump();
     std::cout << "Leaving room " << currentRoomId << "..." << std::endl;
     
-    // Mark the request as tracked so we can handle the response properly
-    isWaitingForResponse = true;
-    currentRequestType = "leave_room";
-    lastRequestTime = std::chrono::steady_clock::now();
-    
     // Set status immediately to improve user experience
-    bool result = client->sendMessage(jsonMessage);
-    if (result) {
-        connected = false;
-        std::cout << "Successfully left room" << std::endl;
-        // Only clear currentRoomId after server confirmation 
-        // (which will happen in handleMessage)
-    }
+    connected = false;
+    std::cout << "Successfully left room" << std::endl;
     
-    return result;
+    // Send the message with tracking, but don't clear currentRoomId yet
+    // as that will happen when we get confirmation from the server
+    return sendMessageWithTracking(jsonMessage, "leave_room");
 }
 
 void RoomManager::setReady(bool isReady) {
@@ -360,7 +352,7 @@ void RoomManager::setReady(bool isReady) {
     
     std::string jsonMessage = message.dump();
     
-    client->sendMessage(jsonMessage);
+    sendMessageWithTracking(jsonMessage, "player_ready");
 }
 
 bool RoomManager::sendGestureData(const std::string& gestureData) {
@@ -529,18 +521,18 @@ bool RoomManager::sendMessageWithTracking(const std::string& message, const std:
     
     // Check if we're already waiting for a response
     if (isWaitingForResponse) {
-        // Check if it's been more than 5 seconds since the last request
+        // Check if it's been more than 2 seconds since the last request (reduced from 5)
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
             now - lastRequestTime).count();
             
-        if (elapsed < 5) {
+        if (elapsed < 2) { // Reduced from 5 seconds
             std::cout << "Still waiting for response to " << currentRequestType 
                       << " (sent " << elapsed << " seconds ago)..." << std::endl;
             return false;
         }
         
-        // If it's been more than 5 seconds, assume the request timed out
+        // If it's been more than 2 seconds, assume the request timed out
         std::cout << "Previous request (" << currentRequestType << ") timed out." << std::endl;
         resetLoadingState();
     }
