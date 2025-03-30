@@ -16,6 +16,13 @@ bin/
 lib/
 out/
 
+# Executables
+*.exe
+*.out
+*.app
+app/gesture_recognition
+gesture_recognition
+
 # Prerequisites
 *.d
 
@@ -39,11 +46,6 @@ out/
 *.la
 *.a
 *.lib
-
-# Executables
-*.exe
-*.out
-*.app
 
 # IDE
 .vscode/
