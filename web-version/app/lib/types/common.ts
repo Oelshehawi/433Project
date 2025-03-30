@@ -8,7 +8,7 @@ export interface Player {
   name: string;
   isReady: boolean;
   connected: boolean;
-  playerType?: "beagleboard" | "webadmin";
+  playerType?: "beagleboard" | "webviewer";
 }
 
 // Basic event types for custom events

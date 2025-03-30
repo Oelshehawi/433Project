@@ -287,8 +287,7 @@ bool WebSocketClient::sendMessage(const std::string& message) {
             json j = json::object();
             if (cmdName == "JOIN_ROOM") {
                 j["event"] = "join_room";
-                // Add playerType to identify this as a BeagleBoard client
-                params["playerType"] = "beagleboard";
+                // BeagleBoard clients are identified by the device ID format
                 j["payload"] = params;
             } else if (cmdName == "LIST_ROOMS") {
                 j["event"] = "room_list";
@@ -301,6 +300,26 @@ bool WebSocketClient::sendMessage(const std::string& message) {
                 bool ready = (params.value("Ready", "") == "true" || params.value("Ready", "") == "1");
                 params["isReady"] = ready;
                 j["payload"] = params;
+            } else if (cmdName == "CREATE_ROOM") {
+                j["event"] = "create_room";
+                // Create proper room object format expected by server
+                if (params.contains("RoomID") && params.contains("RoomName")) {
+                    json room = json::object();
+                    room["id"] = params["RoomID"];
+                    room["name"] = params["RoomName"];
+                    room["maxPlayers"] = 2; 
+                    room["status"] = "waiting";
+                    room["players"] = json::array();
+                    
+                    // Create payload with the room object
+                    json payload = json::object();
+                    payload["room"] = room;
+                    payload["playerId"] = params["DeviceID"];
+                    
+                    j["payload"] = payload;
+                } else {
+                    j["payload"] = params;
+                }
             } else {
                 // Default mapping
                 j["event"] = commandToEventName(cmdName);
@@ -401,6 +420,8 @@ std::string WebSocketClient::commandToEventName(const std::string& command) {
         return "player_ready";
     } else if (command == "GESTURE") {
         return "gesture_event";
+    } else if (command == "CREATE" || command == "CREATEROOM") {
+        return "create_room";
     }
     
     // Default: convert to lowercase with underscores

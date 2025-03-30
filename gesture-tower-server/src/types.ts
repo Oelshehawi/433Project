@@ -40,7 +40,7 @@ export interface Player {
   name: string;
   isReady: boolean;
   connected: boolean;
-  playerType: "beagleboard" | "webadmin";
+  playerType: "beagleboard" | "webviewer";
 }
 
 // Room definition

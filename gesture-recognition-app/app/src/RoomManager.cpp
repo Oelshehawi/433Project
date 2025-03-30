@@ -337,4 +337,43 @@ void RoomManager::parseJsonRoomList(const json& roomsJson) {
         
         availableRooms.push_back(room);
     }
+}
+
+bool RoomManager::createRoom(const std::string& roomName) {
+    if (!client) {
+        return false;
+    }
+    
+    // Can't create a room if already in one
+    if (connected) {
+        std::cerr << "Already connected to a room. Leave current room first." << std::endl;
+        return false;
+    }
+    
+    // Generate a random room ID
+    std::string roomId = "BB_";
+    static const char alphanum[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, sizeof(alphanum) - 2);
+    
+    for (int i = 0; i < 5; ++i) {
+        roomId += alphanum[dis(gen)];
+    }
+    
+    // Use BeagleBoard command format for creating a room
+    std::string cmd = "CMD:CREATE_ROOM|DeviceID:" + deviceId + 
+                     "|RoomID:" + roomId + 
+                     "|RoomName:" + roomName +
+                     "|PlayerName:" + playerName;
+    
+    if (client->sendMessage(cmd)) {
+        currentRoomId = roomId;
+        return true;
+    }
+    
+    return false;
 } 

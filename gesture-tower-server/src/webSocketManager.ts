@@ -21,7 +21,7 @@ import {
 } from "./messaging";
 
 // Functions for handling BeagleBoard commands via WebSocket
-import { Player } from "./types";
+import { Player, Room } from "./types";
 
 // Initialize WebSocket server
 export function initializeWebSocketServer(wss: WebSocket.Server) {
@@ -186,10 +186,31 @@ function handleBeagleBoardCommand(client: ExtendedWebSocket, message: string) {
         sendRoomListToBeagleBoard(client, deviceId);
         break;
 
+      case "CREATE_ROOM":
+        const { RoomID, RoomName, PlayerName } = params;
+        if (RoomID && RoomName && PlayerName) {
+          createRoomForBeagleBoard(
+            client,
+            deviceId,
+            RoomID,
+            RoomName,
+            PlayerName
+          );
+        } else {
+          sendResponseToBeagleBoard(
+            client,
+            "CREATE_ROOM",
+            "ERROR",
+            "Missing RoomID, RoomName or PlayerName",
+            deviceId
+          );
+        }
+        break;
+
       case "JOIN_ROOM":
-        const { RoomID, PlayerName } = params;
-        if (RoomID && PlayerName) {
-          joinBeagleBoardToRoom(client, deviceId, RoomID, PlayerName);
+        const { RoomID: joinRoomID, PlayerName: joinPlayerName } = params;
+        if (joinRoomID && joinPlayerName) {
+          joinBeagleBoardToRoom(client, deviceId, joinRoomID, joinPlayerName);
         } else {
           sendResponseToBeagleBoard(
             client,
@@ -733,5 +754,85 @@ function parseGestureMessage(
   } catch (error) {
     console.error("Error parsing gesture message:", error);
     return null;
+  }
+}
+
+// Add this as a new function in the file
+function createRoomForBeagleBoard(
+  client: ExtendedWebSocket,
+  deviceId: string,
+  roomId: string,
+  roomName: string,
+  playerName: string
+) {
+  console.log(
+    `BeagleBoard ${deviceId} creating room ${roomId} with name ${roomName}`
+  );
+
+  // Check if room already exists
+  if (rooms.has(roomId)) {
+    console.error(`Room ${roomId} already exists`);
+    sendResponseToBeagleBoard(
+      client,
+      "CREATE_ROOM",
+      "ERROR",
+      `Room ${roomId} already exists`,
+      deviceId
+    );
+    return;
+  }
+
+  // Create a unique player ID for the beagle board
+  const playerId = deviceId;
+
+  // Create the room
+  const newRoom: Room = {
+    id: roomId,
+    name: roomName,
+    createdAt: Date.now(),
+    hostId: playerId, // BeagleBoard is the host
+    players: [
+      {
+        id: playerId,
+        name: playerName,
+        isReady: false,
+        connected: true,
+        playerType: "beagleboard",
+      },
+    ],
+    status: "waiting",
+    maxPlayers: 4, // Default max players
+  };
+
+  // Add room to the rooms map
+  rooms.set(roomId, newRoom);
+
+  // Register the beagle board with the room
+  beagleBoards.set(deviceId, {
+    deviceId,
+    roomId: roomId,
+    playerName,
+    client,
+  });
+
+  // Send success response back to the beagle board
+  sendResponseToBeagleBoard(
+    client,
+    "CREATE_ROOM",
+    "SUCCESS",
+    `Created room ${roomId} successfully`,
+    deviceId
+  );
+
+  try {
+    // Broadcast room updates
+    broadcastToAll("room_updated", { room: newRoom });
+    broadcastToAll("room_list", { rooms: getRoomList() });
+
+    console.log(
+      `Successfully broadcast updates for BeagleBoard ${deviceId} creating room ${roomId}`
+    );
+  } catch (error) {
+    console.error(`Error broadcasting room updates: ${error}`);
   }
 }

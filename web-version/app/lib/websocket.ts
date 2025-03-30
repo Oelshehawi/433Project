@@ -140,7 +140,7 @@ const rejoinRoomAfterConnect = (): void => {
       roomId,
       playerId,
       playerName,
-      playerType: "webadmin",
+      playerType: "webviewer",
     }).catch((err) => console.error("Failed to rejoin room:", err));
   }
 };

@@ -56,14 +56,14 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
         room: {
           id: roomId,
           name: params.name,
-          hostId: adminId,
+          hostId: adminId, // Web client is the host but not a player
           maxPlayers: GAME_CONFIG.MAX_PLAYERS,
-          players: [],
+          players: [], // Empty players array - no web admin added as player
         },
       });
 
       // Save room info to localStorage - web client is the host but not a player
-      storeRoomInfo(roomId, adminId, "Web Admin");
+      storeRoomInfo(roomId, adminId, "Web Viewer");
 
       console.log("Room created, saved to localStorage:", roomId);
 
@@ -76,7 +76,7 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
           detail: {
             roomId,
             playerId: adminId,
-            playerName: "Web Admin",
+            playerName: "Web Viewer",
           },
         })
       );

@@ -53,6 +53,7 @@ public:
     
     // Room management functions
     bool fetchAvailableRooms();
+    bool createRoom(const std::string& roomName);
     bool joinRoom(const std::string& roomId);
     bool leaveRoom();
     void setReady(bool isReady);

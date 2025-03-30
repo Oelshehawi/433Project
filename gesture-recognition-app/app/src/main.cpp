@@ -14,6 +14,7 @@ void displayHelp() {
     std::cout << "  help                - Display this help message" << std::endl;
     std::cout << "  setname <name>      - Set your player name" << std::endl;
     std::cout << "  listrooms           - Fetch and display available rooms" << std::endl;
+    std::cout << "  createroom <name>   - Create a new room with the given name" << std::endl;
     std::cout << "  joinroom <room_id>  - Join a specific room" << std::endl;
     std::cout << "  leaveroom           - Leave the current room" << std::endl;
     std::cout << "  status              - Show current status" << std::endl;
@@ -135,6 +136,22 @@ int main() {
                         std::cout << "Sending join request for room: " << roomId << std::endl;
                     } else {
                         std::cout << "Failed to send join request. Check your network connection." << std::endl;
+                    }
+                }
+            }
+            else if (command == "createroom") {
+                std::string roomName;
+                std::getline(iss >> std::ws, roomName);
+                
+                if (roomName.empty()) {
+                    std::cout << "Usage: createroom <room_name>" << std::endl;
+                } else if (roomManager->getPlayerName().empty()) {
+                    std::cout << "Please set your player name first using 'setname <name>'" << std::endl;
+                } else {
+                    if (roomManager->createRoom(roomName)) {
+                        std::cout << "Sending create room request for: " << roomName << std::endl;
+                    } else {
+                        std::cout << "Failed to send create room request. Check your network connection." << std::endl;
                     }
                 }
             }

@@ -47,7 +47,7 @@ export default function RoomPage() {
         joinRoom({
           roomId: savedInfo.roomId,
           playerName: savedInfo.playerName || "Player",
-          playerType: "webadmin",
+          playerType: "webviewer",
         });
       } else {
         // No saved info or different room, redirect to home
@@ -122,19 +122,22 @@ export default function RoomPage() {
     window.addEventListener("room_updated", handleRoomUpdate as EventListener);
 
     // Also listen for room list events to ensure consistent state
-    const handleRoomList = () => {
-      console.log("Room list updated, checking for our room");
-      useRoomStore.getState().fetchRooms();
+    const handleRoomList = (event: CustomEvent) => {
+      console.log("Room list received, updating from event payload");
+      // Instead of fetching rooms again, update directly from payload
+      if (event.detail && event.detail.rooms) {
+        useRoomStore.setState({ availableRooms: event.detail.rooms });
+      }
     };
 
-    window.addEventListener("room_list", handleRoomList);
+    window.addEventListener("room_list", handleRoomList as EventListener);
 
     return () => {
       window.removeEventListener(
         "room_updated",
         handleRoomUpdate as EventListener
       );
-      window.removeEventListener("room_list", handleRoomList);
+      window.removeEventListener("room_list", handleRoomList as EventListener);
     };
   }, [roomId]);
 
@@ -205,16 +208,22 @@ export default function RoomPage() {
   const getCurrentPlayer = () => {
     const savedInfo = getSavedRoomInfo();
     if (!currentRoom || !savedInfo.playerId) return null;
-    return (
-      currentRoom.players.find((p: Player) => p.id === savedInfo.playerId) || {
-        id: savedInfo.playerId,
-        name: savedInfo.playerName || "Web Admin",
-        isReady: false,
-        connected: true,
-        playerType: "webadmin", // Explicitly identify as web admin
-        isAdmin: true, // Flag to identify web admin
-      }
-    );
+
+    // For BeagleBoard players, find them in the room player list
+    if (!isWebViewer()) {
+      return currentRoom.players.find(
+        (p: Player) => p.id === savedInfo.playerId
+      );
+    }
+
+    // For web viewers, create a virtual player object that's not in the room
+    return {
+      id: savedInfo.playerId,
+      name: savedInfo.playerName || "Web Viewer",
+      isReady: false,
+      connected: true,
+      isViewer: true, // Flag to identify as viewer only
+    };
   };
 
   const currentPlayer = getCurrentPlayer();
@@ -222,10 +231,20 @@ export default function RoomPage() {
   const allPlayersReady = currentRoom?.players.every((p: Player) => p.isReady);
   const canStartGame = isHost && allPlayersReady;
 
-  // Helper to check if the current user is an admin (web client)
-  const isWebAdmin = () => {
+  // Helper to check if the current user is a web viewer
+  const isWebViewer = () => {
     const savedInfo = getSavedRoomInfo();
-    return savedInfo.playerId?.startsWith("admin-") || false;
+    return (
+      savedInfo.playerId?.startsWith("admin-") ||
+      savedInfo.playerId?.startsWith("viewer-") ||
+      false
+    );
+  };
+
+  // Helper to check if this is a BeagleBoard player
+  const isBeagleBoard = () => {
+    const savedInfo = getSavedRoomInfo();
+    return !isWebViewer() && savedInfo.playerId;
   };
 
   // Helper to count BeagleBoard players
@@ -326,8 +345,8 @@ export default function RoomPage() {
           <div className="flex flex-col space-y-3">
             {/* Current player actions */}
             <div className="flex space-x-3">
-              {/* Only show Ready button for BeagleBoard players (not for web admin) */}
-              {!isWebAdmin() && (
+              {/* Only show Ready button for BeagleBoard players (not for web viewer) */}
+              {!isWebViewer() && (
                 <button
                   className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg"
                   onClick={handleToggleReady}
@@ -335,17 +354,10 @@ export default function RoomPage() {
                   {currentPlayer?.isReady ? "Not Ready" : "Ready Up"}
                 </button>
               )}
-
-              <button
-                className="flex-1 bg-danger hover:bg-danger/80 text-white font-bold py-2 px-4 rounded-lg"
-                onClick={handleLeaveRoom}
-              >
-                Leave Room
-              </button>
             </div>
 
-            {/* Host-only actions */}
-            {isHost && (
+            {/* Host-only actions - allow web viewer to start the game if all players are ready */}
+            {(isHost || isWebViewer()) && (
               <button
                 className={`w-full font-bold py-2 px-4 rounded-lg ${
                   canStartGame
@@ -357,6 +369,14 @@ export default function RoomPage() {
               >
                 Start Game
               </button>
+            )}
+
+            {/* If web viewer, show explanatory text */}
+            {isWebViewer() && (
+              <p className="text-sm text-white/70 italic mt-2">
+                You are viewing as a web client. Only BeagleBoard players appear
+                in the player list.
+              </p>
             )}
           </div>
 

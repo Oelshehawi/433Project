@@ -73,7 +73,7 @@ export const handleCreateRoom = (
     // Make sure all players have the playerType field set
     newRoom.players.forEach((player) => {
       if (!player.playerType) {
-        player.playerType = "webadmin"; // Assume any existing players are web admins
+        player.playerType = "webviewer"; // Assume any existing players are web viewers
       }
     });
 
@@ -106,7 +106,7 @@ export const handleJoinRoom = (
   payload: JoinRoomPayload
 ) => {
   try {
-    const { roomId, playerId, playerName, playerType } = payload;
+    const { roomId, playerId, playerName } = payload;
 
     // Validate data
     if (!roomId || !playerId || !playerName) {
@@ -119,7 +119,6 @@ export const handleJoinRoom = (
     client.roomId = roomId;
     client.playerId = playerId;
     client.playerName = playerName;
-    client.playerType = playerType;
 
     // Check if room exists
     if (!rooms.has(roomId)) {
@@ -130,8 +129,11 @@ export const handleJoinRoom = (
 
     const room = rooms.get(roomId)!;
 
-    // Check if room is full
-    if (room.players.length >= room.maxPlayers) {
+    // Check if room is full - only count actual BeagleBoard players
+    const beagleboardPlayerCount = room.players.filter(
+      (p) => p.playerType === "beagleboard"
+    ).length;
+    if (beagleboardPlayerCount >= room.maxPlayers) {
       return sendToClient(client, "error", {
         error: "Room is full",
       } as ErrorPayload);
@@ -144,13 +146,18 @@ export const handleJoinRoom = (
       } as ErrorPayload);
     }
 
-    // Add player to room
+    // Add player to room - identify BeagleBoard players by ID format
+    // BeagleBoard device IDs typically start with "bb_" or similar prefix
+    const isBeagleBoard =
+      playerId.startsWith("bb_") ||
+      (!playerId.startsWith("admin-") && !playerId.startsWith("viewer-"));
+
     const newPlayer: Player = {
       id: playerId,
       name: playerName,
       isReady: false,
       connected: true,
-      playerType: (playerType || "webadmin") as "beagleboard" | "webadmin", // Cast to the correct type
+      playerType: isBeagleBoard ? "beagleboard" : "webviewer",
     };
 
     room.players.push(newPlayer);
