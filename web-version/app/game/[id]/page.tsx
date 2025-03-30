@@ -1,150 +1,118 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
-import { useRoomStore } from '../../lib/room/store';
-import { useGameStore } from '../../lib/store';
-import { initializeSocket } from '../../lib/websocket';
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import { useRoomStore } from "../../lib/room/store";
+import { initializeSocket, getSocketStatus } from "../../lib/websocket";
+import { getSavedRoomInfo } from "../../components/room/RoomHelpers";
 
 export default function GamePage() {
   const params = useParams();
   const router = useRouter();
   const roomId = params.id as string;
-  const { currentRoom, error, leaveRoom } = useRoomStore();
-  const { gameState } = useGameStore();
-  const [isLoading, setIsLoading] = useState(true);
+  const { currentRoom, error } = useRoomStore();
+  const [socketConnected, setSocketConnected] = useState(false);
 
-  // Initialize WebSocket and check game state
+  // Initialize WebSocket connection
   useEffect(() => {
     const socket = initializeSocket();
-    console.log('WebSocket initialized in game page:', socket.id);
+    console.log("WebSocket initializing in game page");
 
-    // If we don't have a current room or the game isn't playing, redirect
-    if (!currentRoom || currentRoom.status !== 'playing') {
-      router.push('/');
-      return;
+    // Check if socket is already connected
+    if (getSocketStatus() === "connected") {
+      setSocketConnected(true);
+    } else {
+      // Set up event listener for socket connection
+      const handleSocketConnected = () => {
+        console.log("WebSocket connected in game page");
+        setSocketConnected(true);
+      };
+
+      window.addEventListener("ws_connected", handleSocketConnected);
+
+      return () => {
+        window.removeEventListener("ws_connected", handleSocketConnected);
+      };
     }
+  }, []);
 
-    setIsLoading(false);
-
-    // Clean up WebSocket connection when component unmounts
-    return () => {
-      // Don't close the socket, just handle cleanup
-    };
-  }, [currentRoom, router]);
-
-  // Handle game end
+  // Verify we have proper room data
   useEffect(() => {
-    if (currentRoom?.status === 'ended') {
-      // Navigate back to the room page
-      router.push(`/rooms/${roomId}`);
+    // If we're connected but have no room data, try to get it from localStorage
+    if (socketConnected && !currentRoom) {
+      const savedInfo = getSavedRoomInfo();
+
+      if (!savedInfo.roomId || savedInfo.roomId !== roomId) {
+        // No valid saved info, redirect to home
+        console.log("No valid room info found, redirecting to home");
+        router.push("/");
+        return;
+      }
     }
-  }, [currentRoom?.status, roomId, router]);
+  }, [socketConnected, currentRoom, roomId, router]);
 
-  const handleLeaveGame = async () => {
-    await leaveRoom();
-    router.push('/');
-  };
-
-  if (isLoading) {
+  if (!socketConnected) {
     return (
-      <div className='min-h-screen flex items-center justify-center'>
-        <div className='animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary'></div>
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+        <p className="text-white/70">Connecting to server...</p>
       </div>
     );
   }
 
   if (!currentRoom) {
     return (
-      <div className='min-h-screen flex flex-col items-center justify-center'>
-        <h2 className='game-title text-3xl font-bold mb-4'>Game not found</h2>
-        <button
-          className='bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg'
-          onClick={() => router.push('/')}
-        >
-          Back to Home
-        </button>
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+        <p className="text-white/70">Loading game data...</p>
       </div>
     );
   }
 
   return (
-    <div className='min-h-screen flex flex-col items-center justify-center p-8'>
+    <div className="min-h-screen flex flex-col items-center justify-center p-8">
       <motion.div
-        className='bg-background/20 backdrop-blur-md rounded-xl p-8 w-full max-w-4xl'
+        className="bg-black/30 backdrop-blur-sm rounded-lg p-8 w-full max-w-4xl border border-white/10 text-center"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <h1 className='game-title text-3xl font-bold mb-6 text-center'>
-          Gesture Tower Game
-        </h1>
+        <h1 className="game-title text-5xl font-bold mb-6">Game in Progress</h1>
+        <p className="text-xl mb-8">
+          Room: <span className="text-accent">{currentRoom.name}</span>
+        </p>
 
-        <div className='mb-8'>
-          <h2 className='text-xl font-bold mb-4'>Players</h2>
-          <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-            {currentRoom.players.map((player) => (
-              <div key={player.id} className='bg-background/30 p-4 rounded-lg'>
-                <div className='flex items-center justify-between mb-2'>
-                  <div className='flex items-center'>
-                    <div
-                      className={`w-3 h-3 rounded-full mr-2 ${
-                        player.connected ? 'bg-success' : 'bg-danger'
-                      }`}
-                    ></div>
-                    <span className='font-bold'>{player.name}</span>
-                  </div>
-                  <div className='text-sm bg-primary/20 px-2 py-1 rounded'>
-                    Score: {gameState.scores[player.id] || 0}
-                  </div>
-                </div>
-
-                {/* Player tower visualization would go here */}
-                <div className='h-32 bg-background/20 rounded-lg flex items-end justify-center'>
-                  <div
-                    className='w-20 bg-gradient-to-t from-primary to-primary-light rounded-t-lg'
-                    style={{
-                      height: `${Math.min(
-                        100,
-                        (gameState.scores[player.id] || 0) * 10
-                      )}%`,
-                    }}
-                  ></div>
-                </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+          {currentRoom.players
+            .filter((player) => player.playerType === "beagleboard")
+            .map((player) => (
+              <div
+                key={player.id}
+                className="bg-black/20 p-4 rounded-lg border border-white/10"
+              >
+                <h3 className="text-xl font-bold mb-2">{player.name}</h3>
+                <p className="text-accent">Waiting for gameplay data...</p>
               </div>
             ))}
-          </div>
         </div>
 
-        {/* Game controls */}
-        <div className='flex justify-between items-center'>
-          <div className='text-sm'>
-            <p>Room: {currentRoom.name}</p>
-            <p>Game in progress</p>
-          </div>
-
-          <button
-            className='bg-danger hover:bg-danger/80 text-white font-bold py-2 px-4 rounded-lg'
-            onClick={handleLeaveGame}
-          >
-            Leave Game
-          </button>
-        </div>
-
-        {/* Game instructions */}
-        <div className='mt-8 p-4 bg-background/30 rounded-lg'>
-          <h3 className='font-bold mb-2'>How to Play</h3>
-          <p className='text-sm'>
-            Use gestures to build your tower! The first player to reach the goal
-            height wins. Make sure your camera can see your full body for best
-            gesture recognition.
+        <div className="text-white/70 text-sm">
+          <p>Game implementation coming soon!</p>
+          <p className="mt-4">
+            This page will display the game state once it's implemented.
           </p>
         </div>
 
-        {/* Error message */}
+        <button
+          onClick={() => router.push("/")}
+          className="mt-8 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-6 rounded-lg"
+        >
+          Back to Home
+        </button>
+
         {error && (
-          <div className='bg-danger/20 text-danger p-3 rounded-md mt-4'>
+          <div className="bg-danger/20 text-danger p-3 rounded-md mt-4">
             {error}
           </div>
         )}

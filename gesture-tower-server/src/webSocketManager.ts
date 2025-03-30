@@ -9,16 +9,11 @@ import {
   handleGameStart,
   handleGestureEvent,
   handleRoomList,
+  handleGetRoom,
   getRoomList,
   rooms,
 } from "./roomManager";
-import {
-  clients,
-  beagleBoards,
-  broadcastToAll,
-  sendToRoom,
-  sendToClient,
-} from "./messaging";
+import { clients, beagleBoards, broadcastToAll, sendToRoom } from "./messaging";
 
 // Functions for handling BeagleBoard commands via WebSocket
 import { Player, Room } from "./types";
@@ -149,6 +144,9 @@ function handleMessage(client: ExtendedWebSocket, message: WebSocketMessage) {
       break;
     case "room_list":
       handleRoomList(client);
+      break;
+    case "get_room":
+      handleGetRoom(client, payload);
       break;
     case "beagleboard_command":
       // Handle BeagleBoard specific commands

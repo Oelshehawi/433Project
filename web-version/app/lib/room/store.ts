@@ -101,10 +101,29 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
         throw new Error("WebSocket is not connected");
       }
 
-      // Generate a unique player ID
-      const playerId = crypto.randomUUID();
+      // Generate a unique player ID if not provided
+      // For webviewer, we'll use a special prefix
+      const playerId =
+        params.playerType === "webviewer"
+          ? `viewer-${crypto.randomUUID()}`
+          : crypto.randomUUID();
 
-      // Send join room message
+      // For web viewers, we don't actually join the room as a player, we just watch
+      if (params.playerType === "webviewer") {
+        console.log("Joining as web viewer - not sending join_room message");
+
+        // Save room info to localStorage for tracking
+        storeRoomInfo(params.roomId, playerId, params.playerName);
+
+        // Request the current room state without joining
+        await sendMessage("get_room", {
+          roomId: params.roomId,
+        });
+
+        return;
+      }
+
+      // For actual players, send the join_room message
       await sendMessage("join_room", {
         roomId: params.roomId,
         playerId: playerId,
@@ -233,6 +252,22 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
 
 // Set up event listeners for room events
 if (typeof window !== "undefined") {
+  // Handle room data from get_room request
+  window.addEventListener("room_data", (event: CustomEventInit) => {
+    const { room } = event.detail || {};
+    console.log("Room data event received in store:", room);
+
+    if (room) {
+      // Update store with the returned room data
+      useRoomStore.setState({
+        currentRoom: room,
+        loading: false,
+      });
+    } else {
+      console.warn("Received room_data event with no room data");
+    }
+  });
+
   // Room updated event
   window.addEventListener("room_updated", (event: CustomEventInit) => {
     const { room } = event.detail || {};
@@ -254,31 +289,6 @@ if (typeof window !== "undefined") {
           currentRoom: room as Room,
           loading: false,
         });
-
-        // When joining a room successfully, save room info
-        if (room.id) {
-          const currentPlayerId = savedInfo.playerId || "";
-
-          // Find the current player in the room
-          const currentPlayer = (room as Room).players.find(
-            (p) => p.id === currentPlayerId
-          );
-
-          if (currentPlayer) {
-            storeRoomInfo(room.id, currentPlayer.id, currentPlayer.name);
-
-            // Dispatch a navigation event for components to handle
-            window.dispatchEvent(
-              new CustomEvent("navigate_to_room", {
-                detail: {
-                  roomId: room.id,
-                  playerId: currentPlayer.id,
-                  playerName: currentPlayer.name,
-                },
-              })
-            );
-          }
-        }
       } else {
         // This is an update for a different room, just update the room list
         console.log("Received update for different room:", room.id);

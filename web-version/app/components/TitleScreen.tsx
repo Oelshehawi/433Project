@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useRoomStore } from "../lib/room/store";
 import { CreateRoomForm } from "./CreateRoomForm";
+import { ViewRoomForm } from "./ViewRoomForm";
 import { RoomList } from "./RoomList";
 import { useRouter } from "next/navigation";
 import { initializeSocket } from "../lib/websocket";
@@ -26,7 +27,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showJoinForm, setShowJoinForm] = useState(false);
-  const [joinRoomId, setJoinRoomId] = useState("");
 
   // Initialize WebSocket and fetch rooms
   useEffect(() => {
@@ -133,28 +133,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
     }),
   };
 
-  // const buttonVariants = {
-  //   initial: { scale: 0.9, opacity: 0 },
-  //   animate: {
-  //     scale: 1,
-  //     opacity: 1,
-  //     transition: {
-  //       type: 'spring',
-  //       stiffness: 200,
-  //       damping: 15,
-  //     },
-  //   },
-  //   hover: {
-  //     scale: 1.05,
-  //     transition: {
-  //       type: 'spring',
-  //       stiffness: 400,
-  //       damping: 10,
-  //     },
-  //   },
-  //   tap: { scale: 0.95 },
-  // };
-
   // Room management handlers
   const handleCreateRoom = () => {
     console.log("Opening create room form");
@@ -180,7 +158,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
     setShowCreateForm(false);
   };
 
-  const handleJoinRoomSubmit = async () => {
+  const handleJoinRoomSubmit = async (joinRoomId: string) => {
     if (!joinRoomId) {
       console.error("No room ID provided");
       return;
@@ -223,9 +201,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
               Gesture Tower
             </motion.span>
           </motion.h1>
-
-          {/* Only show tower graphic and main buttons when no forms are visible */}
-          {!showCreateForm && (
             <>
               {/* Animated tower graphic */}
               <div className="flex items-end justify-center mt-4 mb-8 h-64 relative">
@@ -292,62 +267,21 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
                 </button>
               </div>
             </>
-          )}
 
           {/* Create room form modal */}
           {showCreateForm && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-              <div className="w-full max-w-md bg-background rounded-lg shadow-xl relative z-60">
-                <h2 className="text-2xl text-white text-center py-4 border-b border-white/10">
-                  Create a Room
-                </h2>
-                <CreateRoomForm
-                  onSubmit={handleCreateRoomSubmit}
-                  onCancel={() => setShowCreateForm(false)}
-                />
-              </div>
-            </div>
+            <CreateRoomForm
+              onSubmit={handleCreateRoomSubmit}
+              onCancel={() => setShowCreateForm(false)}
+            />
           )}
 
-          {/* Join room form modal */}
+          {/* View room form modal */}
           {showJoinForm && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-              <div className="w-full max-w-md bg-background rounded-lg shadow-xl relative z-60">
-                <h2 className="text-2xl text-white text-center py-4 border-b border-white/10">
-                  View a Room
-                </h2>
-                <div className="p-6">
-                  <div className="mb-4">
-                    <label className="block text-white text-sm font-bold mb-2">
-                      Room ID
-                    </label>
-                    <input
-                      className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                      type="text"
-                      placeholder="Enter Room ID"
-                      value={joinRoomId}
-                      onChange={(e) => setJoinRoomId(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <button
-                      className="bg-accent hover:bg-accent-dark text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                      type="button"
-                      onClick={handleJoinRoomSubmit}
-                    >
-                      View Room
-                    </button>
-                    <button
-                      className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                      type="button"
-                      onClick={() => setShowJoinForm(false)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ViewRoomForm
+              onSubmit={handleJoinRoomSubmit}
+              onCancel={() => setShowJoinForm(false)}
+            />
           )}
 
           {error && (

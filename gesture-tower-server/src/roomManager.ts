@@ -429,7 +429,53 @@ export const handleGestureEvent = (
   }
 };
 
-// Send room list to a client
+// Handle room list request
 export const handleRoomList = (client: ExtendedWebSocket) => {
-  sendToClient(client, "room_list", { rooms: getRoomList() });
+  try {
+    sendToClient(client, "room_list", {
+      rooms: getRoomList(),
+    });
+  } catch (error) {
+    console.error("Error sending room list:", error);
+    sendToClient(client, "error", {
+      error: "Failed to retrieve room list",
+    } as ErrorPayload);
+  }
+};
+
+// Handle get room request
+export const handleGetRoom = (
+  client: ExtendedWebSocket,
+  payload: { roomId: string }
+) => {
+  try {
+    const { roomId } = payload;
+
+    // Validate data
+    if (!roomId) {
+      return sendToClient(client, "error", {
+        error: "Missing room ID",
+      } as ErrorPayload);
+    }
+
+    // Check if room exists
+    if (!rooms.has(roomId)) {
+      return sendToClient(client, "error", {
+        code: "room_not_found",
+        error: "Room not found",
+      } as ErrorPayload);
+    }
+
+    const room = rooms.get(roomId)!;
+
+    // Send room data to the client
+    sendToClient(client, "room_data", { room });
+
+    console.log(`Room data sent for room ${roomId} to ${client.id}`);
+  } catch (error) {
+    console.error("Error getting room:", error);
+    sendToClient(client, "error", {
+      error: "Failed to retrieve room",
+    } as ErrorPayload);
+  }
 };

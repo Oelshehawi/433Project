@@ -11,36 +11,57 @@ import {
 
 // Single source of truth for WebSocket connection
 let socket: WebSocket | null = null;
-let isConnecting = false;
+let socketStatus: "disconnected" | "connecting" | "connected" = "disconnected";
 
 // Initialize WebSocket connection
 export const initializeSocket = (
   url: string = "wss://four33project.onrender.com"
 ): WebSocket | null => {
-  // Use existing socket if connected
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    console.log("Using existing WebSocket connection");
+  // Use existing socket if connected or connecting
+  if (
+    socket &&
+    (socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CONNECTING)
+  ) {
+    console.log(
+      "WebSocket already initialized and in state:",
+      socket.readyState === WebSocket.OPEN ? "OPEN" : "CONNECTING"
+    );
     return socket;
   }
+
+  // Set status to connecting
+  socketStatus = "connecting";
 
   // Don't create multiple connections
-  if (isConnecting) {
-    console.log("WebSocket connection in progress");
+  if (socketStatus === "connecting" && socket) {
+    console.log("WebSocket connection already in progress");
     return socket;
   }
 
-  isConnecting = true;
-  console.log("Creating new WebSocket connection to:", url);
-
   try {
+    console.log("Initializing WebSocket connection to", url);
+
+    // Create WebSocket connection
     socket = new WebSocket(url);
 
+    // Handle connection open
     socket.onopen = () => {
       console.log("WebSocket connection established");
-      isConnecting = false;
+      socketStatus = "connected";
 
-      // Attempt to rejoin room if we have saved info
-      rejoinRoomAfterConnect();
+      // Dispatch a custom event that components can listen for
+      window.dispatchEvent(new CustomEvent("ws_connected"));
+
+      // If we have saved room info, immediately request room data
+      const savedInfo = getSavedRoomInfo();
+      if (savedInfo.roomId) {
+        console.log(
+          "Found saved room info, requesting room data:",
+          savedInfo.roomId
+        );
+        sendMessage("get_room", { roomId: savedInfo.roomId });
+      }
     };
 
     socket.onclose = (event) => {
@@ -50,7 +71,7 @@ export const initializeSocket = (
         }`
       );
       socket = null;
-      isConnecting = false;
+      socketStatus = "disconnected";
 
       // Auto reconnect if it wasn't intentionally closed
       if (event.code !== 1000) {
@@ -61,7 +82,7 @@ export const initializeSocket = (
 
     socket.onerror = (error) => {
       console.error("WebSocket connection error:", error);
-      isConnecting = false;
+      socketStatus = "disconnected";
     };
 
     socket.onmessage = (event) => {
@@ -84,8 +105,8 @@ export const initializeSocket = (
 
     return socket;
   } catch (error) {
-    console.error("Error creating WebSocket connection:", error);
-    isConnecting = false;
+    console.error("Failed to initialize WebSocket:", error);
+    socketStatus = "disconnected";
     socket = null;
     return null;
   }
@@ -101,6 +122,8 @@ export const clearRoomData = (): void => {
 
 // Get saved room info from localStorage
 export const getSavedRoomInfo = () => {
+  if (typeof window === "undefined")
+    return { roomId: null, playerId: null, playerName: null };
   return {
     roomId: localStorage.getItem("currentRoomId"),
     playerId: localStorage.getItem("currentPlayerId"),
@@ -114,10 +137,11 @@ export const saveRoomInfo = (
   playerId: string,
   playerName: string
 ): void => {
+  if (typeof window === "undefined") return;
   localStorage.setItem("currentRoomId", roomId);
   localStorage.setItem("currentPlayerId", playerId);
   localStorage.setItem("currentPlayerName", playerName);
-  console.log("Saved room info to localStorage", {
+  console.log("Saved room info to localStorage:", {
     roomId,
     playerId,
     playerName,
@@ -180,18 +204,7 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
 };
 
 // Get WebSocket connection status
-export const getSocketStatus = ():
-  | "connected"
-  | "connecting"
-  | "disconnected" => {
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    return "connected";
-  } else if (isConnecting) {
-    return "connecting";
-  } else {
-    return "disconnected";
-  }
-};
+export const getSocketStatus = () => socketStatus;
 
 // Close WebSocket connection
 export const closeSocket = (): void => {

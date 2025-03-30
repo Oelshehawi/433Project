@@ -59,15 +59,6 @@ export const RoomList: React.FC<RoomListProps> = ({
           <h2 className='text-xl font-bold text-foreground/90'>
             Available Rooms
           </h2>
-          <motion.button
-            className='px-4 py-2 bg-primary text-white rounded-md shadow-md'
-            onClick={onCreateClick}
-            variants={buttonVariants}
-            whileHover='hover'
-            whileTap='tap'
-          >
-            Create Room
-          </motion.button>
         </div>
 
         {/* Room list */}

@@ -4,32 +4,53 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useRoomStore } from "../../lib/room/store";
-import { initializeSocket } from "../../lib/websocket";
-import { Player } from "../../lib/types/index";
-// Helper function to get saved room info
-const getSavedRoomInfo = () => {
-  if (typeof window !== "undefined") {
-    return {
-      roomId: localStorage.getItem("currentRoomId"),
-      playerId: localStorage.getItem("currentPlayerId"),
-      playerName: localStorage.getItem("currentPlayerName"),
-    };
-  }
-  return { roomId: null, playerId: null, playerName: null };
-};
+import { initializeSocket, getSocketStatus } from "../../lib/websocket";
+import { RoomHeader } from "../../components/room/RoomHeader";
+import { PlayerList } from "../../components/room/PlayerList";
+import { RoomActions } from "../../components/room/RoomActions";
+import {
+  getSavedRoomInfo,
+  isWebViewer,
+  getCurrentPlayer,
+  getBeagleBoardPlayerCount,
+} from "../../components/room/RoomHelpers";
 
 export default function RoomPage() {
   const params = useParams();
   const router = useRouter();
   const roomId = params.id as string;
-  const { currentRoom, error, leaveRoom, setPlayerReady, startGame, joinRoom } =
+  const { currentRoom, error, leaveRoom, setPlayerReady, joinRoom } =
     useRoomStore();
   const [isLoading, setIsLoading] = useState(true);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
 
-  // Initialize WebSocket and fetch room data
+  // Initialize WebSocket and wait for connection
   useEffect(() => {
     const socket = initializeSocket();
-    console.log("WebSocket initialized in room page", socket);
+    console.log("WebSocket initializing in room page");
+
+    // Check if socket is already connected
+    if (getSocketStatus() === "connected") {
+      setSocketConnected(true);
+    } else {
+      // Set up event listener for socket connection
+      const handleSocketConnected = () => {
+        console.log("WebSocket connected, ready to fetch room data");
+        setSocketConnected(true);
+      };
+
+      window.addEventListener("ws_connected", handleSocketConnected);
+
+      return () => {
+        window.removeEventListener("ws_connected", handleSocketConnected);
+      };
+    }
+  }, []);
+
+  // Fetch room data once socket is connected
+  useEffect(() => {
+    if (!socketConnected) return;
 
     // If we don't have a current room, try to recover from localStorage
     if (!currentRoom) {
@@ -43,10 +64,10 @@ export default function RoomPage() {
       ) {
         console.log("Rejoining room from saved session:", savedInfo.roomId);
 
-        // Re-join the room
+        // Re-join the room as a web viewer
         joinRoom({
           roomId: savedInfo.roomId,
-          playerName: savedInfo.playerName || "Player",
+          playerName: savedInfo.playerName || "Web Viewer",
           playerType: "webviewer",
         });
       } else {
@@ -57,17 +78,20 @@ export default function RoomPage() {
     }
 
     setIsLoading(false);
-
-    // No cleanup needed as socket is managed globally
-  }, [currentRoom, router, roomId, joinRoom]);
+  }, [currentRoom, router, roomId, joinRoom, socketConnected]);
 
   // Handle game start
   useEffect(() => {
-    if (currentRoom?.status === "playing") {
-      // Navigate to the game page
-      router.push(`/game/${roomId}`);
+    if (currentRoom?.status === "playing" && !transitioning) {
+      setTransitioning(true);
+
+      // Show transition animation before navigating
+      setTimeout(() => {
+        // Navigate to the game page
+        router.push(`/game/${roomId}`);
+      }, 2000); // 2 second delay for animation
     }
-  }, [currentRoom?.status, roomId, router]);
+  }, [currentRoom?.status, roomId, router, transitioning]);
 
   // Handle browser back button
   useEffect(() => {
@@ -178,7 +202,7 @@ export default function RoomPage() {
 
     // Find the current player in the room
     const currentPlayer = currentRoom.players.find(
-      (p: Player) => p.id === currentPlayerId
+      (p) => p.id === currentPlayerId
     );
 
     if (currentPlayer) {
@@ -193,75 +217,31 @@ export default function RoomPage() {
     }
   };
 
-  const handleStartGame = async () => {
-    if (!currentRoom) return;
-
-    // Check if all players are ready
-    const allPlayersReady = currentRoom.players.every((p: Player) => p.isReady);
-
-    if (allPlayersReady) {
-      await startGame();
-    }
-  };
-
-  // Helper function to get the current player
-  const getCurrentPlayer = () => {
-    const savedInfo = getSavedRoomInfo();
-    if (!currentRoom || !savedInfo.playerId) return null;
-
-    // For BeagleBoard players, find them in the room player list
-    if (!isWebViewer()) {
-      return currentRoom.players.find(
-        (p: Player) => p.id === savedInfo.playerId
-      );
-    }
-
-    // For web viewers, create a virtual player object that's not in the room
-    return {
-      id: savedInfo.playerId,
-      name: savedInfo.playerName || "Web Viewer",
-      isReady: false,
-      connected: true,
-      isViewer: true, // Flag to identify as viewer only
-    };
-  };
-
-  const currentPlayer = getCurrentPlayer();
+  // Get derived state
+  const currentPlayer = currentRoom
+    ? getCurrentPlayer(currentRoom.players)
+    : null;
   const isHost = currentRoom?.hostId === currentPlayer?.id;
-  const allPlayersReady = currentRoom?.players.every((p: Player) => p.isReady);
-  const canStartGame = isHost && allPlayersReady;
+  const allPlayersReady = currentRoom?.players.every((p) => p.isReady);
+  const beagleBoardPlayerCount = currentRoom
+    ? getBeagleBoardPlayerCount(currentRoom.players)
+    : 0;
 
-  // Helper to check if the current user is a web viewer
-  const isWebViewer = () => {
-    const savedInfo = getSavedRoomInfo();
+  // Loading or connecting state
+  if (isLoading || !socketConnected) {
     return (
-      savedInfo.playerId?.startsWith("admin-") ||
-      savedInfo.playerId?.startsWith("viewer-") ||
-      false
-    );
-  };
-
-  // Helper to check if this is a BeagleBoard player
-  const isBeagleBoard = () => {
-    const savedInfo = getSavedRoomInfo();
-    return !isWebViewer() && savedInfo.playerId;
-  };
-
-  // Helper to count BeagleBoard players
-  const getBeagleBoardPlayerCount = () => {
-    if (!currentRoom) return 0;
-    return currentRoom.players.filter((p) => p.playerType === "beagleboard")
-      .length;
-  };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+        <p className="text-white/70">
+          {!socketConnected
+            ? "Connecting to server..."
+            : "Loading room data..."}
+        </p>
       </div>
     );
   }
 
+  // Not found state
   if (!currentRoom) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
@@ -276,6 +256,42 @@ export default function RoomPage() {
     );
   }
 
+  // Game starting transition
+  if (transitioning) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.5 }}
+          className="text-center"
+        >
+          <h2 className="game-title text-5xl font-bold mb-6 text-accent">
+            Game Starting!
+          </h2>
+          <p className="text-white/70 text-xl">Preparing the tower...</p>
+          <div className="mt-8 flex justify-center">
+            <div className="animate-bounce bg-accent p-4 rounded-full">
+              <svg
+                className="w-12 h-12 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                ></path>
+              </svg>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-8">
       <div className="bg-black/30 backdrop-blur-sm rounded-lg p-6 w-full max-w-4xl border border-white/10">
@@ -285,109 +301,24 @@ export default function RoomPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
-            <div>
-              <h1 className="game-title text-3xl font-bold">
-                {currentRoom.name}
-              </h1>
-              <p className="text-foreground/70">
-                Room ID: <span className="font-mono">{currentRoom.id}</span>
-              </p>
-            </div>
+          <RoomHeader room={currentRoom} onLeaveRoom={handleLeaveRoom} />
 
-            <motion.button
-              className="mt-2 md:mt-0 px-4 py-2 bg-danger text-white rounded-md shadow-md"
-              onClick={handleLeaveRoom}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              Leave Room
-            </motion.button>
-          </div>
+          <PlayerList
+            players={currentRoom.players}
+            hostId={currentRoom.hostId}
+          />
 
-          <div className="bg-black/40 rounded-md p-4 mb-4">
-            <h2 className="text-lg font-semibold mb-2">Players</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {/* Filter to only show BeagleBoard players */}
-              {currentRoom.players
-                .filter((player) => player.playerType === "beagleboard")
-                .map((player) => (
-                  <div
-                    key={player.id}
-                    className="flex items-center justify-between p-3 rounded-md border border-white/10 bg-black/20"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className={`w-3 h-3 rounded-full ${
-                          player.connected ? "bg-green-500" : "bg-gray-500"
-                        }`}
-                      />
-                      <span>
-                        {player.name}
-                        {currentRoom.hostId === player.id && " (Host)"}
-                      </span>
-                    </div>
-                    <div
-                      className={`px-2 py-1 text-sm rounded ${
-                        player.isReady
-                          ? "bg-green-800/70 text-green-200"
-                          : "bg-gray-700/50 text-gray-300"
-                      }`}
-                    >
-                      {player.isReady ? "Ready" : "Not Ready"}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-
-          <div className="flex flex-col space-y-3">
-            {/* Current player actions */}
-            <div className="flex space-x-3">
-              {/* Only show Ready button for BeagleBoard players (not for web viewer) */}
-              {!isWebViewer() && (
-                <button
-                  className="flex-1 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg"
-                  onClick={handleToggleReady}
-                >
-                  {currentPlayer?.isReady ? "Not Ready" : "Ready Up"}
-                </button>
-              )}
-            </div>
-
-            {/* Host-only actions - allow web viewer to start the game if all players are ready */}
-            {(isHost || isWebViewer()) && (
-              <button
-                className={`w-full font-bold py-2 px-4 rounded-lg ${
-                  canStartGame
-                    ? "bg-success hover:bg-success/80 text-white"
-                    : "bg-gray-500 cursor-not-allowed text-white/50"
-                }`}
-                onClick={handleStartGame}
-                disabled={!canStartGame}
-              >
-                Start Game
-              </button>
-            )}
-
-            {/* If web viewer, show explanatory text */}
-            {isWebViewer() && (
-              <p className="text-sm text-white/70 italic mt-2">
-                You are viewing as a web client. Only BeagleBoard players appear
-                in the player list.
-              </p>
-            )}
-          </div>
-
-          {/* Room info */}
-          <div className="mt-6 text-sm text-white/70">
-            <p>Room ID: {currentRoom.id}</p>
-            <p>Status: {currentRoom.status}</p>
-            <p>
-              Players: {getBeagleBoardPlayerCount()}/{currentRoom.maxPlayers}
-            </p>
-          </div>
+          <RoomActions
+            isWebViewer={isWebViewer()}
+            isHost={isHost}
+            currentPlayer={currentPlayer}
+            beagleBoardPlayerCount={beagleBoardPlayerCount}
+            maxPlayers={currentRoom.maxPlayers}
+            roomId={currentRoom.id}
+            status={currentRoom.status}
+            allPlayersReady={!!allPlayersReady}
+            onToggleReady={handleToggleReady}
+          />
 
           {/* Error message */}
           {error && (

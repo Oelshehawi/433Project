@@ -7,7 +7,6 @@ import {
   initializeSocket,
   getSocketStatus,
   saveRoomInfo,
-  logConnectionDetails,
 } from "./lib/websocket";
 import { NavigateToRoomEvent } from "./lib/types";
 
@@ -99,11 +98,6 @@ export default function Home() {
   useEffect(() => {
     // Initialize socket connection
     initializeSocket();
-
-    // Log connection details after initialization
-    setTimeout(() => {
-      logConnectionDetails();
-    }, 1000);
 
     // Check if user should be redirected to a saved room
     if (typeof window !== "undefined") {
