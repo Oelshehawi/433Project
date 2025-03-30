@@ -1,13 +1,4 @@
-import {
-  GestureType,
-  RoomUpdatedPayload,
-  RoomListPayload,
-  GameStartedPayload,
-  PlayerReadyPayload,
-  GestureEventPayload,
-  ErrorPayload,
-  BeagleBoardCommandPayload,
-} from "./types/index";
+
 
 // Single source of truth for WebSocket connection
 let socket: WebSocket | null = null;
@@ -146,27 +137,6 @@ export const saveRoomInfo = (
     playerId,
     playerName,
   });
-};
-
-// When socket reconnects, attempt to rejoin room
-const rejoinRoomAfterConnect = (): void => {
-  const { roomId, playerId, playerName } = getSavedRoomInfo();
-
-  if (roomId && playerId && playerName) {
-    console.log("Attempting to rejoin room after reconnection:", {
-      roomId,
-      playerId,
-      playerName,
-    });
-
-    // Emit join room message
-    sendMessage("join_room", {
-      roomId,
-      playerId,
-      playerName,
-      playerType: "webviewer",
-    }).catch((err) => console.error("Failed to rejoin room:", err));
-  }
 };
 
 // Simple send message function

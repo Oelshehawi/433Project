@@ -27,7 +27,7 @@ export default function RoomPage() {
 
   // Initialize WebSocket and wait for connection
   useEffect(() => {
-    const socket = initializeSocket();
+    initializeSocket();
     console.log("WebSocket initializing in room page");
 
     // Check if socket is already connected
