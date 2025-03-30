@@ -35,8 +35,24 @@ int main() {
         std::cout << "Connecting to server via WebSocket..." << std::endl;
         WebSocketClient* webSocketClient = new WebSocketClient("four33project.onrender.com", 443, "/", true);
         
-        if (!webSocketClient->connect()) {
-            std::cerr << "FATAL: Failed to connect to WebSocket server. Cannot proceed." << std::endl;
+        // Try to connect with retries
+        int retries = 0;
+        const int maxRetries = 3;
+        bool connected = false;
+        
+        while (retries < maxRetries && !connected) {
+            if (retries > 0) {
+                std::cout << "Retrying connection (attempt " << retries + 1 << " of " << maxRetries << ")..." << std::endl;
+                // Wait 2 seconds between retries
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+            }
+            
+            connected = webSocketClient->connect();
+            retries++;
+        }
+        
+        if (!connected) {
+            std::cerr << "FATAL: Failed to connect to WebSocket server after " << maxRetries << " attempts. Cannot proceed." << std::endl;
             delete webSocketClient;
             return 1;
         }
@@ -54,14 +70,9 @@ int main() {
             std::cout << "WebSocket receiver started successfully." << std::endl;
         }
         
-        // Test connection by sending a simple ping message (without fetching rooms)
-        std::cout << "Testing server connection..." << std::endl;
-        // We'll use a simple message send to test the connection instead of fetching rooms
-        if (!webSocketClient->sendMessage("{\"event\":\"ping\",\"payload\":{}}")) {
-            std::cerr << "WARNING: Failed to send test message to server. Check your network connection." << std::endl;
-        } else {
-            std::cout << "Successfully connected to server." << std::endl;
-        }
+        // Connection test is already done during the WebSocketClient::connect() call
+        // No need to send an additional test message
+        std::cout << "Successfully connected to server." << std::endl;
         
         std::cout << "Initializing gesture detector..." << std::endl;
         GestureDetector detector;

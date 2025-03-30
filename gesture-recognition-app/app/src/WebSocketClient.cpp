@@ -177,7 +177,7 @@ void WebSocketClient::run() {
     ccinfo.protocol = "protocol-gesture";
     ccinfo.ssl_connection = useTLS ? LCCSCF_USE_SSL : 0;
     
-    // Create per-session data
+    // Create per-session data - store a pointer to it for cleanup
     ClientData* clientData = new ClientData;
     clientData->client = this;
     ccinfo.userdata = clientData;
@@ -186,6 +186,7 @@ void WebSocketClient::run() {
     std::cout << "Connecting to WebSocket server..." << std::endl;
     wsi = lws_client_connect_via_info(&ccinfo);
     
+    // If connection fails immediately, clean up
     if (!wsi) {
         std::cerr << "Failed to connect to WebSocket server" << std::endl;
         delete clientData;
@@ -195,8 +196,23 @@ void WebSocketClient::run() {
         return;
     }
     
-    // Main event loop
+    // Main event loop with maximum connection time
+    auto startTime = std::chrono::steady_clock::now();
+    bool connectionTimedOut = false;
+    
     while (running) {
+        // Check for connection timeout (5 seconds maximum)
+        if (!connected) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - startTime).count();
+            
+            if (elapsed > 5) {
+                std::cerr << "WebSocket connection timed out after 5 seconds" << std::endl;
+                connectionTimedOut = true;
+                break;
+            }
+        }
+        
         lws_service(context, 50); // 50ms timeout for more responsive handling
     }
     
@@ -205,7 +221,15 @@ void WebSocketClient::run() {
         lws_context_destroy(context);
         context = nullptr;
     }
+    
+    // If we didn't successfully connect and the connection attempt timed out,
+    // we need to manually delete the clientData since the callback won't handle it
+    if (connectionTimedOut && clientData) {
+        delete clientData;
+    }
+    
     wsi = nullptr;
+    connected = false;
 }
 
 bool WebSocketClient::connect() {
@@ -216,8 +240,14 @@ bool WebSocketClient::connect() {
     running = true;
     clientThread = std::thread(&WebSocketClient::run, this);
     
-    // Wait a shorter time for connection to initialize
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // Reduced from 2 seconds to 1 second
+    // Wait longer for connection to initialize to avoid race conditions
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    
+    if (!connected) {
+        std::cerr << "Failed to establish WebSocket connection within timeout" << std::endl;
+        disconnect(); // Clean up the thread and resources
+        return false;
+    }
     
     return running && connected;
 }
