@@ -1,121 +1,115 @@
-'use client';
+"use client";
 
-import React from 'react';
-import { motion } from 'framer-motion';
-import { RoomListItem } from '../lib/types/room';
+import React from "react";
+import { motion } from "framer-motion";
+import { RoomListItem } from "../lib/types/room";
 
 interface RoomListProps {
   rooms: RoomListItem[];
   loading: boolean;
-  onCreateClick: () => void;
 }
 
-export const RoomList: React.FC<RoomListProps> = ({
-  rooms,
-  loading,
-  onCreateClick,
-}) => {
+export const RoomList: React.FC<RoomListProps> = ({ rooms, loading }) => {
   // Animation variants
   const containerVariants = {
-    initial: { opacity: 0 },
+    initial: { opacity: 0, x: -30 },
     animate: {
       opacity: 1,
+      x: 0,
       transition: {
+        duration: 0.3,
         staggerChildren: 0.05,
       },
     },
   };
 
   const itemVariants = {
-    initial: { y: 20, opacity: 0 },
+    initial: { x: -20, opacity: 0 },
     animate: {
-      y: 0,
+      x: 0,
       opacity: 1,
       transition: {
-        type: 'spring',
+        type: "spring",
         stiffness: 300,
         damping: 20,
       },
     },
   };
 
-  const buttonVariants = {
-    hover: {
-      scale: 1.03,
-      transition: {
-        type: 'spring',
-        stiffness: 400,
-        damping: 10,
-      },
-    },
-    tap: { scale: 0.97 },
-  };
-
   return (
-    <div className='fixed left-0 bottom-0 w-full p-4 bg-gradient-to-t from-background to-transparent'>
-      <div className='max-w-screen-lg mx-auto'>
-        {/* Header with Create Room button */}
-        <div className='flex items-center justify-between mb-2'>
-          <h2 className='text-xl font-bold text-foreground/90'>
-            Available Rooms
-          </h2>
-        </div>
+    <motion.div
+      className="absolute left-6 top-6 w-64 max-h-[calc(100vh-12rem)] z-10"
+      variants={containerVariants}
+      initial="initial"
+      animate="animate"
+    >
+      <div className="mb-3">
+        <h2 className="text-xl font-bold text-foreground/90 drop-shadow-lg">
+          Available Rooms
+        </h2>
+      </div>
 
-        {/* Room list */}
-        <div className='bg-black/20 backdrop-blur-sm rounded-lg p-2 border border-white/10'>
-          {loading ? (
-            <p className='text-center py-4 text-foreground/70'>
-              Loading rooms...
-            </p>
-          ) : rooms.length === 0 ? (
-            <p className='text-center py-4 text-foreground/70'>
-              No rooms available. Create a room to get started!
-            </p>
-          ) : (
-            <motion.div
-              className='grid grid-cols-1 md:grid-cols-2 gap-2'
-              variants={containerVariants}
-              initial='initial'
-              animate='animate'
-            >
-              {rooms.map((room) => (
-                <motion.div
-                  key={room.id}
-                  className='bg-black/30 p-3 rounded-md border border-white/5 flex justify-between items-center'
-                  variants={itemVariants}
-                >
-                  <div>
-                    <h3 className='font-medium text-foreground'>{room.name}</h3>
-                    <p className='text-sm text-foreground/70'>
-                      {room.playerCount}/{room.maxPlayers} players |{' '}
-                      {room.status}
-                    </p>
-                    <p className='text-xs text-foreground/50'>ID: {room.id}</p>
-                  </div>
-                  <div className='flex items-center'>
+      {/* Room list */}
+      <div className="bg-black/40 backdrop-blur-sm rounded-lg p-3 border border-white/10 shadow-xl overflow-y-auto scrollbar-hide">
+        {loading ? (
+          <p className="text-center py-3 text-foreground/70">
+            Loading rooms...
+          </p>
+        ) : rooms.length === 0 ? (
+          <p className="text-center py-3 text-foreground/70">
+            No rooms available
+          </p>
+        ) : (
+          <motion.div
+            className="flex flex-col gap-2 max-h-[calc(100vh-16rem)]"
+            variants={containerVariants}
+          >
+            {rooms.map((room) => (
+              <motion.div
+                key={room.id}
+                className="bg-black/50 p-3 rounded-md border border-white/10 hover:border-white/20 transition-colors"
+                variants={itemVariants}
+              >
+                <div>
+                  <h3 className="font-medium text-foreground">{room.name}</h3>
+                  <div className="flex items-center mt-1">
                     <span
                       className={`inline-block w-2 h-2 rounded-full mr-2 ${
                         room.playerCount >= room.maxPlayers
-                          ? 'bg-red-500'
-                          : room.status === 'playing'
-                          ? 'bg-yellow-500'
-                          : 'bg-green-500'
+                          ? "bg-red-500"
+                          : room.status === "playing"
+                          ? "bg-yellow-500"
+                          : "bg-green-500"
                       }`}
                     ></span>
-                    <span className='text-xs text-foreground/70'>
+                    <span className="text-sm text-foreground/80">
+                      {room.playerCount}/{room.maxPlayers} players |{" "}
                       {room.playerCount >= room.maxPlayers
-                        ? 'Full'
-                        : room.status === 'playing'
-                        ? 'In Game'
-                        : 'Join on Device'}
+                        ? "Full"
+                        : room.status === "playing"
+                        ? "In Game"
+                        : "Available"}
                     </span>
                   </div>
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
-        </div>
+                  <p className="text-xs text-foreground/50 mt-1">
+                    ID: {room.id}
+                  </p>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
       </div>
-    </div>
+
+      <style jsx global>{`
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
+    </motion.div>
   );
 };

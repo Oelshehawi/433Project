@@ -8,6 +8,7 @@
 #include <vector>
 #include <map>
 #include <mutex>
+#include <chrono>
 
 // For convenience
 using json = nlohmann::json;
@@ -31,7 +32,12 @@ private:
     bool ready;
     std::vector<Room> availableRooms;
     std::mutex roomsMutex;
-
+    
+    // Loading state tracking
+    bool isWaitingForResponse;
+    std::chrono::steady_clock::time_point lastRequestTime;
+    std::string currentRequestType;
+    
     // Generate a unique device ID
     std::string generateDeviceId();
     
@@ -43,6 +49,12 @@ private:
     
     // Parse JSON room list response
     void parseJsonRoomList(const json& roomsJson);
+    
+    // Display the available rooms
+    void displayRoomList();
+    
+    // Send message with loading state tracking
+    bool sendMessageWithTracking(const std::string& message, const std::string& requestType);
 
 public:
     RoomManager(WebSocketClient* client);
@@ -57,6 +69,13 @@ public:
     bool joinRoom(const std::string& roomId);
     bool leaveRoom();
     void setReady(bool isReady);
+    
+    // Reset loading state after response or timeout
+    void resetLoadingState();
+    
+    // Loading state checker
+    bool isLoading() const { return isWaitingForResponse; }
+    std::string getCurrentRequest() const { return currentRequestType; }
 
     // Getters
     std::string getDeviceId() const { return deviceId; }

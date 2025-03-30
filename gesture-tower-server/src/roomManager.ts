@@ -191,8 +191,9 @@ export const handleLeaveRoom = (
   payload: LeaveRoomPayload
 ) => {
   try {
-    const { roomId } = payload;
-    const playerId = client.playerId;
+    const { roomId, playerId: payloadPlayerId } = payload;
+    // Use payload's playerId if available, otherwise fall back to client.playerId
+    const playerId = payloadPlayerId || client.playerId;
 
     // Validate data
     if (!roomId) {
@@ -215,7 +216,9 @@ export const handleLeaveRoom = (
       room.players.splice(playerIndex, 1);
 
       console.log(
-        `Player ${client.playerName} left room ${room.name} (${roomId})`
+        `Player ${client.playerName || playerId} left room ${
+          room.name
+        } (${roomId})`
       );
 
       // If room is empty, remove it

@@ -28,7 +28,8 @@ std::string RoomManager::generateDeviceId() {
 }
 
 RoomManager::RoomManager(WebSocketClient* client)
-    : client(client), receiver(nullptr), connected(false), ready(false) {
+    : client(client), receiver(nullptr), connected(false), ready(false), 
+      isWaitingForResponse(false), currentRequestType("") {
     // Generate a unique device ID
     deviceId = generateDeviceId();
     std::cout << "Room Manager initialized with device ID: " << deviceId << std::endl;
@@ -70,16 +71,37 @@ void RoomManager::handleMessage(const std::string& message) {
         // Parse message as JSON
         json j = json::parse(message);
         
+        // Handle error messages first
+        if (j.contains("event") && j["event"] == "error") {
+            if (j.contains("payload") && j["payload"].contains("error")) {
+                std::string error = j["payload"]["error"];
+                std::cerr << "Server error: " << error << std::endl;
+                
+                // If we get an error for create_room and we're waiting for it, reset our room ID
+                if (currentRequestType == "create_room") {
+                    currentRoomId = "";
+                }
+                
+                // Reset loading state after handling the error
+                resetLoadingState();
+                return;
+            }
+        }
+        
         // Check if this is a room_list event
         if (j.contains("event") && j["event"] == "room_list") {
             if (j.contains("payload") && j["payload"].contains("rooms")) {
                 // Extract rooms from the payload
                 parseJsonRoomList(j["payload"]["rooms"]);
+                
+                // Display the room list
+                displayRoomList();
+                
+                // Reset loading state after handling the response
+                resetLoadingState();
             }
         }
         else if (j.contains("event") && j["event"] == "room_updated") {
-            std::cout << "Room updated event received" << std::endl;
-            
             // Check if we're in this room
             if (j.contains("payload") && j["payload"].contains("room")) {
                 auto& room = j["payload"]["room"];
@@ -108,6 +130,11 @@ void RoomManager::handleMessage(const std::string& message) {
                         }
                     }
                 }
+                
+                // If this was in response to a create_room request, reset the loading state
+                if (currentRequestType == "create_room") {
+                    resetLoadingState();
+                }
             }
         }
         else if (j.contains("event") && j["event"] == "join_room") {
@@ -117,27 +144,25 @@ void RoomManager::handleMessage(const std::string& message) {
                 if (roomId == currentRoomId) {
                     connected = true;
                     std::cout << "Successfully joined room: " << roomId << std::endl;
+                    resetLoadingState();
                 }
             }
         }
         else if (j.contains("event") && j["event"] == "leave_room") {
-            // Handle leave_room response
-            if (connected && j.contains("payload") && j["payload"].contains("roomId") && 
-                j["payload"]["roomId"] == currentRoomId) {
-                connected = false;
+            // Handle leave_room response - clear currentRoomId when confirmed by server
+            if (currentRequestType == "leave_room") {
                 currentRoomId = "";
-                std::cout << "Successfully left room" << std::endl;
+                std::cout << "Server confirmed room exit" << std::endl;
             }
-        }
-        else if (j.contains("event") && j["event"] == "error") {
-            // Handle error messages
-            if (j.contains("payload") && j["payload"].contains("error")) {
-                std::string error = j["payload"]["error"];
-                std::cerr << "Server error: " << error << std::endl;
-            }
+            resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "gesture_event") {
             // Handle gesture events if needed
+        }
+        else {
+            // If the event doesn't match any of the above, still reset the loading state
+            // in case it was a response to a command
+            resetLoadingState();
         }
     } catch (const json::parse_error& e) {
         std::cerr << "Error parsing JSON message: " << e.what() << std::endl;
@@ -145,15 +170,23 @@ void RoomManager::handleMessage(const std::string& message) {
         // Try legacy format parsing for backwards compatibility
         if (message.find("ROOMLIST|") == 0) {
             parseRoomList(message.substr(9)); // Skip "ROOMLIST|"
+            
+            // Display room list for legacy format too
+            displayRoomList();
+            
+            // Reset loading state
+            resetLoadingState();
         }
         else if (message.find("JOINED|") == 0) {
             std::cout << "Successfully joined room" << std::endl;
             connected = true;
+            resetLoadingState();
         }
         else if (message.find("LEFT|") == 0) {
             std::cout << "Successfully left room" << std::endl;
             connected = false;
             currentRoomId = "";
+            resetLoadingState();
         }
         else if (message.find("RESPONSE:JOIN_ROOM") == 0) {
             if (message.find("status:SUCCESS") != std::string::npos) {
@@ -162,6 +195,7 @@ void RoomManager::handleMessage(const std::string& message) {
             } else {
                 std::cerr << "Failed to join room: " << message << std::endl;
             }
+            resetLoadingState();
         }
         else if (message.find("RESPONSE:LEAVE_ROOM") == 0) {
             if (message.find("status:SUCCESS") != std::string::npos) {
@@ -169,6 +203,11 @@ void RoomManager::handleMessage(const std::string& message) {
                 connected = false;
                 currentRoomId = "";
             }
+            resetLoadingState();
+        }
+        else {
+            // Unknown message format, still reset loading state
+            resetLoadingState();
         }
     }
 }
@@ -222,13 +261,15 @@ void RoomManager::parseRoomList(const std::string& response) {
 }
 
 bool RoomManager::fetchAvailableRooms() {
-    if (!client) {
-        return false;
-    }
+    // Create JSON message directly
+    json message = json::object();
+    message["event"] = "room_list";
+    message["payload"] = json::object();
     
-    // Use correct BeagleBoard command format for list rooms
-    std::string cmd = "CMD:LIST_ROOMS|DeviceID:" + deviceId;
-    return client->sendMessage(cmd);
+    std::string jsonMessage = message.dump();
+    
+    // We'll avoid displaying here as the command handler already shows a message
+    return client->sendMessage(jsonMessage);
 }
 
 bool RoomManager::joinRoom(const std::string& roomId) {
@@ -242,17 +283,24 @@ bool RoomManager::joinRoom(const std::string& roomId) {
         return false;
     }
     
-    // Use BeagleBoard command format to ensure it's recognized as a BeagleBoard player
-    std::string cmd = "CMD:JOIN_ROOM|DeviceID:" + deviceId + 
-                     "|RoomID:" + roomId + 
-                     "|PlayerName:" + playerName;
+    // Create JSON message directly
+    json payload = json::object();
+    payload["roomId"] = roomId;
+    payload["playerId"] = deviceId;
+    payload["playerName"] = playerName;
     
-    if (client->sendMessage(cmd)) {
-        currentRoomId = roomId;
-        return true;
-    }
+    json message = json::object();
+    message["event"] = "join_room";
+    message["payload"] = payload;
     
-    return false;
+    std::string jsonMessage = message.dump();
+    std::cout << "Joining room " << roomId << "..." << std::endl;
+    
+    // Store room ID for reference - don't set connected=true yet
+    // as we need server confirmation for that
+    currentRoomId = roomId;
+    
+    return client->sendMessage(jsonMessage);
 }
 
 bool RoomManager::leaveRoom() {
@@ -264,10 +312,33 @@ bool RoomManager::leaveRoom() {
         return false;
     }
     
-    // Use proper command format for leaving room
-    std::string cmd = "CMD:LEAVE_ROOM|DeviceID:" + deviceId + "|RoomID:" + currentRoomId;
+    // Create JSON message directly
+    json payload = json::object();
+    payload["roomId"] = currentRoomId;
+    payload["playerId"] = deviceId;
     
-    return client->sendMessage(cmd);
+    json message = json::object();
+    message["event"] = "leave_room";
+    message["payload"] = payload;
+    
+    std::string jsonMessage = message.dump();
+    std::cout << "Leaving room " << currentRoomId << "..." << std::endl;
+    
+    // Mark the request as tracked so we can handle the response properly
+    isWaitingForResponse = true;
+    currentRequestType = "leave_room";
+    lastRequestTime = std::chrono::steady_clock::now();
+    
+    // Set status immediately to improve user experience
+    bool result = client->sendMessage(jsonMessage);
+    if (result) {
+        connected = false;
+        std::cout << "Successfully left room" << std::endl;
+        // Only clear currentRoomId after server confirmation 
+        // (which will happen in handleMessage)
+    }
+    
+    return result;
 }
 
 void RoomManager::setReady(bool isReady) {
@@ -277,12 +348,19 @@ void RoomManager::setReady(bool isReady) {
     
     ready = isReady;
     
-    // Use correct BeagleBoard command format for SET_READY
-    std::string cmd = "CMD:SET_READY|DeviceID:" + deviceId + 
-                     "|RoomID:" + currentRoomId + 
-                     "|Ready:" + (isReady ? "true" : "false");
+    // Create JSON message directly
+    json payload = json::object();
+    payload["roomId"] = currentRoomId;
+    payload["playerId"] = deviceId;
+    payload["isReady"] = isReady;
     
-    client->sendMessage(cmd);
+    json message = json::object();
+    message["event"] = "player_ready";
+    message["payload"] = payload;
+    
+    std::string jsonMessage = message.dump();
+    
+    client->sendMessage(jsonMessage);
 }
 
 bool RoomManager::sendGestureData(const std::string& gestureData) {
@@ -304,38 +382,68 @@ const std::vector<Room> RoomManager::getAvailableRooms() const {
 }
 
 // Add new method to parse JSON room list
-void RoomManager::parseJsonRoomList(const json& roomsJson) {
+void RoomManager::parseJsonRoomList(const json& roomsArray) {
     std::lock_guard<std::mutex> lock(roomsMutex);
     availableRooms.clear();
     
-    if (!roomsJson.is_array()) {
-        return;
+    if (roomsArray.is_array()) {
+        for (const auto& roomJson : roomsArray) {
+            // Initialize all fields to ensure no garbage values
+            Room room;
+            room.id = "";
+            room.name = "";
+            room.playerCount = 0;
+            room.maxPlayers = 0;
+            room.status = "";
+            
+            // Extract required fields
+            if (roomJson.contains("id")) room.id = roomJson["id"];
+            if (roomJson.contains("name")) room.name = roomJson["name"];
+            if (roomJson.contains("status")) room.status = roomJson["status"];
+            
+            // Extract player count - use playerCount field if available (server filtered count)
+            if (roomJson.contains("playerCount")) {
+                try {
+                    room.playerCount = roomJson["playerCount"];
+                } catch (...) {
+                    room.playerCount = 0;
+                }
+            } else if (roomJson.contains("players") && roomJson["players"].is_array()) {
+                // If no playerCount field, count BeagleBoard players manually
+                int count = 0;
+                for (const auto& player : roomJson["players"]) {
+                    if (player.contains("playerType") && player["playerType"] == "beagleboard") {
+                        count++;
+                    }
+                }
+                room.playerCount = count;
+            }
+            
+            if (roomJson.contains("maxPlayers")) {
+                try {
+                    room.maxPlayers = roomJson["maxPlayers"];
+                } catch (...) {
+                    room.maxPlayers = 2; // Default value
+                }
+            }
+            
+            availableRooms.push_back(room);
+        }
     }
+}
+
+void RoomManager::displayRoomList() {
+    std::lock_guard<std::mutex> lock(roomsMutex);
     
-    for (const auto& roomJson : roomsJson) {
-        Room room;
-        
-        if (roomJson.contains("id")) {
-            room.id = roomJson["id"];
+    if (availableRooms.empty()) {
+        std::cout << "No rooms available." << std::endl;
+    } else {
+        std::cout << "Available rooms:" << std::endl;
+        for (const auto& room : availableRooms) {
+            std::cout << "  ID: " << room.id << " | Name: " << room.name 
+                      << " | Players: " << room.playerCount << "/" << room.maxPlayers 
+                      << " | Status: " << room.status << std::endl;
         }
-        
-        if (roomJson.contains("name")) {
-            room.name = roomJson["name"];
-        }
-        
-        if (roomJson.contains("playerCount")) {
-            room.playerCount = roomJson["playerCount"];
-        }
-        
-        if (roomJson.contains("maxPlayers")) {
-            room.maxPlayers = roomJson["maxPlayers"];
-        }
-        
-        if (roomJson.contains("status")) {
-            room.status = roomJson["status"];
-        }
-        
-        availableRooms.push_back(room);
     }
 }
 
@@ -347,6 +455,12 @@ bool RoomManager::createRoom(const std::string& roomName) {
     // Can't create a room if already in one
     if (connected) {
         std::cerr << "Already connected to a room. Leave current room first." << std::endl;
+        return false;
+    }
+    
+    // Check if player name is set
+    if (playerName.empty()) {
+        std::cerr << "Player name is not set. Please use 'setname' command first." << std::endl;
         return false;
     }
     
@@ -364,16 +478,78 @@ bool RoomManager::createRoom(const std::string& roomName) {
         roomId += alphanum[dis(gen)];
     }
     
-    // Use BeagleBoard command format for creating a room
-    std::string cmd = "CMD:CREATE_ROOM|DeviceID:" + deviceId + 
-                     "|RoomID:" + roomId + 
-                     "|RoomName:" + roomName +
-                     "|PlayerName:" + playerName;
+    // Store the intended room ID before sending the request
+    currentRoomId = roomId;
     
-    if (client->sendMessage(cmd)) {
-        currentRoomId = roomId;
-        return true;
+    // Use JSON message format directly
+    json room = json::object();
+    room["id"] = roomId;
+    room["name"] = roomName;
+    room["maxPlayers"] = 2;
+    room["status"] = "waiting";
+    room["hostId"] = deviceId;
+    
+    // Create player object
+    json player = json::object();
+    player["id"] = deviceId;
+    player["name"] = playerName;
+    player["isReady"] = false;
+    player["connected"] = true;
+    player["playerType"] = "beagleboard";
+    
+    // Add player to room
+    json players = json::array();
+    players.push_back(player);
+    room["players"] = players;
+    
+    // Create payload
+    json payload = json::object();
+    payload["room"] = room;
+    
+    // Create final message
+    json message = json::object();
+    message["event"] = "create_room";
+    message["payload"] = payload;
+    
+    std::string jsonMessage = message.dump();
+    std::cout << "Creating room with payload: " << payload.dump() << std::endl;
+    
+    return client->sendMessage(jsonMessage);
+}
+
+void RoomManager::resetLoadingState() {
+    isWaitingForResponse = false;
+    currentRequestType = "";
+}
+
+bool RoomManager::sendMessageWithTracking(const std::string& message, const std::string& requestType) {
+    if (!client) {
+        return false;
     }
     
-    return false;
+    // Check if we're already waiting for a response
+    if (isWaitingForResponse) {
+        // Check if it's been more than 5 seconds since the last request
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            now - lastRequestTime).count();
+            
+        if (elapsed < 5) {
+            std::cout << "Still waiting for response to " << currentRequestType 
+                      << " (sent " << elapsed << " seconds ago)..." << std::endl;
+            return false;
+        }
+        
+        // If it's been more than 5 seconds, assume the request timed out
+        std::cout << "Previous request (" << currentRequestType << ") timed out." << std::endl;
+        resetLoadingState();
+    }
+    
+    // Set loading state
+    isWaitingForResponse = true;
+    currentRequestType = requestType;
+    lastRequestTime = std::chrono::steady_clock::now();
+    
+    // Send the message
+    return client->sendMessage(message);
 } 

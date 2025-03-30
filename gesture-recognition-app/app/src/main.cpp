@@ -7,6 +7,7 @@
 #include <sstream>
 #include <exception>
 #include <cstdlib>
+#include <chrono>
 
 // Function to display available commands
 void displayHelp() {
@@ -76,6 +77,7 @@ int main() {
         }
         
         bool detectionRunning = false;
+        bool inputLocked = false;
         
         std::cout << "=== Beagle Board Gesture Control Client ===" << std::endl;
         std::cout << "Device ID: " << roomManager->getDeviceId() << std::endl;
@@ -83,8 +85,14 @@ int main() {
         
         std::string line;
         while (true) {
+            // Simple prompt
             std::cout << "> ";
             std::getline(std::cin, line);
+            
+            // Skip empty lines
+            if (line.empty()) {
+                continue;
+            }
             
             // Parse command
             std::istringstream iss(line);
@@ -107,21 +115,7 @@ int main() {
             }
             else if (command == "listrooms") {
                 std::cout << "Fetching available rooms..." << std::endl;
-                if (roomManager->fetchAvailableRooms()) {
-                    const auto& rooms = roomManager->getAvailableRooms();
-                    if (rooms.empty()) {
-                        std::cout << "No rooms available." << std::endl;
-                    } else {
-                        std::cout << "Available rooms:" << std::endl;
-                        for (const auto& room : rooms) {
-                            std::cout << "  ID: " << room.id << " | Name: " << room.name 
-                                      << " | Players: " << room.playerCount << "/" << room.maxPlayers 
-                                      << " | Status: " << room.status << std::endl;
-                        }
-                    }
-                } else {
-                    std::cout << "Failed to fetch rooms. Check your network connection." << std::endl;
-                }
+                roomManager->fetchAvailableRooms();
             }
             else if (command == "joinroom") {
                 std::string roomId;
@@ -132,11 +126,8 @@ int main() {
                 } else if (roomManager->getPlayerName().empty()) {
                     std::cout << "Please set your player name first using 'setname <name>'" << std::endl;
                 } else {
-                    if (roomManager->joinRoom(roomId)) {
-                        std::cout << "Sending join request for room: " << roomId << std::endl;
-                    } else {
-                        std::cout << "Failed to send join request. Check your network connection." << std::endl;
-                    }
+                    roomManager->joinRoom(roomId);
+                    std::cout << "Sending join request for room: " << roomId << std::endl;
                 }
             }
             else if (command == "createroom") {
@@ -148,20 +139,14 @@ int main() {
                 } else if (roomManager->getPlayerName().empty()) {
                     std::cout << "Please set your player name first using 'setname <name>'" << std::endl;
                 } else {
-                    if (roomManager->createRoom(roomName)) {
-                        std::cout << "Sending create room request for: " << roomName << std::endl;
-                    } else {
-                        std::cout << "Failed to send create room request. Check your network connection." << std::endl;
-                    }
+                    roomManager->createRoom(roomName);
+                    std::cout << "Sending create room request for: " << roomName << std::endl;
                 }
             }
             else if (command == "leaveroom") {
                 if (roomManager->isConnected()) {
-                    if (roomManager->leaveRoom()) {
-                        std::cout << "Sending leave request..." << std::endl;
-                    } else {
-                        std::cout << "Failed to send leave request." << std::endl;
-                    }
+                    roomManager->leaveRoom();
+                    std::cout << "Sending leave request..." << std::endl;
                 } else {
                     std::cout << "Not currently in a room." << std::endl;
                 }

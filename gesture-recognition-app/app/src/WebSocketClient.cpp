@@ -302,24 +302,54 @@ bool WebSocketClient::sendMessage(const std::string& message) {
                 j["payload"] = params;
             } else if (cmdName == "CREATE_ROOM") {
                 j["event"] = "create_room";
-                // Create proper room object format expected by server
-                if (params.contains("RoomID") && params.contains("RoomName")) {
-                    json room = json::object();
-                    room["id"] = params["RoomID"];
-                    room["name"] = params["RoomName"];
-                    room["maxPlayers"] = 2; 
-                    room["status"] = "waiting";
-                    room["players"] = json::array();
-                    
-                    // Create payload with the room object
-                    json payload = json::object();
-                    payload["room"] = room;
-                    payload["playerId"] = params["DeviceID"];
-                    
-                    j["payload"] = payload;
-                } else {
-                    j["payload"] = params;
+                
+                // Extract parameters
+                std::string roomId = params.value("RoomID", "");
+                std::string roomName = params.value("RoomName", "");
+                std::string playerName = params.value("PlayerName", "");
+                std::string playerId = params.value("playerId", "");
+                
+                if (playerId.empty() && params.contains("DeviceID")) {
+                    playerId = params["DeviceID"];
                 }
+                
+                // Create player object
+                json player = json::object();
+                player["id"] = playerId;
+                player["name"] = playerName;
+                player["isReady"] = false;
+                player["connected"] = true;
+                player["playerType"] = "beagleboard";
+                
+                // Create room object
+                json room = json::object();
+                room["id"] = roomId;
+                room["name"] = roomName;
+                
+                // Add max players and status
+                if (params.contains("MaxPlayers")) {
+                    room["maxPlayers"] = std::stoi(params["MaxPlayers"].get<std::string>());
+                } else {
+                    room["maxPlayers"] = 2;  // Default to 2 players
+                }
+                
+                room["status"] = "waiting";
+                
+                // Add player to room's players array
+                json players = json::array();
+                players.push_back(player);
+                room["players"] = players;
+                
+                // Add hostId to room
+                room["hostId"] = playerId;
+                
+                // Create proper payload format expected by the server
+                json payload = json::object();
+                payload["room"] = room;
+                
+                j["payload"] = payload;
+                
+                std::cout << "Creating room with payload: " << j["payload"].dump() << std::endl;
             } else {
                 // Default mapping
                 j["event"] = commandToEventName(cmdName);

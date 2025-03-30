@@ -179,124 +179,119 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
   };
 
   return (
-    <>
-      <div className="min-h-screen w-full flex flex-col items-center justify-center overflow-hidden">
-        <motion.div
-          className="relative flex flex-col items-center justify-center gap-8 p-8 max-w-4xl w-full"
-          variants={containerVariants}
-          initial="initial"
-          animate="animate"
-          exit="exit"
+    <div className="min-h-screen w-full flex flex-col items-center justify-center overflow-hidden relative">
+      {/* Floating room list */}
+      <RoomList rooms={availableRooms} loading={loading} />
+
+      <motion.div
+        className="relative flex flex-col items-center justify-center gap-8 p-8 max-w-4xl w-full"
+        variants={containerVariants}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+      >
+        {/* Game title */}
+        <motion.h1
+          className="game-title text-5xl sm:text-6xl md:text-7xl font-bold text-center text-white drop-shadow-[0_0_15px_rgba(124,58,237,0.5)]"
+          variants={titleVariants}
         >
-          {/* Game title */}
-          <motion.h1
-            className="game-title text-5xl sm:text-6xl md:text-7xl font-bold text-center text-white drop-shadow-[0_0_15px_rgba(124,58,237,0.5)]"
-            variants={titleVariants}
+          <motion.span
+            className="block"
+            variants={floatingVariants}
+            animate="animate"
           >
-            <motion.span
-              className="block"
-              variants={floatingVariants}
-              animate="animate"
-            >
-              Gesture Tower
-            </motion.span>
-          </motion.h1>
-            <>
-              {/* Animated tower graphic */}
-              <div className="flex items-end justify-center mt-4 mb-8 h-64 relative">
-                {/* Left player tower */}
-                <div className="flex flex-col-reverse items-center mr-12">
-                  {[...Array(5)].map((_, i) => (
-                    <motion.div
-                      key={`left-${i}`}
-                      className="w-20 h-12 bg-gradient-to-r from-primary-dark to-primary rounded-md mb-1"
-                      custom={i}
-                      variants={blockVariants}
-                      initial="initial"
-                      animate="animate"
-                      style={{ marginLeft: i % 2 === 0 ? "-10px" : "10px" }}
-                    />
-                  ))}
-                </div>
-
-                {/* Goal marker */}
+            Gesture Tower
+          </motion.span>
+        </motion.h1>
+        <>
+          {/* Animated tower graphic */}
+          <div className="flex items-end justify-center mt-4 mb-8 h-64 relative">
+            {/* Left player tower */}
+            <div className="flex flex-col-reverse items-center mr-12">
+              {[...Array(5)].map((_, i) => (
                 <motion.div
-                  className="absolute top-0 w-16 h-16 bg-accent rounded-full flex items-center justify-center text-sm"
-                  animate={{
-                    y: [-10, 10],
-                  }}
-                  transition={{
-                    duration: 2,
-                    repeat: Infinity,
-                    repeatType: "reverse",
-                  }}
-                >
-                  <span className="text-background font-bold">GOAL</span>
-                </motion.div>
-
-                {/* Right player tower */}
-                <div className="flex flex-col-reverse items-center ml-12">
-                  {[...Array(4)].map((_, i) => (
-                    <motion.div
-                      key={`right-${i}`}
-                      className="w-20 h-12 bg-gradient-to-r from-secondary-dark to-secondary rounded-md mb-1"
-                      custom={i}
-                      variants={blockVariants}
-                      initial="initial"
-                      animate="animate"
-                      style={{ marginLeft: i % 2 === 0 ? "10px" : "-10px" }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Game room buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 mt-6">
-                <button
-                  className="bg-secondary hover:bg-secondary-dark text-white font-bold py-3 px-6 rounded-lg shadow-lg"
-                  onClick={handleCreateRoom}
-                >
-                  Create Room
-                </button>
-
-                <button
-                  className="bg-accent hover:bg-accent-dark text-white font-bold py-3 px-6 rounded-lg shadow-lg"
-                  onClick={handleJoinRoomClick}
-                >
-                  View Room
-                </button>
-              </div>
-            </>
-
-          {/* Create room form modal */}
-          {showCreateForm && (
-            <CreateRoomForm
-              onSubmit={handleCreateRoomSubmit}
-              onCancel={() => setShowCreateForm(false)}
-            />
-          )}
-
-          {/* View room form modal */}
-          {showJoinForm && (
-            <ViewRoomForm
-              onSubmit={handleJoinRoomSubmit}
-              onCancel={() => setShowJoinForm(false)}
-            />
-          )}
-
-          {error && (
-            <div className="bg-danger/20 text-danger p-3 rounded-md mt-4 max-w-md">
-              {error}
+                  key={`left-${i}`}
+                  className="w-20 h-12 bg-gradient-to-r from-primary-dark to-primary rounded-md mb-1"
+                  custom={i}
+                  variants={blockVariants}
+                  initial="initial"
+                  animate="animate"
+                  style={{ marginLeft: i % 2 === 0 ? "-10px" : "10px" }}
+                />
+              ))}
             </div>
-          )}
-        </motion.div>
-      </div>
 
-      <RoomList
-        rooms={availableRooms}
-        loading={loading}
-        onCreateClick={handleCreateRoom}
-      />
-    </>
+            {/* Goal marker */}
+            <motion.div
+              className="absolute top-0 w-16 h-16 bg-accent rounded-full flex items-center justify-center text-sm"
+              animate={{
+                y: [-10, 10],
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                repeatType: "reverse",
+              }}
+            >
+              <span className="text-background font-bold">GOAL</span>
+            </motion.div>
+
+            {/* Right player tower */}
+            <div className="flex flex-col-reverse items-center ml-12">
+              {[...Array(4)].map((_, i) => (
+                <motion.div
+                  key={`right-${i}`}
+                  className="w-20 h-12 bg-gradient-to-r from-secondary-dark to-secondary rounded-md mb-1"
+                  custom={i}
+                  variants={blockVariants}
+                  initial="initial"
+                  animate="animate"
+                  style={{ marginLeft: i % 2 === 0 ? "10px" : "-10px" }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Game room buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 mt-6">
+            <button
+              className="bg-secondary hover:bg-secondary-dark text-white font-bold py-3 px-6 rounded-lg shadow-lg"
+              onClick={handleCreateRoom}
+            >
+              Create Room
+            </button>
+
+            <button
+              className="bg-accent hover:bg-accent-dark text-white font-bold py-3 px-6 rounded-lg shadow-lg"
+              onClick={handleJoinRoomClick}
+            >
+              View Room
+            </button>
+          </div>
+        </>
+
+        {/* Create room form modal */}
+        {showCreateForm && (
+          <CreateRoomForm
+            onSubmit={handleCreateRoomSubmit}
+            onCancel={() => setShowCreateForm(false)}
+          />
+        )}
+
+        {/* View room form modal */}
+        {showJoinForm && (
+          <ViewRoomForm
+            onSubmit={handleJoinRoomSubmit}
+            onCancel={() => setShowJoinForm(false)}
+          />
+        )}
+
+        {error && (
+          <div className="bg-danger/20 text-danger p-3 rounded-md mt-4 max-w-md">
+            {error}
+          </div>
+        )}
+      </motion.div>
+    </div>
   );
 };
