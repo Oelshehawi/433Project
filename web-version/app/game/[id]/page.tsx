@@ -117,6 +117,49 @@ export default function GamePage() {
           </div>
         )}
       </motion.div>
+
+      {/* Battle divider - more intimidating */}
+      <div className="absolute h-full left-1/2 transform -translate-x-1/2 z-20">
+        {/* Main divider line */}
+        <div className="absolute h-full w-3 bg-gradient-to-r from-red-700/70 via-red-500/80 to-red-700/70 shadow-[0_0_15px_rgba(220,38,38,0.7)]"></div>
+        
+        {/* Lightning/electricity effects */}
+        <motion.div 
+          className="absolute h-full w-1 bg-yellow-400/90 shadow-[0_0_10px_rgba(250,204,21,0.9)]"
+          animate={{ 
+            opacity: [0.2, 1, 0.5, 0.8, 0.3],
+            scaleX: [0.5, 1.5, 0.8, 1.2, 0.7],
+            x: [-1, 1, -2, 0, 2]
+          }}
+          transition={{
+            repeat: Infinity,
+            duration: 1.8,
+            ease: "easeInOut"
+          }}
+        ></motion.div>
+        
+        {/* Battle zone markers */}
+        {[...Array(8)].map((_, i) => (
+          <motion.div 
+            key={i}
+            className="absolute w-5 h-5 rounded-full left-1/2 transform -translate-x-1/2"
+            style={{
+              top: `${12 + i * 10}%`,
+              background: i % 2 === 0 ? 'rgba(239, 68, 68, 0.7)' : 'rgba(0, 0, 0, 0.5)',
+              boxShadow: i % 2 === 0 ? '0 0 10px rgba(239, 68, 68, 0.9)' : 'none'
+            }}
+            animate={{ 
+              scale: [1, 1.2, 1],
+            }}
+            transition={{
+              repeat: Infinity,
+              duration: 2,
+              delay: i * 0.3,
+              ease: "easeInOut"
+            }}
+          ></motion.div>
+        ))}
+      </div>
     </div>
   );
 }
