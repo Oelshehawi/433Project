@@ -49,16 +49,19 @@ bool initial = true;
 #define THUMB_Y_THRESHOLD 0.5
 void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list, handPosition* ret) {
     ret->hand_visible = true;
-    /*
+    
     
     for (int i = 0; i < landmark_list.landmark_size(); ++i) {
-        const mediapipe::NormalizedLandmark& landmark = landmark_list.landmark(i);
-        float x = landmark.x();
-        float y = landmark.y();
-        float z = landmark.z();
-        std::cout << "Landmark " << i << ": x=" << x << ", y=" << y << ", z=" << z << std::endl;
+        if (i == 4|| i == 3|| i == 2|| i == 1){
+            const mediapipe::NormalizedLandmark& landmark = landmark_list.landmark(i);
+            float x = landmark.x();
+            float y = landmark.y();
+            float z = landmark.z();
+            std::cout << "Landmark " << i << ": x=" << x << ", y=" << y << ", z=" << z << std::endl;
+        }
+        
     }
-*/
+
     const mediapipe::NormalizedLandmark& index_tip = landmark_list.landmark(INDEX_TIP);
     const mediapipe::NormalizedLandmark& index_bot = landmark_list.landmark(INDEX_BOT);
     const mediapipe::NormalizedLandmark& middle_tip = landmark_list.landmark(MIDDLE_TIP);
@@ -73,6 +76,15 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
     const mediapipe::NormalizedLandmark& middle_high = landmark_list.landmark(MIDDLE_HIGH);
     const mediapipe::NormalizedLandmark& ring_high = landmark_list.landmark(RING_HIGH);
     const mediapipe::NormalizedLandmark& pinky_high = landmark_list.landmark(PINKY_HIGH);
+    const mediapipe::NormalizedLandmark& thumb_high = landmark_list.landmark(THUMB_HIGH);
+    bool is_left_hand = false;
+    if (pinky_tip.x() > index_tip.x()){
+        is_left_hand = false;
+        std::cout << "Is right hand" << std::endl;
+    }else{
+        is_left_hand = true;
+        std::cout << "Is left hand" << std::endl;
+    }
     if (index_bot.y() > index_tip.y() || index_bot.y() > index_high.y()){
         ret->index_raised = true;
         ret->num_fingers_held_up++;
@@ -89,10 +101,22 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
         ret->pinky_raised = true;
         ret->num_fingers_held_up++;
     }
+    /*
     if (thumb_tip.y() < THUMB_Y_THRESHOLD){
         ret->thumb_raised = true;
         ret->num_fingers_held_up++;
+    }*/
+   if (is_left_hand){
+    if (thumb_bot.x() < thumb_tip.x() || thumb_bot.x() < thumb_high.x() || THUMB_Y_THRESHOLD > thumb_tip.y()){
+        ret->thumb_raised = true;
+        ret->num_fingers_held_up++;
     }
+   }else{
+    if (thumb_bot.x() > thumb_tip.x() || thumb_bot.x() > thumb_high.x()|| THUMB_Y_THRESHOLD > thumb_tip.y()){
+        ret->thumb_raised = true;
+        ret->num_fingers_held_up++;
+    }
+   }
     
     return;
 }
