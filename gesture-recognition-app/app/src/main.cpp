@@ -89,7 +89,6 @@ int main() {
         }
         
         bool detectionRunning = false;
-        bool inputLocked = false;
         
         std::cout << "=== Beagle Board Gesture Control Client ===" << std::endl;
         std::cout << "Device ID: " << roomManager->getDeviceId() << std::endl;
@@ -126,7 +125,8 @@ int main() {
                 }
             }
             else if (command == "listrooms") {
-                std::cout << "Fetching available rooms..." << std::endl;
+                // Execute command
+                std::cout << "Fetching rooms (may take a moment)..." << std::endl;
                 roomManager->fetchAvailableRooms();
             }
             else if (command == "joinroom") {
@@ -147,7 +147,7 @@ int main() {
                 std::getline(iss >> std::ws, roomName);
                 
                 if (roomName.empty()) {
-                    std::cout << "Usage: createroom <room_name>" << std::endl;
+                    std::cout << "Usage: createroom <name>" << std::endl;
                 } else if (roomManager->getPlayerName().empty()) {
                     std::cout << "Please set your player name first using 'setname <name>'" << std::endl;
                 } else {

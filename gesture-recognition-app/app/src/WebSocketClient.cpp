@@ -3,118 +3,22 @@
 #include <cstring>
 #include <sstream>
 #include <vector>
+#include <atomic>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
-// Per-session data
-struct ClientData {
-    WebSocketClient* client;
-    std::string receivedData;
-};
+// Global flag for aggressive service - used to speed up service loop when needed
+std::atomic<bool> needsAggressiveService(false);
+std::atomic<int> aggressiveServiceCount(0);
 
-// Define protocol callback function separately
-static int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason, 
-                          void *user, void *in, size_t len) {
-    ClientData *clientData = static_cast<ClientData*>(user);
-    WebSocketClient *client = nullptr;
-    
-    if (clientData != nullptr) {
-        client = clientData->client;
-    }
+// Per-session data - now defined in WebSocketClient.h
+// ClientData struct definition removed from here
 
-    switch (reason) {
-        case LWS_CALLBACK_CLIENT_ESTABLISHED: {
-            std::cout << "WebSocket connection established" << std::endl;
-            if (client) {
-                client->connected = true;
-            }
-            break;
-        }
-        
-        case LWS_CALLBACK_CLIENT_RECEIVE: {
-            if (client && in && len > 0) {
-                // Append received data
-                const char *data = static_cast<const char*>(in);
-                std::string message(data, len);
-                
-                // Check if message is complete (final fragment)
-                bool isFinal = lws_is_final_fragment(wsi);
-                clientData->receivedData.append(message);
-                
-                if (isFinal) {
-                    // Process the complete message
-                    if (client->messageCallback) {
-                        client->messageCallback(clientData->receivedData);
-                    }
-                    clientData->receivedData.clear();
-                }
-            }
-            break;
-        }
-        
-        case LWS_CALLBACK_CLIENT_CLOSED: {
-            std::cout << "WebSocket connection closed" << std::endl;
-            if (client) {
-                client->connected = false;
-            }
-            return -1; // Signal to destroy the connection
-        }
-        
-        case LWS_CALLBACK_CLIENT_CONNECTION_ERROR: {
-            std::cout << "WebSocket connection error";
-            if (in) {
-                std::cout << ": " << static_cast<const char*>(in);
-            }
-            std::cout << std::endl;
-            
-            if (client) {
-                client->connected = false;
-            }
-            return -1; // Signal to destroy the connection
-        }
-        
-        case LWS_CALLBACK_CLIENT_WRITEABLE: {
-            if (client) {
-                // If we have messages to send, send them
-                std::string message;
-                {
-                    std::lock_guard<std::mutex> lock(client->queueMutex);
-                    if (!client->messageQueue.empty()) {
-                        message = client->messageQueue.front();
-                        client->messageQueue.pop();
-                    }
-                }
-                
-                if (!message.empty()) {
-                    // Use a vector instead of variable-length array
-                    std::vector<unsigned char> buf(LWS_SEND_BUFFER_PRE_PADDING + message.length() + LWS_SEND_BUFFER_POST_PADDING);
-                    unsigned char *p = &buf[LWS_SEND_BUFFER_PRE_PADDING];
-                    memcpy(p, message.c_str(), message.length());
-                    
-                    // Send the message
-                    int n = lws_write(wsi, p, message.length(), LWS_WRITE_TEXT);
-                    if (n < 0) {
-                        std::cerr << "WebSocket write failed" << std::endl;
-                        return -1;
-                    }
-                    
-                    // Check if we have more messages to send
-                    std::lock_guard<std::mutex> lock(client->queueMutex);
-                    if (!client->messageQueue.empty()) {
-                        lws_callback_on_writable(wsi);
-                    }
-                }
-            }
-            break;
-        }
-        
-        default:
-            break;
-    }
-    
-    return 0;
-}
+// Define protocol callback function separately - now relocated to protocol_callback.cpp
+// Forward declaration to maintain compatibility
+int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason, 
+                   void *user, void *in, size_t len);
 
 // Define protocol array 
 static struct lws_protocols protocols[] = {
@@ -130,9 +34,15 @@ static struct lws_protocols protocols[] = {
     { NULL, NULL, 0, 0, 0, NULL, 0 } // End of list
 };
 
+// Service thread constants
+#define SERVICE_INTERVAL_MS 1
+#define MAX_SERVICE_INTERVAL_MS 3
+#define LOG_INTERVAL_MS 5000
+
 WebSocketClient::WebSocketClient(const std::string& host, int port, const std::string& path, bool useTLS)
-    : host(host), port(port), path(path), useTLS(useTLS), connected(false), running(false),
-      context(nullptr), wsi(nullptr) {
+    : host(host), port(port), path(path), useTLS(useTLS), 
+      connected(false), running(false), context(nullptr), wsi(nullptr), 
+      wakeRequested(false) {
     
     std::cout << "Initializing WebSocket client for " << (useTLS ? "wss://" : "ws://") 
               << host << ":" << port << path << std::endl;
@@ -199,13 +109,22 @@ void WebSocketClient::run() {
     // Main event loop with maximum connection time
     auto startTime = std::chrono::steady_clock::now();
     bool connectionTimedOut = false;
+    auto lastStatsLog = std::chrono::steady_clock::now();
+    
+    // Adaptive timing - use lower intervals when busy, higher when idle
+    int currentServiceInterval = SERVICE_INTERVAL_MS;
+    
+    std::cout << "WebSocket service thread started" << std::endl;
+    
+    // Processing counters for statistics
+    uint64_t totalServiceCalls = 0;
+    uint64_t totalMessagesProcessed = 0;
     
     while (running) {
-        // Check for connection timeout (5 seconds maximum)
+        // Check for connection timeout (only during initial connection)
         if (!connected) {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - startTime).count();
-            
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - startTime).count();
             if (elapsed > 5) {
                 std::cerr << "WebSocket connection timed out after 5 seconds" << std::endl;
                 connectionTimedOut = true;
@@ -213,7 +132,65 @@ void WebSocketClient::run() {
             }
         }
         
-        lws_service(context, 50); // 50ms timeout for more responsive handling
+        // Process WebSockets - Using 0 timeout for non-blocking check
+        int serviceResult = lws_service(context, 0);
+        
+        totalServiceCalls++;
+        
+        if (serviceResult < 0) {
+            std::cerr << "WebSocket service error, code: " << serviceResult << std::endl;
+        }
+        
+        // Check for queued messages
+        bool hasMessages = false;
+        int queueSize = 0;
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            queueSize = messageQueue.size();
+            hasMessages = (queueSize > 0);
+        }
+        
+        // Adapt service interval based on queue status
+        if (hasMessages) {
+            // When we have messages, use the minimum service interval for maximum responsiveness
+            currentServiceInterval = SERVICE_INTERVAL_MS;
+            
+            // If we have a connection, try to send queued messages immediately
+            if (wsi && connected) {
+                // Request writable callback - this will trigger sending in the protocol callback
+                lws_callback_on_writable(wsi);
+                totalMessagesProcessed++;
+            }
+        } else if (needsAggressiveService) {
+            // If aggressive servicing is needed, use minimum interval
+            currentServiceInterval = SERVICE_INTERVAL_MS;
+            
+            // Decrement aggressive service counter
+            if (aggressiveServiceCount > 0) {
+                aggressiveServiceCount--;
+                if (aggressiveServiceCount == 0) {
+                    needsAggressiveService = false;
+                }
+            }
+        } else {
+            // If no messages, we can use a slightly longer interval to reduce CPU usage
+            currentServiceInterval = MAX_SERVICE_INTERVAL_MS;
+        }
+        
+        // Log statistics periodically
+        auto now = std::chrono::steady_clock::now();
+        auto timeSinceLastStats = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - lastStatsLog).count();
+        
+        if (timeSinceLastStats > LOG_INTERVAL_MS) {
+            // Reset counters and update last log time
+            lastStatsLog = now;
+            totalServiceCalls = 0;
+            totalMessagesProcessed = 0;
+        }
+        
+        // Sleep just enough to prevent CPU overuse while maintaining high responsiveness
+        std::this_thread::sleep_for(std::chrono::milliseconds(currentServiceInterval));
     }
     
     // Cleanup
@@ -230,6 +207,8 @@ void WebSocketClient::run() {
     
     wsi = nullptr;
     connected = false;
+    
+    std::cout << "WebSocket service thread ended" << std::endl;
 }
 
 bool WebSocketClient::connect() {
@@ -238,18 +217,26 @@ bool WebSocketClient::connect() {
     }
     
     running = true;
+    connected = false; // Ensure it starts as false
+    
+    // Start the WebSocket client thread
     clientThread = std::thread(&WebSocketClient::run, this);
     
-    // Wait longer for connection to initialize to avoid race conditions
-    std::this_thread::sleep_for(std::chrono::seconds(3));
-    
-    if (!connected) {
-        std::cerr << "Failed to establish WebSocket connection within timeout" << std::endl;
-        disconnect(); // Clean up the thread and resources
-        return false;
+    // Wait for connection with a timeout using condition variable
+    {
+        std::unique_lock<std::mutex> lock(connectionMutex);
+        // Wait for up to 10 seconds for the connection to be established
+        bool success = connectionCV.wait_for(lock, std::chrono::seconds(10), 
+            [this]() { return this->connected.load(); });
+        
+        if (!success) {
+            std::cerr << "Failed to establish WebSocket connection within timeout" << std::endl;
+            disconnect(); // Clean up the thread and resources
+            return false;
+        }
     }
     
-    return running && connected;
+    return true;
 }
 
 void WebSocketClient::disconnect() {
@@ -260,6 +247,24 @@ void WebSocketClient::disconnect() {
     }
     
     connected = false;
+}
+
+// Helper function to ensure messages are processed quickly
+void WebSocketClient::ensureMessageProcessing() {
+    // We CANNOT call lws_service from multiple threads - it's not thread-safe
+    // Instead, wake up the service thread and request a callback
+    if (wsi) {
+        // Request write callback with highest priority
+        lws_callback_on_writable_all_protocol(lws_get_context(wsi), 
+                                           lws_get_protocol(wsi));
+        
+        // Activate aggressive service mode for faster processing
+        needsAggressiveService = true;
+        aggressiveServiceCount = 100; // Set to process quickly for a while
+        
+        // Wake up the service thread to process immediately
+        wakeServiceThread();
+    }
 }
 
 bool WebSocketClient::sendMessage(const std::string& message) {
@@ -378,15 +383,12 @@ bool WebSocketClient::sendMessage(const std::string& message) {
                 payload["room"] = room;
                 
                 j["payload"] = payload;
-                
-                std::cout << "Creating room with payload: " << j["payload"].dump() << std::endl;
             } else {
                 // Default mapping
                 j["event"] = commandToEventName(cmdName);
                 j["payload"] = params;
             }
             jsonMessage = j.dump();
-            std::cout << "Converted BeagleBoard command to WebSocket JSON: " << jsonMessage << std::endl;
         } else {
             // Invalid command format
             std::cerr << "Invalid BeagleBoard command format: " << message << std::endl;
@@ -413,13 +415,65 @@ bool WebSocketClient::sendMessage(const std::string& message) {
         jsonMessage = j.dump();
     }
     
-    // Queue message for sending
-    std::lock_guard<std::mutex> lock(queueMutex);
-    messageQueue.push(jsonMessage);
+    // Determine if this is a high-priority message - Now ALL WebSocket command messages are high priority
+    bool isRoomList = false;
     
-    // Request write callback
+    // Detect specific event types for specialized handling
+    if (jsonMessage.find("\"event\":\"room_list\"") != std::string::npos) {
+        isRoomList = true;
+    }
+    
+    // Queue management - optimize for room_list requests
+    {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        
+        // Special handling for room_list to prevent queue build-up
+        if (isRoomList) {
+            // Always clear previous room_list requests to avoid backlog
+            std::queue<std::string> filteredQueue;
+            while (!messageQueue.empty()) {
+                std::string msg = messageQueue.front();
+                messageQueue.pop();
+                
+                // Keep all messages except room_list
+                if (msg.find("\"event\":\"room_list\"") == std::string::npos) {
+                    filteredQueue.push(msg);
+                }
+            }
+            
+            messageQueue = filteredQueue;
+        }
+        
+        // Add current message to queue
+        messageQueue.push(jsonMessage);
+    }
+    
+    // Request immediate processing for this message
     if (wsi) {
-        lws_callback_on_writable(wsi);
+        // Activate aggressive service mode for faster processing for ALL commands
+        needsAggressiveService = true;
+        aggressiveServiceCount = 200; // Increase aggressive service count for all messages
+        
+        // Use highest priority for callback
+        lws_callback_on_writable_all_protocol(lws_get_context(wsi), 
+                                           lws_get_protocol(wsi));
+        
+        // Force service thread to wake up immediately
+        wakeServiceThread();
+        
+        // For specific commands, use most aggressive processing
+        if (isRoomList || 
+            jsonMessage.find("\"event\":\"create_room\"") != std::string::npos || 
+            jsonMessage.find("\"event\":\"leave_room\"") != std::string::npos ||
+            jsonMessage.find("\"event\":\"join_room\"") != std::string::npos ||
+            jsonMessage.find("\"event\":\"player_ready\"") != std::string::npos) {
+            
+            // Call lws_service directly here for faster processing of priority messages
+            lws_service(lws_get_context(wsi), 0);
+            
+            // Also force another callback to ensure message is processed
+            lws_callback_on_writable(wsi);
+        }
     }
     
     return true;
@@ -494,4 +548,13 @@ std::string WebSocketClient::commandToEventName(const std::string& command) {
         }
     }
     return result;
+}
+
+// Add a method to wake up the service thread
+void WebSocketClient::wakeServiceThread() {
+    {
+        std::lock_guard<std::mutex> lock(wakeMutex);
+        wakeRequested = true;
+    }
+    wakeCV.notify_all();
 } 

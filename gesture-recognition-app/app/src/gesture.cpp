@@ -138,12 +138,6 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
         return;
     }
     
-    // Request available rooms from server
-    roomManager.fetchAvailableRooms();
-    
-    // Wait a moment for server to respond (in a real implementation, we'd listen for response)
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    
     // Set a default player name if not already set
     if (roomManager.getPlayerName().empty()) {
         roomManager.setPlayerName("Player1");

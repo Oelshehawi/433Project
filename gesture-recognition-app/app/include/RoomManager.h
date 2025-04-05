@@ -79,6 +79,7 @@ public:
 
     // Getters
     std::string getDeviceId() const { return deviceId; }
+    WebSocketClient* getClient() const { return client; }
     std::string getPlayerName() const { return playerName; }
     std::string getCurrentRoomId() const { return currentRoomId; }
     bool isConnected() const { return connected; }
