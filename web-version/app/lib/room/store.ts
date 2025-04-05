@@ -351,12 +351,18 @@ if (typeof window !== "undefined") {
     const { roomId } = event.detail || {};
     console.log("Game started event received in store:", roomId);
 
-    // Dispatch a navigation event to the game page
-    window.dispatchEvent(
-      new CustomEvent("navigate_to_game", {
-        detail: { roomId },
-      })
-    );
+    // No longer navigating, just update the game status in the current room
+    if (roomId) {
+      const currentRoom = useRoomStore.getState().currentRoom;
+      if (currentRoom && currentRoom.id === roomId) {
+        useRoomStore.setState({
+          currentRoom: {
+            ...currentRoom,
+            status: "playing",
+          },
+        });
+      }
+    }
   });
 
   // Game starting event
