@@ -43,8 +43,7 @@ export const RoomActions: React.FC<RoomActionsProps> = ({
       {/* Status message */}
       {allPlayersReady && beagleBoardPlayerCount > 0 && (
         <div className="bg-success/20 text-success p-3 rounded-md mt-1 text-center">
-          All players ready! Game will start automatically when the lobby is
-          full.
+          All players ready! Game will start shortly with a countdown.
         </div>
       )}
 

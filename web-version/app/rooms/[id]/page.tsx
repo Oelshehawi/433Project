@@ -19,11 +19,20 @@ export default function RoomPage() {
   const params = useParams();
   const router = useRouter();
   const roomId = params.id as string;
-  const { currentRoom, error, leaveRoom, setPlayerReady, joinRoom } =
-    useRoomStore();
+  const {
+    currentRoom,
+    error,
+    leaveRoom,
+    setPlayerReady,
+    joinRoom,
+    gameStarting,
+    gameStartTimestamp,
+  } = useRoomStore();
   const [isLoading, setIsLoading] = useState(true);
   const [socketConnected, setSocketConnected] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
+  const [countdown, setCountdown] = useState(5);
+  const [showCountdown, setShowCountdown] = useState(false);
 
   // Initialize WebSocket and wait for connection
   useEffect(() => {
@@ -80,18 +89,66 @@ export default function RoomPage() {
     setIsLoading(false);
   }, [currentRoom, router, roomId, joinRoom, socketConnected]);
 
+  // Listen for game_starting event and show countdown
+  useEffect(() => {
+    const handleGameStarting = (event: CustomEvent) => {
+      console.log("Game starting event received, showing countdown");
+      setShowCountdown(true);
+      setCountdown(5);
+    };
+
+    window.addEventListener(
+      "game_starting",
+      handleGameStarting as EventListener
+    );
+    return () =>
+      window.removeEventListener(
+        "game_starting",
+        handleGameStarting as EventListener
+      );
+  }, []);
+
+  // Watch for gameStarting state from the store
+  useEffect(() => {
+    if (gameStarting && !showCountdown) {
+      console.log("Game starting from store, showing countdown");
+      setShowCountdown(true);
+      setCountdown(5);
+    }
+  }, [gameStarting, showCountdown]);
+
+  // Countdown timer
+  useEffect(() => {
+    if (showCountdown && countdown > 0) {
+      const timer = setTimeout(() => {
+        setCountdown((c) => c - 1);
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    } else if (showCountdown && countdown === 0 && !transitioning) {
+      // When countdown reaches zero, start transition
+      setTransitioning(true);
+
+      // Navigate to game page
+      setTimeout(() => {
+        router.push(`/game/${roomId}`);
+      }, 500);
+    }
+  }, [showCountdown, countdown, transitioning, roomId, router]);
+
   // Handle game start
   useEffect(() => {
-    if (currentRoom?.status === "playing" && !transitioning) {
+    if (currentRoom?.status === "playing" && !transitioning && !showCountdown) {
+      // If game started without countdown (from another player), just navigate
       setTransitioning(true);
 
       // Show transition animation before navigating
       setTimeout(() => {
         // Navigate to the game page
         router.push(`/game/${roomId}`);
-      }, 2000); // 2 second delay for animation
+      }, 500);
     }
-  }, [currentRoom?.status, roomId, router, transitioning]);
+  }, [currentRoom?.status, roomId, router, transitioning, showCountdown]);
 
   // Handle browser back button
   useEffect(() => {
@@ -200,32 +257,49 @@ export default function RoomPage() {
       return;
     }
 
-    // Find the current player in the room
+    // Find player in the room
     const currentPlayer = currentRoom.players.find(
       (p) => p.id === currentPlayerId
     );
 
-    if (currentPlayer) {
+    if (!currentPlayer) {
+      console.error(
+        "Cannot toggle ready: Player not found in room",
+        currentPlayerId
+      );
+      return;
+    }
+
+    try {
       console.log(
-        `Toggling ready state for player ${currentPlayer.name} (${
-          currentPlayer.id
-        }): ${!currentPlayer.isReady}`
+        `Setting player ${currentPlayerId} ready to ${!currentPlayer.isReady}`
       );
       await setPlayerReady(!currentPlayer.isReady);
-    } else {
-      console.error("Current player not found in room");
+    } catch (error) {
+      console.error("Error toggling ready status:", error);
     }
   };
 
-  // Get derived state
+  // Derived data
+  const isHost = !!(
+    currentRoom?.hostId && getSavedRoomInfo().playerId === currentRoom.hostId
+  );
+
+  // Fix: Pass players array to getCurrentPlayer
   const currentPlayer = currentRoom
     ? getCurrentPlayer(currentRoom.players)
     : null;
-  const isHost = currentRoom?.hostId === currentPlayer?.id;
-  const allPlayersReady = currentRoom?.players.every((p) => p.isReady);
+
+  // Fix: Pass players array to getBeagleBoardPlayerCount
   const beagleBoardPlayerCount = currentRoom
     ? getBeagleBoardPlayerCount(currentRoom.players)
     : 0;
+
+  const allPlayersReady = !!(
+    currentRoom &&
+    currentRoom.players.length > 0 &&
+    currentRoom.players.every((player) => player.isReady)
+  );
 
   // Loading or connecting state
   if (isLoading || !socketConnected) {
@@ -256,38 +330,40 @@ export default function RoomPage() {
     );
   }
 
+  // Game transition animation with countdown
+  if (showCountdown) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-8">
+        <motion.div
+          className="bg-black/50 backdrop-blur-md rounded-xl p-12 border-2 border-primary/50 text-center shadow-lg shadow-primary/20"
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          <h1 className="game-title text-6xl font-bold mb-8 text-white">
+            Game Starting
+          </h1>
+          <motion.div
+            className="text-8xl font-bold text-primary mb-6"
+            key={countdown}
+            initial={{ scale: 0.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 300 }}
+          >
+            {countdown}
+          </motion.div>
+          <p className="text-xl text-white/80">Get ready to play!</p>
+        </motion.div>
+      </div>
+    );
+  }
+
   // Game starting transition
   if (transitioning) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.5 }}
-          className="text-center"
-        >
-          <h2 className="game-title text-5xl font-bold mb-6 text-accent">
-            Game Starting!
-          </h2>
-          <p className="text-white/70 text-xl">Preparing the tower...</p>
-          <div className="mt-8 flex justify-center">
-            <div className="animate-bounce bg-accent p-4 rounded-full">
-              <svg
-                className="w-12 h-12 text-white"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M19 14l-7 7m0 0l-7-7m7 7V3"
-                ></path>
-              </svg>
-            </div>
-          </div>
-        </motion.div>
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-primary mb-6"></div>
+        <p className="text-2xl text-primary animate-pulse">Starting Game...</p>
       </div>
     );
   }
