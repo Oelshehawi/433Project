@@ -8,3 +8,24 @@ cc_library(
         "//mediapipe/framework/port:opencv_imgproc",
         "//mediapipe/framework/port:opencv_video",],
 )
+
+cc_library(
+    name = "libgpiod",
+    linkopts = ["-lgpiod"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "gpio",
+    srcs = ["gpio.c"],
+    hdrs = ["gpio.h"],
+    deps = [":libgpiod"]
+)
+
+cc_library(
+    name = "rotary_press_statemachine",
+    srcs = ["rotary_press_statemachine.c"],
+    hdrs = ["rotary_press_statemachine.h"],
+    deps = [":gpio"],
+)
+

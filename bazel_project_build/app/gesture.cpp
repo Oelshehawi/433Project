@@ -11,10 +11,12 @@
 #include <map>
 #include <unistd.h>
 #include <cstring>
+#include <time.h>
 #include "hand_recognition.hpp"
+#include "../hal/rotary_press_statemachine.h"
 
 using namespace cv;
-
+#define WAIT_TIME 3000
 // Define simple gestures
 const char *GESTURES[] = {
     "Thumbs Up", 
@@ -120,7 +122,18 @@ bool GestureDetector::testCameraAccess() {
     }
     return false;
 }
-
+static long long getTimeInMs(void)
+{
+    long long MS_PER_SEC = 1000;
+    long long NS_PER_MS = 1000000;
+    struct timespec spec;
+    clock_gettime(CLOCK_REALTIME, &spec);
+    long long seconds = spec.tv_sec;
+    long long nanoSeconds = spec.tv_nsec;
+    long long milliSeconds = seconds * MS_PER_SEC
+    + nanoSeconds / NS_PER_MS;
+    return milliSeconds;
+}
 // Detection loop
 void GestureDetector::detectionLoop(GestureDetector* detector) {
     
@@ -152,17 +165,19 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     }
     
     // Don't join a room here, let the main thread handle room management
-
+    rotary_press_statemachine_init();
     while (detector->running) {
         GestureResult result;
 
         // Capture frame and verify
         cv::Mat frame;
+        std::cout << "Taking image..." << std::endl;
         if (!detector->camera.captureFrame(frame)) {
             std::cerr << "Error: Could not capture frame" << std::endl;
             continue;
         }
-        
+        cv::imwrite("reference.jpg", frame);
+        int start_value = rotary_press_statemachine_getValue();
         // Attempt to detect a gesture
         if (detect_gesture(&result, detector->camera)) {
             std::cout << "Detected Gesture: " << result.gesture_name 
@@ -187,7 +202,20 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
                 
             }
             //Do something with image
-            roomManager.sendGestureData("gestureData");
+            //TODO : Add lcd to show current gesture and countdown until refreshes image
+            //sleep(1);
+            long long start_time = getTimeInMs();
+            bool data_sent = false;
+            //Require user to press on rotary encoder to send the gesture to the webserver
+            while (getTimeInMs() - start_time < WAIT_TIME && ret.hand_visible == true){
+                if (start_value != rotary_press_statemachine_getValue() && data_sent == false){
+                    std::cout << "Sending gesture data to webserver..." << std::endl;
+                    //Send data to webserver
+                    roomManager.sendGestureData("gestureData");
+                    data_sent = true;
+                    
+                }
+            }
         //}
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -199,6 +227,7 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     }
     }
     detector->camera.closeCamera();
+    rotary_press_statemachine_cleanup();
 }
 
 
