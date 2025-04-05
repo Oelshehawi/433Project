@@ -3,7 +3,7 @@
 input_stream: "input_video"
 
 # CPU image. (ImageFrame)
-output_stream: "output_video"
+output_stream: "landmarks"
 
 # Generates side packet cotaining max number of hands to detect/track.
 node {
@@ -11,7 +11,7 @@ node {
   output_side_packet: "PACKET:num_hands"
   node_options: {
     [type.googleapis.com/mediapipe.ConstantSidePacketCalculatorOptions]: {
-      packet { int_value: 2 }
+      packet { int_value: 1 }
     }
   }
 }
