@@ -6,6 +6,7 @@ cc_library(
     hdrs = ["RoomManager.h", "WebSocketClient.h", "WebSocketReceiver.h", "gesture.h", "hand_recognition.hpp"],
     includes = ["."],
     deps = ["//bazel_project_build/hal:camera_hal",
+        "//bazel_project_build/hal:rotary_press_statemachine",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/status:status",

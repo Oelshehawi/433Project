@@ -2,6 +2,7 @@
 #define GESTURE_H
 
 #include "RoomManager.h"
+
 #include "../hal/camera_hal.h"
 #include <thread>
 #include <atomic>
