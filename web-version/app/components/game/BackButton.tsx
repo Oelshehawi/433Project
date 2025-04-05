@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useRoomStore } from "../../lib/room/store";
 
 interface BackButtonProps {
   isVisible: boolean;
@@ -21,8 +22,16 @@ export default function BackButton({
       console.log("Cleared room data from localStorage");
     }
 
-    // Always navigate to home
-    router.push("/");
+    // Reset the room store state to initial values
+    useRoomStore.setState({
+      currentRoom: null,
+      gameStarting: false,
+      gameStartTimestamp: null,
+      error: null,
+    });
+
+    // Navigate to home with query parameter to indicate we're coming from a game
+    router.push("/?fromGame=true");
   };
 
   return (

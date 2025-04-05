@@ -101,16 +101,31 @@ export default function Home() {
 
     // Check if user should be redirected to a saved room
     if (typeof window !== "undefined") {
-      const roomId = localStorage.getItem("currentRoomId");
-      const playerId = localStorage.getItem("currentPlayerId");
-      const playerName = localStorage.getItem("currentPlayerName");
+      // Get URL search params to check if we're coming from a game
+      const urlParams = new URLSearchParams(window.location.search);
+      const fromGame = urlParams.get("fromGame") === "true";
 
-      // If we have all the room data and we're on the home page, redirect to the room
-      if (roomId && playerId && playerName) {
-        console.log("Found saved room info, redirecting to room:", roomId);
-        setTimeout(() => {
-          router.push(`/rooms/${roomId}`);
-        }, 500);
+      // Only redirect if we're not coming from a game
+      if (!fromGame) {
+        const roomId = localStorage.getItem("currentRoomId");
+        const playerId = localStorage.getItem("currentPlayerId");
+        const playerName = localStorage.getItem("currentPlayerName");
+
+        // If we have all the room data and we're on the home page, redirect to the room
+        if (roomId && playerId && playerName) {
+          console.log("Found saved room info, redirecting to room:", roomId);
+          setTimeout(() => {
+            router.push(`/rooms/${roomId}`);
+          }, 500);
+        }
+      } else {
+        console.log("Coming from a game, not redirecting back to room");
+        // Clean URL
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname
+        );
       }
     }
 
