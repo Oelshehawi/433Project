@@ -104,29 +104,16 @@ export default function GamePage() {
   // Sequential animation steps for gameplay
   useEffect(() => {
     if (gameState === "starting") {
-      if (
-        textAnimationComplete &&
-        !rulesAnimationComplete &&
-        !animationComplete
-      ) {
+      if (textAnimationComplete && !rulesAnimationComplete) {
         // Text animation is complete, rules scroll is showing
-        // The scroll itself will trigger rulesAnimationComplete after several seconds
-      } else if (
-        textAnimationComplete &&
-        rulesAnimationComplete &&
-        !animationComplete
-      ) {
-        // Rules animation is complete, now show players
+        // Rules will now stay visible until dismissed with the X button
+      } else if (textAnimationComplete && rulesAnimationComplete) {
+        // User has dismissed the rules, now show players and move to playing state
         setAnimationComplete(true);
         setGameState("playing");
       }
     }
-  }, [
-    gameState,
-    textAnimationComplete,
-    rulesAnimationComplete,
-    animationComplete,
-  ]);
+  }, [gameState, textAnimationComplete, rulesAnimationComplete]);
 
   // Shield toggle handlers
   const togglePlayer1Shield = () => {

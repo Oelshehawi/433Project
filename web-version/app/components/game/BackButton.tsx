@@ -13,7 +13,15 @@ export default function BackButton({
   const router = useRouter();
 
   const handleClick = () => {
-    // Always navigate to home now
+    // Clear localStorage data before going back to home
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("currentRoomId");
+      localStorage.removeItem("currentPlayerId");
+      localStorage.removeItem("currentPlayerName");
+      console.log("Cleared room data from localStorage");
+    }
+
+    // Always navigate to home
     router.push("/");
   };
 
