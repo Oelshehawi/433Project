@@ -46,7 +46,8 @@ export type RoomSocketEventType =
   | "room_list"
   | "room_updated"
   | "player_ready"
-  | "game_started";
+  | "game_started"
+  | "game_starting";
 
 export interface RoomUpdatedPayload {
   room: Room;
@@ -76,6 +77,8 @@ export interface RoomStore {
   availableRooms: RoomListItem[];
   loading: boolean;
   error: string | null;
+  gameStarting: boolean;
+  gameStartTimestamp: number | null;
 
   // Room actions
   createRoom: (params: CreateRoomParams) => Promise<void>;

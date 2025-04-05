@@ -31,6 +31,8 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
   availableRooms: [],
   loading: false,
   error: null,
+  gameStarting: false,
+  gameStartTimestamp: null,
 
   // Room actions
   createRoom: async (params: CreateRoomParams) => {
@@ -355,6 +357,21 @@ if (typeof window !== "undefined") {
         detail: { roomId },
       })
     );
+  });
+
+  // Game starting event
+  window.addEventListener("game_starting", (event: CustomEventInit) => {
+    const { roomId, timestamp } = event.detail || {};
+    console.log("Game starting event received in store:", {
+      roomId,
+      timestamp,
+    });
+
+    // Update store with game starting status
+    useRoomStore.setState({
+      gameStarting: true,
+      gameStartTimestamp: timestamp,
+    });
   });
 
   // BeagleBoard command event

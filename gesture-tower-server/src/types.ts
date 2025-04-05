@@ -20,6 +20,7 @@ export type ServerEventType =
   | "room_data"
   | "player_ready"
   | "game_started"
+  | "game_starting"
   | "game_ended"
   | "error"
   | "gesture_event"

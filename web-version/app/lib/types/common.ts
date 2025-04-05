@@ -39,6 +39,7 @@ export type WebSocketEventName =
   | "room_list"
   | "player_ready"
   | "game_started"
+  | "game_starting"
   | "error"
   | "gesture_event"
   | "navigate_to_room"
