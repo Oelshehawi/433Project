@@ -1,5 +1,3 @@
-
-
 // Single source of truth for WebSocket connection
 let socket: WebSocket | null = null;
 let socketStatus: "disconnected" | "connecting" | "connected" = "disconnected";
@@ -80,6 +78,11 @@ export const initializeSocket = (
       try {
         const data = JSON.parse(event.data);
         console.log("WebSocket message received:", data);
+
+        // Special handling for game_starting to make it more visible in logs
+        if (data.event === "game_starting") {
+          console.log("🎮 GAME STARTING EVENT RECEIVED:", data.payload);
+        }
 
         // Create a simple custom event with the data
         const customEvent = new CustomEvent(data.event, {

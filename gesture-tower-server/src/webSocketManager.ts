@@ -640,6 +640,34 @@ function setBeagleBoardReady(
       isReady ? "ready" : "not ready"
     }`
   );
+  
+  // *** Add game start detection ***
+  // Only check for game start when a player becomes ready
+  if (isReady) {
+    // Check if all players are ready and there are at least 2 players
+    const allPlayersReady = room.players.every(p => p.isReady);
+    const minPlayersForGame = 2;
+    const hasEnoughPlayers = room.players.length >= minPlayersForGame;
+    
+    if (allPlayersReady && hasEnoughPlayers) {
+      console.log(`All players in room ${roomId} are ready! Starting game...`);
+      
+      // Update room status to playing
+      room.status = "playing";
+      
+      // Send game_starting event to all clients in the room
+      sendToRoom(roomId, "game_starting", { 
+        roomId: roomId,
+        timestamp: Date.now()
+      });
+      
+      // Update room with new status
+      sendToRoom(roomId, "room_updated", { room });
+      
+      // Also broadcast room_updated to ALL clients
+      broadcastToAll("room_updated", { room });
+    }
+  }
 }
 
 // Handle gesture data from Beagle board

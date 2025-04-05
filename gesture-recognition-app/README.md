@@ -20,7 +20,14 @@ This C++ App uses Open CV for Gesture Recognition and communicates with a web ap
    sudo apt install libopencv-dev
    ```
 
-3. **CMake and Build Tools**:
+3. **LibWeb Socket Libraries**:
+
+   ```
+   sudo apt update
+   sudo apt install libwebsockets-dev:arm64
+   ```
+
+4. **CMake and Build Tools**:
    ```
    sudo apt install cmake g++ wget unzip
    ```
@@ -34,7 +41,14 @@ This C++ App uses Open CV for Gesture Recognition and communicates with a web ap
    sudo apt install libopencv-dev
    ```
 
-2. **LGPIO for LCD Support (if needed)**:
+2. **LibWeb Socket Libraries**:
+
+   ```
+   sudo apt update
+   sudo apt install libwebsockets-dev:arm64
+   
+
+3. **LGPIO for LCD Support (if needed)**:
    ```
    sudo apt install liblgpio-dev
    ```

@@ -13,6 +13,7 @@ export default function GamePage() {
   const roomId = params.id as string;
   const { currentRoom, error } = useRoomStore();
   const [socketConnected, setSocketConnected] = useState(false);
+  const [allPlayersReady, setAllPlayersReady] = useState(false);
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -52,6 +53,36 @@ export default function GamePage() {
     }
   }, [socketConnected, currentRoom, roomId, router]);
 
+  // Check if all players are ready and room status is "playing"
+  useEffect(() => {
+    if (currentRoom) {
+      // Check if all players are ready and there are at least 2 players
+      const playersReady = currentRoom.players.every(player => player.isReady);
+      const enoughPlayers = currentRoom.players.length >= 2;
+      
+      if (playersReady && enoughPlayers) {
+        setAllPlayersReady(true);
+        
+        // If room status is "playing", redirect to play page
+        if (currentRoom.status === "playing") {
+          console.log("Game is starting, redirecting to play page");
+          router.push(`/game/${roomId}/play`);
+        }
+      }
+    }
+  }, [currentRoom, roomId, router]);
+
+  // Listen for game_starting event
+  useEffect(() => {
+    const handleGameStarting = (event) => {
+      console.log("Game starting event received, redirecting to play page");
+      router.push(`/game/${roomId}/play`);
+    };
+    
+    window.addEventListener("game_starting", handleGameStarting);
+    return () => window.removeEventListener("game_starting", handleGameStarting);
+  }, [roomId, router]);
+
   if (!socketConnected) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
@@ -78,35 +109,53 @@ export default function GamePage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <h1 className="game-title text-5xl font-bold mb-6">Game in Progress</h1>
-        <p className="text-xl mb-8">
-          Room: <span className="text-accent">{currentRoom.name}</span>
+        <h1 className="game-title text-5xl font-bold mb-6">{currentRoom.name}</h1>
+        <p className="text-xl mb-2">
+          Room ID: <span className="text-accent">{currentRoom.id}</span>
+        </p>
+        <p className="text-lg mb-8">
+          Status: <span className="text-accent">{currentRoom.status}</span>
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-          {currentRoom.players
-            .filter((player) => player.playerType === "beagleboard")
-            .map((player) => (
-              <div
-                key={player.id}
-                className="bg-black/20 p-4 rounded-lg border border-white/10"
-              >
-                <h3 className="text-xl font-bold mb-2">{player.name}</h3>
-                <p className="text-accent">Waiting for gameplay data...</p>
-              </div>
-            ))}
+          {currentRoom.players.map((player) => (
+            <div
+              key={player.id}
+              className={`p-4 rounded-lg border ${
+                player.isReady 
+                  ? "bg-green-900/30 border-green-500/50" 
+                  : "bg-black/20 border-white/10"
+              }`}
+            >
+              <h3 className="text-xl font-bold mb-2">
+                {player.name}
+                {player.id === currentRoom.hostId && (
+                  <span className="ml-2 text-xs bg-accent px-2 py-1 rounded-full">Host</span>
+                )}
+              </h3>
+              <p className={`${player.isReady ? "text-green-400" : "text-white/70"}`}>
+                {player.isReady ? "Ready" : "Not Ready"}
+              </p>
+              <p className="text-xs text-white/50 mt-1">
+                {player.playerType === "beagleboard" ? "BeagleBoard Player" : "Web Player"}
+              </p>
+            </div>
+          ))}
         </div>
 
-        <div className="text-white/70 text-sm">
-          <p>Game implementation coming soon!</p>
-          <p className="mt-4">
-            This page will display the game state once it's implemented.
-          </p>
-        </div>
+        {allPlayersReady ? (
+          <div className="text-accent text-lg animate-pulse mb-4">
+            All players are ready! Waiting for game to start...
+          </div>
+        ) : (
+          <div className="text-white/70 text-sm mb-4">
+            <p>Waiting for all players to be ready...</p>
+          </div>
+        )}
 
         <button
           onClick={() => router.push("/")}
-          className="mt-8 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-6 rounded-lg"
+          className="mt-4 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-6 rounded-lg"
         >
           Back to Home
         </button>
