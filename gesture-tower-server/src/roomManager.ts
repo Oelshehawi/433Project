@@ -324,30 +324,33 @@ export const handlePlayerReady = (
         room.name
       } (${effectiveRoomId}) is now ${isReady ? "ready" : "not ready"}`
     );
-    
+
     // *** Add game start detection ***
     // Only check for game start when a player becomes ready
     if (isReady) {
       // Check if all players are ready and there are at least 2 players
-      const allPlayersReady = room.players.every(p => p.isReady);
-      const minPlayersForGame = 2;
+      const allPlayersReady = room.players.every((p) => p.isReady);
+      // TEMPORARY: Set to 1 for single BeagleBoard testing. Change back to 2 when done.
+      const minPlayersForGame = 1; // TEMP: Changed from 2 to 1 for single device testing
       const hasEnoughPlayers = room.players.length >= minPlayersForGame;
-      
+
       if (allPlayersReady && hasEnoughPlayers) {
-        console.log(`All players in room ${effectiveRoomId} are ready! Starting game...`);
-        
+        console.log(
+          `All players in room ${effectiveRoomId} are ready! Starting game...`
+        );
+
         // Update room status to playing
         room.status = "playing";
-        
+
         // Send game_starting event to all clients in the room
-        sendToRoom(effectiveRoomId, "game_starting", { 
+        sendToRoom(effectiveRoomId, "game_starting", {
           roomId: effectiveRoomId,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
-        
+
         // Update room with new status
         sendToRoom(effectiveRoomId, "room_updated", { room });
-        
+
         // Also broadcast room_updated to ALL clients for better state synchronization
         broadcastToAllClients({
           event: "room_updated",
@@ -396,12 +399,13 @@ export const handleGameStart = (
       } as ErrorPayload);
     }
 
+    // TEMP: Commented out host check for testing with one device
     // Check if client is the host
-    if (client.playerId !== room.hostId) {
-      return sendToClient(client, "error", {
-        error: "Only the host can start the game",
-      } as ErrorPayload);
-    }
+    // if (client.playerId !== room.hostId) {
+    //   return sendToClient(client, "error", {
+    //     error: "Only the host can start the game",
+    //   } as ErrorPayload);
+    // }
 
     // Update room status
     room.status = "playing";
