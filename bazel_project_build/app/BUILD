@@ -51,7 +51,6 @@ cc_library(
 
 cc_library(
     name = "libwebsockets",
-    includes = ["/usr/include"],
     linkopts = ["-lwebsockets"],
     visibility = ["//visibility:public"],
 )
