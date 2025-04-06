@@ -155,19 +155,27 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
         return;
     }
     
+    // Request available rooms from server
+    roomManager.fetchAvailableRooms();
+    
+    // Wait a moment for server to respond (in a real implementation, we'd listen for response)
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    
     // Set a default player name if not already set
     if (roomManager.getPlayerName().empty()) {
         roomManager.setPlayerName("Player1");
     }
     
     // Don't join a room here, let the main thread handle room management
-    //Testing for LCD, remove this when done
     lcd_init();
-    char* test[] = {"test1", "test2"};
-    std::cout << "Testing LCD" << std::endl;
-    lcd_place_message(test, 2, lcd_center);
-    lcd_cleanup();
+    
     rotary_press_statemachine_init();
+    //lcd_cleanup();
+    int counter = 0;
+    handPosition basic_attack(1, true, false, true, false, false, false);
+    handPosition basic_defend(5, true, true, true, true, true, true);
+    handPosition basic_build(2, true, false, true, false, false, true);
+
     while (detector->running) {
         GestureResult result;
 
@@ -178,8 +186,11 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
             std::cerr << "Error: Could not capture frame" << std::endl;
             continue;
         }
-        cv::imwrite("reference.jpg", frame);
+        chmod("reference.bmp", 0666);  // Make world-writable
+        cv::imwrite("reference.bmp", frame);
+        chmod("reference.bmp", 0666);  // Make world-writable
         int start_value = rotary_press_statemachine_getValue();
+        
         // Attempt to detect a gesture
         if (detect_gesture(&result, detector->camera)) {
             std::cout << "Detected Gesture: " << result.gesture_name 
@@ -201,25 +212,56 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
                 std::cout << "MIDDLE" << ((ret.middle_raised == true) ? " RAISED" : " NOT RAISED") << std::endl;
                 std::cout << "RING" << ((ret.ring_raised == true) ? " RAISED" : " NOT RAISED") << std::endl;
                 std::cout << "PINKY" << ((ret.pinky_raised == true) ? " RAISED" : " NOT RAISED") << std::endl;
-                
             }
             //Do something with image
             //TODO : Add lcd to show current gesture and countdown until refreshes image
             //sleep(1);
             long long start_time = getTimeInMs();
             bool data_sent = false;
+            char abcd[10];
+            char* test[] = {abcd};
+            //std::cout << "Testing LCD" << std::endl;
+            snprintf(abcd, 10, "%d",counter);
+            counter++;
+            lcd_place_message(test, 1, lcd_center);
             //Require user to press on rotary encoder to send the gesture to the webserver
             while (getTimeInMs() - start_time < WAIT_TIME && ret.hand_visible == true){
                 if (start_value != rotary_press_statemachine_getValue() && data_sent == false){
                     std::cout << "Sending gesture data to webserver..." << std::endl;
+                    std::string move;
+                    switch (ret.num_fingers_held_up){
+                        case 1:
+                            if (ret.compare(basic_attack) == true){
+                                move = "basic attack";
+                            }else{
+                                move = "invalid move";
+                            }
+                            break;
+                        case 2:
+                            if (ret.compare(basic_build) == true){
+                                 move = "basic build";
+                            }else{
+                                move = "invalid move";
+                            }
+                            break;
+                        case 5:
+                            if (ret.compare(basic_defend) == true){
+                                move = "basic defend";
+                            }else{
+                                move = "invalid move";
+                            }
+                            break;
+                        default:
+                            move = "invalid move";
+                            break;
+                    }
+                    std::cout << "Sending move :" << move << std::endl;
                     //Send data to webserver
-                    //Should be a string specifying the gesture...
-                    roomManager.sendGestureData(gestureData);
+                    roomManager.sendGestureData(move);
                     data_sent = true;
-                    
                 }
             }
-        }
+        //}
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
@@ -228,7 +270,8 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     if (roomManager.isConnected()) {
         roomManager.leaveRoom();
     }
-    
+    }
+    lcd_cleanup();
     detector->camera.closeCamera();
     rotary_press_statemachine_cleanup();
 }

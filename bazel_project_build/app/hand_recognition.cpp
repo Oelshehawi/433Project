@@ -47,6 +47,16 @@ bool initial = true;
 #define THUMB_HIGH 3
 
 #define THUMB_Y_THRESHOLD 0.5
+
+
+bool handPosition::compare(handPosition reference){
+    if (this->index_raised == reference.index_raised && this->middle_raised == reference.middle_raised && this->ring_raised == reference.ring_raised && this->pinky_raised == reference.pinky_raised && this->thumb_raised == reference.thumb_raised){
+        return true;
+    }
+    return false;
+}
+
+
 void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list, handPosition* ret) {
     ret->hand_visible = true;
     
