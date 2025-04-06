@@ -9,7 +9,7 @@
 #include <exception>
 #include <cstdlib>
 #include <chrono>
-//bazel build -c opt --crosstool_top=@crosstool//:toolchains --compiler=gcc --cpu=aarch64 --define MEDIAPIPE_DISABLE_GPU=1 //project:gesture_game
+//bazel build -c opt --crosstool_top=@crosstool//:toolchains --compiler=gcc --cpu=aarch64 --define MEDIAPIPE_DISABLE_GPU=1 //bazel_project_build:gesture_game
 
 // Function to display available commands
 void displayHelp() {
