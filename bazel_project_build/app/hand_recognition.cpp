@@ -50,7 +50,7 @@ bool initial = true;
 void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list, handPosition* ret) {
     ret->hand_visible = true;
     
-    
+    /*
     for (int i = 0; i < landmark_list.landmark_size(); ++i) {
         if (i == 4|| i == 3|| i == 2|| i == 1){
             const mediapipe::NormalizedLandmark& landmark = landmark_list.landmark(i);
@@ -61,6 +61,7 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
         }
         
     }
+        */
 
     const mediapipe::NormalizedLandmark& index_tip = landmark_list.landmark(INDEX_TIP);
     const mediapipe::NormalizedLandmark& index_bot = landmark_list.landmark(INDEX_BOT);

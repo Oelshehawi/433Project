@@ -1,9 +1,21 @@
 
 package(default_visibility = ["//visibility:public"])
+
+
+cc_library(
+    name = "lcd_display",
+    srcs = ["lcd_display.c"],
+    hdrs = ["lcd_display.h"],
+    deps = ["//bazel_project_build/lcd:DEV_Config",
+            "//bazel_project_build/lcd:GUI_BMP",
+            "//bazel_project_build/lcd:GUI_Paint",
+            "//bazel_project_build/lcd:LCD_1in54",
+            "//bazel_project_build/lcd:font16", ]
+)
 cc_library(
     name = "gesture",
     srcs = ["gesture.cpp"],
-    hdrs = ["RoomManager.h", "WebSocketClient.h", "WebSocketReceiver.h", "gesture.h", "hand_recognition.hpp"],
+    hdrs = ["RoomManager.h", "WebSocketClient.h", "WebSocketReceiver.h", "gesture.h", "hand_recognition.hpp", "lcd_display.h"],
     includes = ["."],
     deps = ["//bazel_project_build/hal:camera_hal",
         "//bazel_project_build/hal:rotary_press_statemachine",
@@ -13,7 +25,8 @@ cc_library(
         "//mediapipe/framework/port:opencv_highgui",
         "//mediapipe/framework/port:opencv_imgproc",
         "//mediapipe/framework/port:opencv_video",
-        ":hand_recognition"],
+        ":hand_recognition",
+        ":lcd_display"],
     
 
 )

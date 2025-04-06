@@ -14,6 +14,8 @@
 #include <time.h>
 #include "hand_recognition.hpp"
 #include "../hal/rotary_press_statemachine.h"
+#include "lcd_display.h"
+#include <sys/stat.h>
 
 using namespace cv;
 #define WAIT_TIME 3000
@@ -159,6 +161,13 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     }
     
     // Don't join a room here, let the main thread handle room management
+    //Testing for LCD, remove this when done
+    lcd_init();
+    char* test[] = {"test1", "test2"};
+    std::cout << "Testing LCD" << std::endl;
+    lcd_place_message(test, 2, lcd_center);
+    rotary_press_statemachine_init();
+    lcd_cleanup();
     rotary_press_statemachine_init();
     while (detector->running) {
         GestureResult result;
