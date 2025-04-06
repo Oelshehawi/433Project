@@ -4,7 +4,7 @@
 #ifndef _LCD_DISPLAY_H_
 #define _LCD_DISPLAY_H_
 #ifdef __cplusplus
-extern "C" {  // Disable C++ name mangling
+extern "C" {
 #endif
 typedef enum {
     lcd_center,

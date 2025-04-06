@@ -166,7 +166,6 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     char* test[] = {"test1", "test2"};
     std::cout << "Testing LCD" << std::endl;
     lcd_place_message(test, 2, lcd_center);
-    rotary_press_statemachine_init();
     lcd_cleanup();
     rotary_press_statemachine_init();
     while (detector->running) {
@@ -214,6 +213,7 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
                 if (start_value != rotary_press_statemachine_getValue() && data_sent == false){
                     std::cout << "Sending gesture data to webserver..." << std::endl;
                     //Send data to webserver
+                    //Should be a string specifying the gesture...
                     roomManager.sendGestureData(gestureData);
                     data_sent = true;
                     
