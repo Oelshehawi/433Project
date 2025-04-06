@@ -153,12 +153,6 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
         return;
     }
     
-    // Request available rooms from server
-    roomManager.fetchAvailableRooms();
-    
-    // Wait a moment for server to respond (in a real implementation, we'd listen for response)
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    
     // Set a default player name if not already set
     if (roomManager.getPlayerName().empty()) {
         roomManager.setPlayerName("Player1");
@@ -211,12 +205,12 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
                 if (start_value != rotary_press_statemachine_getValue() && data_sent == false){
                     std::cout << "Sending gesture data to webserver..." << std::endl;
                     //Send data to webserver
-                    roomManager.sendGestureData("gestureData");
+                    roomManager.sendGestureData(gestureData);
                     data_sent = true;
                     
                 }
             }
-        //}
+        }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
@@ -225,7 +219,7 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     if (roomManager.isConnected()) {
         roomManager.leaveRoom();
     }
-    }
+    
     detector->camera.closeCamera();
     rotary_press_statemachine_cleanup();
 }

@@ -64,38 +64,19 @@ bool RoomManager::startReceiver() {
 }
 
 void RoomManager::handleMessage(const std::string& message) {
-    // Avoid printing every received message
-    // std::cout << "Received message: " << message << std::endl;
-    
     try {
         // Parse message as JSON
         json j = json::parse(message);
         
-        // Handle error messages first
-        if (j.contains("event") && j["event"] == "error") {
-            if (j.contains("payload") && j["payload"].contains("error")) {
-                std::string error = j["payload"]["error"];
-                std::cerr << "Server error: " << error << std::endl;
-                
-                // If we get an error for create_room and we're waiting for it, reset our room ID
-                if (currentRequestType == "create_room") {
-                    currentRoomId = "";
-                }
-                
-                // Reset loading state after handling the error
-                resetLoadingState();
-                return;
-            }
-        }
-        
-        // Check if this is a room_list event
         if (j.contains("event") && j["event"] == "room_list") {
             if (j.contains("payload") && j["payload"].contains("rooms")) {
                 // Extract rooms from the payload
                 parseJsonRoomList(j["payload"]["rooms"]);
                 
-                // Display the room list
-                displayRoomList();
+                // Only display room list if this was in response to a listrooms command
+                if (currentRequestType == "room_list") {
+                    displayRoomList();
+                }
                 
                 // Reset loading state after handling the response
                 resetLoadingState();
@@ -111,20 +92,25 @@ void RoomManager::handleMessage(const std::string& message) {
                     // Check if we're in the player list
                     if (room.contains("players") && room["players"].is_array()) {
                         bool foundSelf = false;
+                        // Also count total players for information purposes
+                        int playerCount = room["players"].size();
+                        
                         for (const auto& player : room["players"]) {
                             if ((player.contains("id") && player["id"] == deviceId) ||
                                 (player.contains("name") && player["name"] == playerName)) {
                                 // We're in this room
                                 connected = true;
                                 foundSelf = true;
-                                std::cout << "You're now connected to room: " << room["name"] << std::endl;
+                                std::cout << "You're now connected to room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
+                                std::cout << "Players in room: " << playerCount << "/" 
+                                          << (room.contains("maxPlayers") ? room["maxPlayers"].get<int>() : 2) << std::endl;
                                 break;
                             }
                         }
                         
                         // If we didn't find ourselves in the player list
                         if (!foundSelf && connected) {
-                            std::cout << "You're no longer in room: " << room["name"] << std::endl;
+                            std::cout << "You're no longer in room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
                             connected = false;
                             currentRoomId = "";
                         }
@@ -135,6 +121,14 @@ void RoomManager::handleMessage(const std::string& message) {
                 if (currentRequestType == "create_room") {
                     resetLoadingState();
                 }
+                else {
+                    // Always reset loading state for room_updated events
+                    resetLoadingState();
+                }
+            }
+            else {
+                // Even if payload or room is missing, reset loading state
+                resetLoadingState();
             }
         }
         else if (j.contains("event") && j["event"] == "join_room") {
@@ -144,9 +138,11 @@ void RoomManager::handleMessage(const std::string& message) {
                 if (roomId == currentRoomId) {
                     connected = true;
                     std::cout << "Successfully joined room: " << roomId << std::endl;
-                    resetLoadingState();
+                    // Request room list to see updated player count
+                    fetchAvailableRooms();
                 }
             }
+            resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "leave_room") {
             // Handle leave_room response - clear currentRoomId when confirmed by server
@@ -156,8 +152,28 @@ void RoomManager::handleMessage(const std::string& message) {
             }
             resetLoadingState();
         }
+        else if (j.contains("event") && j["event"] == "player_ready") {
+            // Handle player_ready events
+            if (j.contains("payload") && j["payload"].contains("isReady")) {
+                bool isReady = j["payload"]["isReady"];
+                // Check if this is about us or another player
+                if (j["payload"].contains("playerId") && j["payload"]["playerId"] == deviceId) {
+                    ready = isReady;
+                    std::cout << "Your ready status is now: " << (isReady ? "Ready" : "Not ready") << std::endl;
+                } else {
+                    std::cout << "Another player's ready status changed" << std::endl;
+                }
+            }
+            resetLoadingState();
+        }
         else if (j.contains("event") && j["event"] == "gesture_event") {
             // Handle gesture events if needed
+            resetLoadingState();
+        }
+        else if (j.contains("event") && j["event"] == "game_start") {
+            // Handle game start event
+            std::cout << "Game is starting!" << std::endl;
+            resetLoadingState();
         }
         else {
             // If the event doesn't match any of the above, still reset the loading state
@@ -171,8 +187,10 @@ void RoomManager::handleMessage(const std::string& message) {
         if (message.find("ROOMLIST|") == 0) {
             parseRoomList(message.substr(9)); // Skip "ROOMLIST|"
             
-            // Display room list for legacy format too
-            displayRoomList();
+            // Only display room list if this was in response to a listrooms command
+            if (currentRequestType == "room_list") {
+                displayRoomList();
+            }
             
             // Reset loading state
             resetLoadingState();
@@ -268,8 +286,17 @@ bool RoomManager::fetchAvailableRooms() {
     
     std::string jsonMessage = message.dump();
     
-    // Use sendMessageWithTracking to properly handle timeouts and responses
-    return sendMessageWithTracking(jsonMessage, "room_list");
+    // Set request tracking for room_list to control logging
+    isWaitingForResponse = true;
+    currentRequestType = "room_list";
+    
+    // Direct send without logging or tracking for maximum performance
+    bool result = client->sendMessage(jsonMessage);
+    
+    // Make sure client processes the message right away
+    client->ensureMessageProcessing();
+    
+    return result;
 }
 
 bool RoomManager::joinRoom(const std::string& roomId) {
@@ -294,13 +321,19 @@ bool RoomManager::joinRoom(const std::string& roomId) {
     message["payload"] = payload;
     
     std::string jsonMessage = message.dump();
-    std::cout << "Joining room " << roomId << "..." << std::endl;
     
-    // Store room ID for reference - don't set connected=true yet
-    // as we need server confirmation for that
+    // Store room ID for reference
     currentRoomId = roomId;
     
-    return sendMessageWithTracking(jsonMessage, "join_room");
+    // Set request tracking
+    isWaitingForResponse = true;
+    currentRequestType = "join_room";
+    
+    // Direct send for maximum performance
+    bool result = client->sendMessage(jsonMessage);
+    client->ensureMessageProcessing();
+    
+    return result;
 }
 
 bool RoomManager::leaveRoom() {
@@ -322,15 +355,20 @@ bool RoomManager::leaveRoom() {
     message["payload"] = payload;
     
     std::string jsonMessage = message.dump();
-    std::cout << "Leaving room " << currentRoomId << "..." << std::endl;
+    
+    // Set request tracking
+    isWaitingForResponse = true;
+    currentRequestType = "leave_room";
     
     // Set status immediately to improve user experience
     connected = false;
     std::cout << "Successfully left room" << std::endl;
     
-    // Send the message with tracking, but don't clear currentRoomId yet
-    // as that will happen when we get confirmation from the server
-    return sendMessageWithTracking(jsonMessage, "leave_room");
+    // Direct send for maximum performance and request callback immediately
+    bool result = client->sendMessage(jsonMessage);
+    client->ensureMessageProcessing();
+    
+    return result;
 }
 
 void RoomManager::setReady(bool isReady) {
@@ -352,7 +390,13 @@ void RoomManager::setReady(bool isReady) {
     
     std::string jsonMessage = message.dump();
     
-    sendMessageWithTracking(jsonMessage, "player_ready");
+    // Set request tracking
+    isWaitingForResponse = true;
+    currentRequestType = "player_ready";
+    
+    // Direct send for maximum performance
+    client->sendMessage(jsonMessage);
+    client->ensureMessageProcessing();
 }
 
 bool RoomManager::sendGestureData(const std::string& gestureData) {
@@ -477,7 +521,7 @@ bool RoomManager::createRoom(const std::string& roomName) {
     json room = json::object();
     room["id"] = roomId;
     room["name"] = roomName;
-    room["maxPlayers"] = 2;
+    room["maxPlayers"] = 2;  // Ensure this is set to 2 for multiplayer support
     room["status"] = "waiting";
     room["hostId"] = deviceId;
     
@@ -485,7 +529,7 @@ bool RoomManager::createRoom(const std::string& roomName) {
     json player = json::object();
     player["id"] = deviceId;
     player["name"] = playerName;
-    player["isReady"] = false;
+    player["isReady"] = false;  // Player starts as not ready
     player["connected"] = true;
     player["playerType"] = "beagleboard";
     
@@ -504,9 +548,16 @@ bool RoomManager::createRoom(const std::string& roomName) {
     message["payload"] = payload;
     
     std::string jsonMessage = message.dump();
-    std::cout << "Creating room with payload: " << payload.dump() << std::endl;
     
-    return client->sendMessage(jsonMessage);
+    // Set request tracking 
+    isWaitingForResponse = true;
+    currentRequestType = "create_room";
+    
+    // Direct send for maximum performance
+    bool result = client->sendMessage(jsonMessage);
+    client->ensureMessageProcessing();
+    
+    return result;
 }
 
 void RoomManager::resetLoadingState() {
@@ -521,19 +572,9 @@ bool RoomManager::sendMessageWithTracking(const std::string& message, const std:
     
     // Check if we're already waiting for a response
     if (isWaitingForResponse) {
-        // Check if it's been more than 2 seconds since the last request (reduced from 5)
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-            now - lastRequestTime).count();
-            
-        if (elapsed < 2) { // Reduced from 5 seconds
-            std::cout << "Still waiting for response to " << currentRequestType 
-                      << " (sent " << elapsed << " seconds ago)..." << std::endl;
-            return false;
-        }
-        
-        // If it's been more than 2 seconds, assume the request timed out
-        std::cout << "Previous request (" << currentRequestType << ") timed out." << std::endl;
+        // Instead of waiting for a timeout, allow new requests to proceed
+        // and simply update the tracking information
+        std::cout << "New request while waiting for " << currentRequestType << ", continuing anyway" << std::endl;
         resetLoadingState();
     }
     

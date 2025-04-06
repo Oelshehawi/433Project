@@ -128,7 +128,7 @@ int main() {
                 }
             }
             else if (command == "listrooms") {
-                std::cout << "Fetching available rooms..." << std::endl;
+                std::cout << "Fetching rooms (may take a moment)..." << std::endl;
                 roomManager->fetchAvailableRooms();
             }
             else if (command == "joinroom") {
@@ -149,7 +149,7 @@ int main() {
                 std::getline(iss >> std::ws, roomName);
                 
                 if (roomName.empty()) {
-                    std::cout << "Usage: createroom <room_name>" << std::endl;
+                    std::cout << "Usage: createroom <name>" << std::endl;
                 } else if (roomManager->getPlayerName().empty()) {
                     std::cout << "Please set your player name first using 'setname <name>'" << std::endl;
                 } else {

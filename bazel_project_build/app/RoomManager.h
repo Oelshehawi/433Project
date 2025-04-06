@@ -1,5 +1,5 @@
-#ifndef _ROOM_MANAGER_H_
-#define _ROOM_MANAGER_H_
+#ifndef ROOM_MANAGER_H
+#define ROOM_MANAGER_H
 
 #include "WebSocketClient.h"
 #include "WebSocketReceiver.h"
@@ -79,6 +79,7 @@ public:
 
     // Getters
     std::string getDeviceId() const { return deviceId; }
+    WebSocketClient* getClient() const { return client; }
     std::string getPlayerName() const { return playerName; }
     std::string getCurrentRoomId() const { return currentRoomId; }
     bool isConnected() const { return connected; }
