@@ -61,7 +61,6 @@ void DEV_Digital_Write(UWORD Pin, UBYTE Value)
         printf("Invalid GPIO Pin: %d\n", Pin);
         return;
     }
-    printf("USING DEV LIB\n\n");
 
     lgGpioWrite(gpio_pin->handle, gpio_pin->line, Value);
 //#endif
@@ -85,8 +84,7 @@ void DEV_GPIO_Mode(UWORD Pin, UWORD Mode)
 {
 //_DEV_LIB
     DEV_GPIO_Pin* gpio_pin = DEV_GPIOS[Pin];
-    printf("USING DEV LIB\n\n");
-    printf("USING DEV LIB\n\n");
+
     if (gpio_pin == NULL) {
         printf("Invalid GPIO Pin: %d\n", Pin);
         return;
@@ -106,7 +104,7 @@ void DEV_Delay_ms(UDOUBLE xms)
 {
 //#ifdef USE_DEV_LIB  
     lguSleep(xms/1000.0);
-    printf("USING DEV LIB\n\n");
+
 //#endif
 }
 
