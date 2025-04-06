@@ -330,8 +330,8 @@ export const handlePlayerReady = (
     if (isReady) {
       // Check if all players are ready and there are at least 2 players
       const allPlayersReady = room.players.every((p) => p.isReady);
-      // TEMPORARY: Set to 1 for single BeagleBoard testing. Change back to 2 when done.
-      const minPlayersForGame = 1; // TEMP: Changed from 2 to 1 for single device testing
+      // Changing back to 2 players minimum for game start
+      const minPlayersForGame = 2; // Changed from 1 to 2 for proper multiplayer
       const hasEnoughPlayers = room.players.length >= minPlayersForGame;
 
       if (allPlayersReady && hasEnoughPlayers) {
@@ -399,13 +399,13 @@ export const handleGameStart = (
       } as ErrorPayload);
     }
 
-    // TEMP: Commented out host check for testing with one device
+    // Restore proper host check for multiplayer
     // Check if client is the host
-    // if (client.playerId !== room.hostId) {
-    //   return sendToClient(client, "error", {
-    //     error: "Only the host can start the game",
-    //   } as ErrorPayload);
-    // }
+    if (client.playerId !== room.hostId) {
+      return sendToClient(client, "error", {
+        error: "Only the host can start the game",
+      } as ErrorPayload);
+    }
 
     // Update room status
     room.status = "playing";

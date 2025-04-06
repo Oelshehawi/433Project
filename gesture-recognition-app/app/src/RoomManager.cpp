@@ -92,20 +92,25 @@ void RoomManager::handleMessage(const std::string& message) {
                     // Check if we're in the player list
                     if (room.contains("players") && room["players"].is_array()) {
                         bool foundSelf = false;
+                        // Also count total players for information purposes
+                        int playerCount = room["players"].size();
+                        
                         for (const auto& player : room["players"]) {
                             if ((player.contains("id") && player["id"] == deviceId) ||
                                 (player.contains("name") && player["name"] == playerName)) {
                                 // We're in this room
                                 connected = true;
                                 foundSelf = true;
-                                std::cout << "You're now connected to room: " << room["name"] << std::endl;
+                                std::cout << "You're now connected to room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
+                                std::cout << "Players in room: " << playerCount << "/" 
+                                          << (room.contains("maxPlayers") ? room["maxPlayers"].get<int>() : 2) << std::endl;
                                 break;
                             }
                         }
                         
                         // If we didn't find ourselves in the player list
                         if (!foundSelf && connected) {
-                            std::cout << "You're no longer in room: " << room["name"] << std::endl;
+                            std::cout << "You're no longer in room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
                             connected = false;
                             currentRoomId = "";
                         }
@@ -133,6 +138,8 @@ void RoomManager::handleMessage(const std::string& message) {
                 if (roomId == currentRoomId) {
                     connected = true;
                     std::cout << "Successfully joined room: " << roomId << std::endl;
+                    // Request room list to see updated player count
+                    fetchAvailableRooms();
                 }
             }
             resetLoadingState();
@@ -145,8 +152,27 @@ void RoomManager::handleMessage(const std::string& message) {
             }
             resetLoadingState();
         }
+        else if (j.contains("event") && j["event"] == "player_ready") {
+            // Handle player_ready events
+            if (j.contains("payload") && j["payload"].contains("isReady")) {
+                bool isReady = j["payload"]["isReady"];
+                // Check if this is about us or another player
+                if (j["payload"].contains("playerId") && j["payload"]["playerId"] == deviceId) {
+                    ready = isReady;
+                    std::cout << "Your ready status is now: " << (isReady ? "Ready" : "Not ready") << std::endl;
+                } else {
+                    std::cout << "Another player's ready status changed" << std::endl;
+                }
+            }
+            resetLoadingState();
+        }
         else if (j.contains("event") && j["event"] == "gesture_event") {
             // Handle gesture events if needed
+            resetLoadingState();
+        }
+        else if (j.contains("event") && j["event"] == "game_start") {
+            // Handle game start event
+            std::cout << "Game is starting!" << std::endl;
             resetLoadingState();
         }
         else {
@@ -495,7 +521,7 @@ bool RoomManager::createRoom(const std::string& roomName) {
     json room = json::object();
     room["id"] = roomId;
     room["name"] = roomName;
-    room["maxPlayers"] = 2;
+    room["maxPlayers"] = 2;  // Ensure this is set to 2 for multiplayer support
     room["status"] = "waiting";
     room["hostId"] = deviceId;
     
@@ -503,7 +529,7 @@ bool RoomManager::createRoom(const std::string& roomName) {
     json player = json::object();
     player["id"] = deviceId;
     player["name"] = playerName;
-    player["isReady"] = false;
+    player["isReady"] = false;  // Player starts as not ready
     player["connected"] = true;
     player["playerType"] = "beagleboard";
     
@@ -528,7 +554,10 @@ bool RoomManager::createRoom(const std::string& roomName) {
     currentRequestType = "create_room";
     
     // Direct send for maximum performance
-    return client->sendMessage(jsonMessage);
+    bool result = client->sendMessage(jsonMessage);
+    client->ensureMessageProcessing();
+    
+    return result;
 }
 
 void RoomManager::resetLoadingState() {
