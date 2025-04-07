@@ -19,6 +19,7 @@ import ShieldButtons from "../../components/game/ShieldButtons";
 import TowerBlocks from "../../components/game/TowerBlocks";
 import TowerControls from "../../components/game/TowerControls";
 import RulesScroll from "../../components/game/RulesScroll";
+import RulesButton from "../../components/game/RulesButton";
 
 // Game states
 type GameStateType = "starting" | "playing";
@@ -305,7 +306,13 @@ export default function GamePage() {
 
   // Determine whose turn it is for display
   const getCurrentTurnDisplay = (): string => {
-    if (!currentTurn) return "Waiting for turn to start...";
+    if (!currentTurn) {
+      // Check if the game state indicates play has started
+      if (currentRoom?.status === "playing") {
+        return "Game in progress...";
+      }
+      return "Initializing game...";
+    }
     return `${getPlayerNameById(currentTurn)}'s Turn (${turnTimeRemaining}s)`;
   };
 
@@ -371,6 +378,9 @@ export default function GamePage() {
               </div>
             </div>
 
+            {/* Rules button - top left corner */}
+            <RulesButton />
+
             {/* Tower blocks for both players */}
             <TowerBlocks
               player1Blocks={player1TowerHeight}
@@ -411,8 +421,8 @@ export default function GamePage() {
         )}
 
         {/* Game info and back button */}
-        <RoomInfo roomId={roomId} />
-        <BackButton />
+        <RoomInfo roomId={roomId} isVisible={true} />
+        <BackButton isVisible={true} />
       </div>
     </div>
   );

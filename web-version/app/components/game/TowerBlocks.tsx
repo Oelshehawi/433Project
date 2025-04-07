@@ -62,13 +62,14 @@ export default function TowerBlocks({
 
         {/* Goal Line */}
         <div
-          className="w-40 border-t-2 border-dashed border-yellow-400 absolute z-10"
+          className="w-40 border-t-4 border-yellow-400 absolute z-10"
           style={{
             bottom: `${player1Goal * blockHeight + 20}px`,
             left: "15%",
+            width: "100px",
           }}
         >
-          <span className="text-yellow-400 text-xs absolute -top-4 right-0">
+          <span className="text-yellow-400 text-sm font-bold absolute -top-5 right-0">
             GOAL
           </span>
         </div>
@@ -106,13 +107,14 @@ export default function TowerBlocks({
 
         {/* Goal Line */}
         <div
-          className="w-40 border-t-2 border-dashed border-yellow-400 absolute z-10"
+          className="w-40 border-t-4 border-yellow-400 absolute z-10"
           style={{
             bottom: `${player2Goal * blockHeight + 20}px`,
             right: "15%",
+            width: "100px",
           }}
         >
-          <span className="text-yellow-400 text-xs absolute -top-4 left-0">
+          <span className="text-yellow-400 text-sm font-bold absolute -top-5 left-0">
             GOAL
           </span>
         </div>

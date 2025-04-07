@@ -99,12 +99,12 @@ export default function RulesScroll({
               </ul>
 
               <div className="ml-4 mt-2 space-y-1">
-                <p className="font-semibold">ADD BLOCK! (Grow your tower!)</p>
+                <p className="font-semibold">BUILD! (Grow your tower!)</p>
                 <p className="font-semibold">
-                  SHOOT! (Blast your opponent's tower down a level!)
+                  ATTACK! (Blast your opponent's tower down a level!)
                 </p>
                 <p className="font-semibold">
-                  BLOCK! (Defend against attacks!)
+                  DEFEND! (Protect against attacks!)
                 </p>
               </div>
             </motion.div>
@@ -113,6 +113,27 @@ export default function RulesScroll({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.9 }}
+            >
+              <h3 className="text-xl font-bold mb-1 text-amber-900">
+                <strong>Gesture Controls!</strong>
+              </h3>
+              <div className="ml-4 mt-2 space-y-2">
+                <p className="font-semibold">
+                  ATTACK: Hold up your index finger only
+                </p>
+                <p className="font-semibold">
+                  DEFEND: Hold up all five fingers
+                </p>
+                <p className="font-semibold">
+                  BUILD: Hold up index and pinky fingers
+                </p>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 1.2 }}
             >
               <h3 className="text-xl font-bold mb-1 text-amber-900">
                 <strong>Watch Out!</strong>
@@ -127,7 +148,7 @@ export default function RulesScroll({
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 1.2 }}
+              transition={{ delay: 1.5 }}
             >
               <h3 className="text-xl font-bold mb-1 text-amber-900">
                 <strong>VICTORY!</strong>

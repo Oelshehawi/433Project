@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import Image from "next/image";
 
 interface PlayerProps {
   playerId: string;
@@ -23,14 +24,14 @@ export default function Player({ playerId, name, isVisible }: PlayerProps) {
       transition={{ delay: 0.2 }}
     >
       {/* Player Avatar */}
-      <div
-        className={`w-20 h-20 rounded-full bg-gradient-to-br ${
-          isPlayer1 ? "from-blue-500 to-blue-700" : "from-red-500 to-red-700"
-        } flex items-center justify-center shadow-lg`}
-      >
-        <span className="text-white text-3xl font-bold">
-          {isPlayer1 ? "P1" : "P2"}
-        </span>
+      <div className="w-20 h-20 relative">
+        <Image
+          src={isPlayer1 ? "/p1.png" : "/p2.png"}
+          alt={isPlayer1 ? "Player 1" : "Player 2"}
+          width={80}
+          height={80}
+          className="rounded-full shadow-lg"
+        />
       </div>
 
       {/* Player Name */}

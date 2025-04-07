@@ -2,6 +2,8 @@
 #include "app/RoomManager.h"
 #include "app/WebSocketClient.h"
 #include "app/WebSocketReceiver.h"
+#include "app/lcd_display.h"
+#include "hal/rotary_press_statemachine.h"
 #include <iostream>
 #include <thread>
 #include <string>
@@ -89,6 +91,18 @@ int main() {
         } else {
             std::cout << "Camera access successful." << std::endl;
         }
+        
+        // Initialize LCD at startup
+        std::cout << "Initializing LCD display..." << std::endl;
+        lcd_init();
+        
+        // Initialize rotary encoder
+        std::cout << "Initializing input controls..." << std::endl;
+        rotary_press_statemachine_init();
+        
+        // Display welcome message
+        char* welcomeMsg[] = {"Gesture Tower", "Game", "Ready!"};
+        lcd_place_message(welcomeMsg, 3, lcd_center);
         
         bool detectionRunning = false;
         bool inputLocked = false;
@@ -223,6 +237,12 @@ int main() {
                 if (roomManager->isConnected()) {
                     roomManager->leaveRoom();
                 }
+                
+                // Cleanup LCD before exit
+                lcd_cleanup();
+                
+                // Cleanup rotary encoder
+                rotary_press_statemachine_cleanup();
                 
                 std::cout << "Exiting application..." << std::endl;
                 break;

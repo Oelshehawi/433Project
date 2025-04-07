@@ -155,180 +155,202 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
         return;
     }
     
-    // Wait a moment for server to respond (in a real implementation, we'd listen for response)
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    
-    // Set a default player name if not already set
-    if (roomManager.getPlayerName().empty()) {
-        roomManager.setPlayerName("Player1");
-    }
-    
-    // Initialize LCD
-    lcd_init();
-    
-    // Initialize rotary encoder
-    rotary_press_statemachine_init();
+    // Display simple starting message
+    char* startingMsg[] = {"Ready for", "gesture detection"};
+    lcd_place_message(startingMsg, 2, lcd_center);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     
     // Create hand positions for each game action
     handPosition basic_attack(1, true, false, true, false, false, false);  // 1 finger (index)
     handPosition basic_defend(5, true, true, true, true, true, true);      // 5 fingers
     handPosition basic_build(2, true, false, true, false, false, true);    // 2 fingers (index and pinky)
-
+    
+    // Variables for logging control
+    int loopCounter = 0;
+    std::vector<Card> lastPlayerCards;
+    
     // Main detection loop
     while (detector->running) {
-        // First check if game is active and display appropriate information
-        if (roomManager.isGameActive()) {
-            // Get current tower heights and goals
-            int myTowerHeight, myGoalHeight, oppTowerHeight, oppGoalHeight;
-            roomManager.getTowerStatus(myTowerHeight, myGoalHeight, oppTowerHeight, oppGoalHeight);
-            
-            // Display current game state on LCD
-            char gameStateStr[32];
-            snprintf(gameStateStr, sizeof(gameStateStr), "Tower: %d/%d vs %d/%d", 
-                    myTowerHeight, myGoalHeight, oppTowerHeight, oppGoalHeight);
-            
-            // Display turn information
-            char turnInfoStr[32];
-            if (roomManager.isPlayerTurn()) {
-                int remainingTime = roomManager.getRemainingTurnTime();
-                snprintf(turnInfoStr, sizeof(turnInfoStr), "YOUR TURN (%ds)", remainingTime);
-            } else {
-                snprintf(turnInfoStr, sizeof(turnInfoStr), "OPPONENT'S TURN");
-            }
-            
-            // Display shield status if active
-            char statusStr[32];
-            if (roomManager.isShieldActive()) {
-                snprintf(statusStr, sizeof(statusStr), "SHIELD ACTIVE");
-            } else {
-                snprintf(statusStr, sizeof(statusStr), "NO SHIELD");
-            }
-            
-            // Create message array for LCD
-            char* lcdMessage[] = {gameStateStr, turnInfoStr, statusStr};
-            lcd_place_message(lcdMessage, 3, lcd_center);
-            
-            // Display available cards if we have them
-            std::vector<Card> playerCards = roomManager.getPlayerCards();
-            if (!playerCards.empty()) {
-                // Use the simplified card display function
-                displayCardsOnLCD(playerCards);
-            }
+        loopCounter++;
+        bool shouldLog = (loopCounter % 20 == 0); // Only log every 20th iteration
+        
+        // Get current cards and display them first
+        std::vector<Card> playerCards = roomManager.getPlayerCards();
+        
+        // Check if cards have changed without using direct vector comparison
+        bool cardsChanged = false;
+        if (playerCards.size() != lastPlayerCards.size()) {
+            cardsChanged = true;
         } else {
-            // Display current cards if available and no active game
-            std::vector<Card> playerCards = roomManager.getPlayerCards();
-            if (!playerCards.empty()) {
-                // Display cards on LCD
-                displayCardsOnLCD(playerCards);
-            } else {
-                // No cards available yet, show waiting message
-                char* waiting[] = {"Waiting for", "cards..."};
-                lcd_place_message(waiting, 2, lcd_center);
-            }
-        }
-        
-        // Capture frame and analyze hand position
-        cv::Mat frame;
-        std::cout << "Taking image..." << std::endl;
-        if (!detector->camera.captureFrame(frame)) {
-            std::cerr << "Error: Could not capture frame" << std::endl;
-            continue;
-        }
-        
-        cv::imwrite("/tmp/reference.bmp", frame);
-        chmod("/tmp/reference.bmp", 0666);  // Make world-writable
-        
-        // Save initial rotary value to detect button press
-        int start_value = rotary_press_statemachine_getValue();
-        
-        // Analyze hand position
-        handPosition ret;
-        hand_analyze_image(frame, &ret);
-        
-        if (ret.hand_visible == false) {
-            std::cout << "HAND NOT VISIBLE" << std::endl;
-            // Show message on LCD
-            char* nohand[] = {"No hand", "detected"};
-            lcd_place_message(nohand, 2, lcd_center);
-        } else {
-            std::cout << "CURRENT HAND POSITION" << std::endl;
-            std::cout << "NUM FINGERS RAISED : "<< ret.num_fingers_held_up << std::endl;
-            std::cout << "THUMB" << ((ret.thumb_raised == true) ? " RAISED" : " NOT RAISED") << std::endl;
-            std::cout << "INDEX" << ((ret.index_raised == true) ? " RAISED" : " NOT RAISED") << std::endl;
-            std::cout << "MIDDLE" << ((ret.middle_raised == true) ? " RAISED" : " NOT RAISED") << std::endl;
-            std::cout << "RING" << ((ret.ring_raised == true) ? " RAISED" : " NOT RAISED") << std::endl;
-            std::cout << "PINKY" << ((ret.pinky_raised == true) ? " RAISED" : " NOT RAISED") << std::endl;
-            
-            // Determine the current gesture based on hand position
-            std::string move = "invalid move";
-            std::string actionType = "";
-            
-            // Map hand position to game action
-            if (ret.hand_visible) {
-                if (ret.num_fingers_held_up == 1 && ret.compare(basic_attack)) {
-                    move = "basic attack";
-                    actionType = "attack";
-                } else if (ret.num_fingers_held_up == 5 && ret.compare(basic_defend)) {
-                    move = "basic defend";
-                    actionType = "defend";
-                } else if (ret.num_fingers_held_up == 2 && ret.compare(basic_build)) {
-                    move = "basic build";
-                    actionType = "build";
+            // Check if any card IDs are different
+            for (size_t i = 0; i < playerCards.size(); i++) {
+                if (playerCards[i].id != lastPlayerCards[i].id) {
+                    cardsChanged = true;
+                    break;
                 }
             }
+        }
+        
+        if (!playerCards.empty() && cardsChanged) {
+            // Display cards on LCD
+            displayCardsOnLCD(playerCards);
+            lastPlayerCards = playerCards;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+        }
+        
+        // Simple prompt for gesture
+        char* promptMsg[] = {"Show gesture", "to play card"};
+        lcd_place_message(promptMsg, 2, lcd_center);
+        
+        bool gestureDetected = false;
+        std::string detectedMove = "";
+        std::string actionType = "";
+        
+        // Gesture detection phase
+        while (detector->running && !gestureDetected) {
+            // Capture frame and analyze hand position
+            cv::Mat frame;
+            if (shouldLog) std::cout << "Waiting for gesture..." << std::endl;
             
-            // Display current move on LCD
-            char* moveArray[] = {(char*)move.c_str()};
-            lcd_place_message(moveArray, 1, lcd_center);
+            if (!detector->camera.captureFrame(frame)) {
+                std::cerr << "Error: Could not capture frame" << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                continue;
+            }
             
-            // Only process action if it's our turn or if game isn't turn-based
-            bool canTakeAction = !roomManager.isGameActive() || roomManager.isPlayerTurn();
+            // Save image for debugging
+            cv::imwrite("/tmp/reference.bmp", frame);
+            chmod("/tmp/reference.bmp", 0666);  // Make world-writable
             
-            if (canTakeAction) {
-                // Wait for user interaction or timeout
-                long long start_time = getTimeInMs();
-                bool data_sent = false;
+            // Analyze hand position
+            handPosition ret;
+            hand_analyze_image(frame, &ret);
+            
+            if (!ret.hand_visible) {
+                // No hand detected, keep waiting
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            
+            // Determine the gesture based on hand position
+            if (ret.num_fingers_held_up == 1 && ret.compare(basic_attack)) {
+                detectedMove = "Attack";
+                actionType = "attack";
+                gestureDetected = true;
+            } else if (ret.num_fingers_held_up == 5 && ret.compare(basic_defend)) {
+                detectedMove = "Defend";
+                actionType = "defend";
+                gestureDetected = true;
+            } else if (ret.num_fingers_held_up == 2 && ret.compare(basic_build)) {
+                detectedMove = "Build";
+                actionType = "build";
+                gestureDetected = true;
+            }
+            
+            // If a valid gesture was detected, break out of the detection loop
+            if (gestureDetected) {
+                std::cout << "Detected gesture: " << detectedMove << std::endl;
+                break;
+            }
+            
+            // Short delay before next detection attempt
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        // If we detected a valid gesture, ask for confirmation
+        if (gestureDetected && detector->running) {
+            // Display the detected gesture and ask for confirmation
+            char gestureMsgLine1[32];
+            snprintf(gestureMsgLine1, sizeof(gestureMsgLine1), "%s detected", detectedMove.c_str());
+            
+            char* gestureMsg[] = {
+                gestureMsgLine1,
+                "Press to confirm"
+            };
+            
+            lcd_place_message(gestureMsg, 2, lcd_center);
+            
+            // Get initial rotary encoder value
+            int startValue = rotary_press_statemachine_getValue();
+            long long startTime = getTimeInMs();
+            bool gestureConfirmed = false;
+            
+            // Wait for confirmation or timeout
+            while (detector->running && getTimeInMs() - startTime < 5000) { // 5 second timeout
+                if (startValue != rotary_press_statemachine_getValue()) {
+                    gestureConfirmed = true;
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            
+            // If user confirmed, send the gesture data
+            if (gestureConfirmed) {
+                // Check if we're in a game and if it's our turn
+                bool canTakeAction = !roomManager.isGameActive() || roomManager.isPlayerTurn();
                 
-                while (getTimeInMs() - start_time < WAIT_TIME && ret.hand_visible == true) {
-                    if (start_value != rotary_press_statemachine_getValue() && data_sent == false) {
-                        std::cout << "Sending gesture data to webserver..." << std::endl;
-                        
-                        // Check if we have a card for this action
-                        if (actionType != "" && actionType != "invalid move") {
-                            Card* matchingCard = roomManager.findCardByType(actionType);
-                            if (matchingCard != nullptr) {
-                                // Display selected card on LCD
-                                char* cardName[] = {(char*)matchingCard->name.c_str()};
-                                lcd_place_message(cardName, 1, lcd_center);
-                                
-                                // Send card action to server
-                                std::cout << "Using card: " << matchingCard->name << " (" << matchingCard->id << ")" << std::endl;
-                                roomManager.sendCardAction(matchingCard->id, actionType);
-                            } else {
-                                // No matching card, just send basic action
-                                roomManager.sendGestureData(move);
-                            }
-                        } else {
-                            // Invalid move, send as-is
-                            roomManager.sendGestureData(move);
-                        }
-                        
-                        data_sent = true;
-                        
-                        // Show confirmation on LCD
-                        char* sent[] = {"Action sent!"};
-                        lcd_place_message(sent, 1, lcd_center);
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                if (canTakeAction) {
+                    // Find a matching card for the action
+                    Card* matchingCard = nullptr;
+                    if (actionType != "") {
+                        matchingCard = roomManager.findCardByType(actionType);
                     }
+                    
+                    // Show sending message
+                    char* sendingMsg[] = {"Sending..."};
+                    lcd_place_message(sendingMsg, 1, lcd_center);
+                    
+                    if (matchingCard != nullptr) {
+                        // Send the card action
+                        std::cout << "Using card: " << matchingCard->name << " (" << matchingCard->id << ")" << std::endl;
+                        roomManager.sendCardAction(matchingCard->id, actionType);
+                    } else {
+                        // No matching card, send basic gesture
+                        std::cout << "Sending basic action: " << detectedMove << std::endl;
+                        roomManager.sendGestureData(detectedMove);
+                    }
+                    
+                    // Show brief confirmation
+                    char* sentMsg[] = {"Card played!"};
+                    lcd_place_message(sentMsg, 1, lcd_center);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                    
+                    // Update display with new cards
+                    std::vector<Card> updatedCards = roomManager.getPlayerCards();
+                    
+                    // Check if cards have changed
+                    bool cardsUpdated = false;
+                    if (updatedCards.size() != lastPlayerCards.size()) {
+                        cardsUpdated = true;
+                    } else {
+                        // Check if any card IDs are different
+                        for (size_t i = 0; i < updatedCards.size(); i++) {
+                            if (updatedCards[i].id != lastPlayerCards[i].id) {
+                                cardsUpdated = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (!updatedCards.empty() && cardsUpdated) {
+                        displayCardsOnLCD(updatedCards);
+                        lastPlayerCards = updatedCards;
+                    }
+                } else {
+                    // Not our turn
+                    char* notTurnMsg[] = {"Not your turn"};
+                    lcd_place_message(notTurnMsg, 1, lcd_center);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(800));
                 }
             } else {
-                // Not our turn, display message
-                char* notTurn[] = {"Not your turn!"};
-                lcd_place_message(notTurn, 1, lcd_center);
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                // User didn't confirm, show brief message
+                char* cancelledMsg[] = {"Cancelled"};
+                lcd_place_message(cancelledMsg, 1, lcd_center);
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
         }
-
+        
+        // Short delay before next detection cycle
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
     
@@ -338,9 +360,11 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     }
     
     // Cleanup
-    lcd_cleanup();
     detector->camera.closeCamera();
-    rotary_press_statemachine_cleanup();
+    
+    // Show simple stopped message
+    char* stoppedMsg[] = {"Detection stopped"};
+    lcd_place_message(stoppedMsg, 1, lcd_center);
 }
 
 // New helper function to display cards on LCD
