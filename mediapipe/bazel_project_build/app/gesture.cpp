@@ -211,18 +211,8 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
             // Display available cards if we have them
             std::vector<Card> playerCards = roomManager.getPlayerCards();
             if (!playerCards.empty()) {
-                // Format card display message
-                char cardMessages[3][32];
-                for (size_t i = 0; i < playerCards.size() && i < 3; i++) {
-                    snprintf(cardMessages[i], sizeof(cardMessages[i]), "%s", playerCards[i].name.c_str());
-                }
-                
-                char* cardDisplayMsg[] = {
-                    cardMessages[0], 
-                    (playerCards.size() > 1) ? cardMessages[1] : (char*)"",
-                    (playerCards.size() > 2) ? cardMessages[2] : (char*)""
-                };
-                lcd_place_message(cardDisplayMsg, playerCards.size(), lcd_center);
+                // Use the simplified card display function
+                displayCardsOnLCD(playerCards);
             }
         } else {
             // Display current cards if available and no active game
@@ -357,9 +347,9 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
 void displayCardsOnLCD(const std::vector<Card>& cards) {
     char** cardMessages = new char*[cards.size()];
     
-    // Prepare card messages
+    // Prepare card messages with simple numbered format
     for (size_t i = 0; i < cards.size(); i++) {
-        std::string cardText = cards[i].name + " (" + cards[i].type + ")";
+        std::string cardText = std::to_string(i+1) + ": " + cards[i].type;
         cardMessages[i] = new char[cardText.length() + 1];
         strcpy(cardMessages[i], cardText.c_str());
     }
