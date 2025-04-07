@@ -160,6 +160,36 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     lcd_place_message(startingMsg, 2, lcd_center);
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     
+    // Check if we have cards first
+    std::vector<Card> initialCards = roomManager.getPlayerCards();
+    if (initialCards.empty()) {
+        std::cout << "No cards available. Waiting for cards from server..." << std::endl;
+        
+        // Show waiting message on LCD
+        char* waitingMsg[] = {"Waiting for cards", "from server..."};
+        lcd_place_message(waitingMsg, 2, lcd_center);
+        
+        // Wait a bit for cards to be received
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        
+        // Check again for cards
+        initialCards = roomManager.getPlayerCards();
+        if (initialCards.empty()) {
+            std::cout << "Still no cards available. Make sure game has started properly." << std::endl;
+            
+            // Show error message on LCD
+            char* noCardsMsg[] = {"No cards received", "Start game first!"};
+            lcd_place_message(noCardsMsg, 2, lcd_center);
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+    }
+    
+    // If we have cards, display them
+    if (!initialCards.empty()) {
+        displayCardsOnLCD(initialCards);
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    }
+    
     // Create hand positions for each game action
     handPosition basic_attack(1, true, false, true, false, false, false);  // 1 finger (index)
     handPosition basic_defend(5, true, true, true, true, true, true);      // 5 fingers
@@ -177,15 +207,25 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
         // Get current cards and display them first
         std::vector<Card> playerCards = roomManager.getPlayerCards();
         
+        // Debug card info
+        if (shouldLog || playerCards.size() != lastPlayerCards.size()) {
+            std::cout << "Current cards: " << playerCards.size() << std::endl;
+            for (const auto& card : playerCards) {
+                std::cout << "  Card: ID=" << card.id << ", Type=" << card.type << ", Name=" << card.name << std::endl;
+            }
+        }
+        
         // Check if cards have changed without using direct vector comparison
         bool cardsChanged = false;
         if (playerCards.size() != lastPlayerCards.size()) {
             cardsChanged = true;
+            std::cout << "Card count changed from " << lastPlayerCards.size() << " to " << playerCards.size() << std::endl;
         } else {
             // Check if any card IDs are different
             for (size_t i = 0; i < playerCards.size(); i++) {
                 if (playerCards[i].id != lastPlayerCards[i].id) {
                     cardsChanged = true;
+                    std::cout << "Card changed: " << lastPlayerCards[i].id << " -> " << playerCards[i].id << std::endl;
                     break;
                 }
             }

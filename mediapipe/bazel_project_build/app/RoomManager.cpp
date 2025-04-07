@@ -294,9 +294,9 @@ void RoomManager::handleMessage(const std::string& message) {
                         playerCards.push_back(card);
                     }
                     
-                    std::cout << "Received " << playerCards.size() << " cards from server" << std::endl;
+                    std::cout << "DEBUG: Received card update with " << playerCards.size() << " cards" << std::endl;
                     for (const auto& card : playerCards) {
-                        std::cout << "Card: " << card.name << " (" << card.type << ") - " << card.description << std::endl;
+                        std::cout << "DEBUG: Card - ID: " << card.id << ", Type: " << card.type << ", Name: " << card.name << std::endl;
                     }
                 }
                 else if (command == "GAME_STATE" && j["payload"].contains("gameState")) {

@@ -56,6 +56,13 @@ export default function GamePage() {
   const [gameEnded, setGameEnded] = useState(false);
   const [winner, setWinner] = useState<string>("");
 
+  // Add state for card played messages
+  const [player1CardPlayed, setPlayer1CardPlayed] = useState<string>("");
+  const [player2CardPlayed, setPlayer2CardPlayed] = useState<string>("");
+  const [cardPlayedTimer, setCardPlayedTimer] = useState<NodeJS.Timeout | null>(
+    null
+  );
+
   // Initialize WebSocket connection
   useEffect(() => {
     const socket = initializeSocket();
@@ -225,13 +232,52 @@ export default function GamePage() {
       // Gesture event handler to update UI
       const handleGestureEvent = (event: CustomEvent) => {
         const data = event.detail;
-        // Update UI based on the gesture (could add animations later)
+        // Update UI based on the gesture
         console.log(
           "Gesture received:",
           data.gesture,
           "from player:",
           data.playerId
         );
+
+        // Get player names from the room data
+        const beagleBoardPlayers =
+          currentRoom?.players.filter((p) => p.playerType === "beagleboard") ||
+          [];
+
+        // Show card played message
+        if (beagleBoardPlayers.length >= 2) {
+          const player1Id = beagleBoardPlayers[0].id;
+          const player2Id = beagleBoardPlayers[1].id;
+
+          const playerName =
+            data.playerId === player1Id
+              ? player1Name
+              : data.playerId === player2Id
+              ? player2Name
+              : "Unknown player";
+
+          const message = `${playerName} played ${data.gesture}${
+            data.cardId ? " card" : ""
+          }!`;
+
+          if (data.playerId === player1Id) {
+            setPlayer1CardPlayed(message);
+          } else if (data.playerId === player2Id) {
+            setPlayer2CardPlayed(message);
+          }
+
+          // Clear any existing timer
+          if (cardPlayedTimer) clearTimeout(cardPlayedTimer);
+
+          // Set timer to clear the message after 5 seconds
+          const timer = setTimeout(() => {
+            setPlayer1CardPlayed("");
+            setPlayer2CardPlayed("");
+          }, 5000);
+
+          setCardPlayedTimer(timer);
+        }
       };
 
       // Add event listeners
@@ -407,6 +453,18 @@ export default function GamePage() {
                 (gameState === "starting" && animationComplete)
               }
             />
+
+            {/* Card played messages */}
+            {player1CardPlayed && (
+              <div className="absolute bottom-20 left-[25%] transform -translate-x-1/2 bg-blue-600/80 text-white px-3 py-1 rounded-md z-20">
+                {player1CardPlayed}
+              </div>
+            )}
+            {player2CardPlayed && (
+              <div className="absolute bottom-20 right-[25%] transform translate-x-1/2 bg-red-600/80 text-white px-3 py-1 rounded-md z-20">
+                {player2CardPlayed}
+              </div>
+            )}
 
             {/* Display shields if active */}
             <Shield

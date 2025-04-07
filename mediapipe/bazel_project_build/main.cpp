@@ -32,6 +32,10 @@ void displayHelp() {
 }
 
 int main() {
+    // Suppress TensorFlow and MediaPipe warnings
+    setenv("TF_CPP_MIN_LOG_LEVEL", "2", 1);  // 0=INFO, 1=WARNING, 2=ERROR, 3=FATAL
+    setenv("GLOG_minloglevel", "2", 1);      // Suppress MediaPipe/GLOG warnings
+    
     std::cout << "=== Beagle Board Gesture Control Client - Starting up... ===" << std::endl;
     
     try {

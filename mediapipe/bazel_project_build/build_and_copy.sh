@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.." || exit
 # Make sure destination directory exists
 mkdir -p ~/cmpt433/public/mediapipe
 
+echo "Building project with Bazel..."
 # Build the project using bazel
 bazel build -c opt --crosstool_top=@crosstool//:toolchains --compiler=gcc --cpu=aarch64 --define MEDIAPIPE_DISABLE_GPU=1 //bazel_project_build:gesture_game
 
@@ -21,6 +22,7 @@ if [ $? -eq 0 ]; then
     
     echo "Executable copied successfully!"
     echo "You can find it at: ~/cmpt433/public/mediapipe/gesture_game"
+    echo "To run on your BeagleBoard, use: sudo ./gesture_game"
 else
     echo "Build failed. No files were copied."
 fi 
