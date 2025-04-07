@@ -331,11 +331,16 @@ export const handlePlayerReady = (
     // *** Add game start detection ***
     // Only check for game start when a player becomes ready
     if (isReady) {
-      // Check if all players are ready and there are at least 2 players
+      // Check if all players are ready and there is at least 1 player (for testing)
       const allPlayersReady = room.players.every((p) => p.isReady);
-      // Changing back to 2 players minimum for game start
-      const minPlayersForGame = 2; // Changed from 1 to 2 for proper multiplayer
-      const hasEnoughPlayers = room.players.length >= minPlayersForGame;
+      // TEMPORARY TEST MODE: Allow games with just 1 BeagleBoard player
+      const beagleBoardPlayers = room.players.filter(
+        (p) => p.playerType === "beagleboard"
+      ).length;
+      const hasEnoughPlayers = beagleBoardPlayers >= 1; // Changed from 2 to 1 for testing
+      console.log(
+        `Room has ${beagleBoardPlayers} BeagleBoard player(s). TEST MODE: Starting with 1 player.`
+      );
 
       if (allPlayersReady && hasEnoughPlayers) {
         console.log(
@@ -393,16 +398,22 @@ export const handleGameStart = (
 
     const room = rooms.get(roomId)!;
 
-    // Check if at least 2 players are ready
+    // Check if at least 1 player is ready (TEST MODE)
     const readyBeagleBoardPlayers = room.players.filter(
       (player) => player.playerType === "beagleboard" && player.isReady
     );
 
-    if (readyBeagleBoardPlayers.length < 2) {
+    if (readyBeagleBoardPlayers.length < 1) {
       return sendToClient(client, "error", {
-        error: "At least 2 BeagleBoard players must be ready to start",
+        error:
+          "At least 1 BeagleBoard player must be ready to start (TEST MODE)",
       } as ErrorPayload);
     }
+
+    // Log test mode
+    console.log(
+      `TEST MODE: Starting game with ${readyBeagleBoardPlayers.length} BeagleBoard player(s)`
+    );
 
     // Set room status to playing
     room.status = "playing";
@@ -495,14 +506,11 @@ export const handleGestureEvent = (
       `Gesture event: ${gesture} from player ${playerId} (conf: ${confidence})`
     );
 
-    // Check if it's this player's turn or if we allow simultaneous play
-    if (room.gameState && room.gameState.currentTurn !== playerId) {
-      // If it's not the player's turn, check if they have already moved this turn
-      if (room.gameState.playerMoves.get(playerId)) {
-        // Player has already moved this turn
-        console.log(`Player ${playerId} has already moved this turn`);
-        return;
-      }
+    // Check if the player has already moved this round
+    if (room.gameState && room.gameState.playerMoves.get(playerId)) {
+      // Player has already moved this round
+      console.log(`Player ${playerId} has already moved this round`);
+      return;
     }
 
     // If this is a game action (attack, defend, build)

@@ -8,6 +8,9 @@
 // For convenience
 using json = nlohmann::json;
 
+// Forward declaration
+class RoomManager;
+
 // Generate a random device ID
 std::string RoomManager::generateDeviceId() {
     static const char alphanum[] =
@@ -29,7 +32,8 @@ std::string RoomManager::generateDeviceId() {
 
 RoomManager::RoomManager(WebSocketClient* client)
     : client(client), receiver(nullptr), connected(false), ready(false), 
-      isWaitingForResponse(false), currentRequestType("") {
+      isWaitingForResponse(false), currentRequestType(""), lastRoomStatus(""), lastPlayerCount(0),
+      gameInProgress(false) {
     // Generate a unique device ID
     deviceId = generateDeviceId();
     std::cout << "Room Manager initialized with device ID: " << deviceId << std::endl;
@@ -94,6 +98,7 @@ void RoomManager::handleMessage(const std::string& message) {
                         bool foundSelf = false;
                         // Also count total players for information purposes
                         int playerCount = room["players"].size();
+                        std::string roomStatus = room.contains("status") ? room["status"].get<std::string>() : "waiting";
                         
                         for (const auto& player : room["players"]) {
                             if ((player.contains("id") && player["id"] == deviceId) ||
@@ -101,9 +106,20 @@ void RoomManager::handleMessage(const std::string& message) {
                                 // We're in this room
                                 connected = true;
                                 foundSelf = true;
-                                std::cout << "You're now connected to room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
-                                std::cout << "Players in room: " << playerCount << "/" 
-                                          << (room.contains("maxPlayers") ? room["maxPlayers"].get<int>() : 2) << std::endl;
+                                
+                                // Only print room update message if something changed
+                                bool playerCountChanged = (playerCount != lastPlayerCount);
+                                bool statusChanged = (roomStatus != lastRoomStatus);
+                                
+                                if (playerCountChanged || statusChanged) {
+                                    std::cout << "You're now connected to room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
+                                    std::cout << "Players in room: " << playerCount << "/" 
+                                              << (room.contains("maxPlayers") ? room["maxPlayers"].get<int>() : 2) << std::endl;
+                                    
+                                    // Update tracking variables
+                                    lastPlayerCount = playerCount;
+                                    lastRoomStatus = roomStatus;
+                                }
                                 break;
                             }
                         }
@@ -113,6 +129,8 @@ void RoomManager::handleMessage(const std::string& message) {
                             std::cout << "You're no longer in room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
                             connected = false;
                             currentRoomId = "";
+                            lastPlayerCount = 0;
+                            lastRoomStatus = "";
                         }
                     }
                 }
@@ -166,182 +184,67 @@ void RoomManager::handleMessage(const std::string& message) {
             }
             resetLoadingState();
         }
-        else if (j.contains("event") && j["event"] == "turn_start") {
-            // Handle turn start event
+        else if (j.contains("event") && j["event"] == "round_start") {
+            // Handle round start event - now we just notify the user
             if (j.contains("payload")) {
-                auto& payload = j["payload"];
-                if (payload.contains("playerId") && payload.contains("remainingTime")) {
-                    std::lock_guard<std::mutex> lock(gameStateMutex);
-                    
-                    std::string turnPlayerId = payload["playerId"];
-                    int remainingTime = payload["remainingTime"];
-                    
-                    // Update current turn
-                    currentTurnPlayerId = turnPlayerId;
-                    isMyTurn = (turnPlayerId == deviceId);
-                    
-                    // Calculate turn end time
-                    turnTimeoutSeconds = remainingTime / 1000; // Convert ms to seconds
-                    turnEndTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(remainingTime);
-                    
-                    std::cout << "Turn started for player " << turnPlayerId 
-                              << (isMyTurn ? " (YOU)" : "") 
-                              << ". Time remaining: " << turnTimeoutSeconds << " seconds" << std::endl;
+                std::cout << "New round started!" << std::endl;
+                
+                if (j["payload"].contains("roundNumber")) {
+                    int roundNumber = j["payload"]["roundNumber"];
+                    std::cout << "Round #" << roundNumber << std::endl;
+                }
+                
+                if (j["payload"].contains("remainingTime")) {
+                    int remainingTime = j["payload"]["remainingTime"];
+                    std::cout << "Round time: " << remainingTime << " milliseconds" << std::endl;
                 }
             }
+            resetLoadingState();
         }
-        else if (j.contains("event") && j["event"] == "turn_end") {
-            // Handle turn end event
-            if (j.contains("payload")) {
-                auto& payload = j["payload"];
-                if (payload.contains("nextPlayerId") && payload.contains("gameState")) {
-                    std::lock_guard<std::mutex> lock(gameStateMutex);
-                    
-                    // Update whose turn is next
-                    currentTurnPlayerId = payload["nextPlayerId"];
-                    isMyTurn = (currentTurnPlayerId == deviceId);
-                    
-                    // Parse the game state
-                    auto& gameState = payload["gameState"];
-                    
-                    // Update tower heights if available as JSON objects
-                    if (gameState.contains("towerHeights")) {
-                        for (auto& [playerId, height] : gameState["towerHeights"].items()) {
-                            if (playerId == deviceId) {
-                                myTowerHeight = height;
-                            } else {
-                                opponentTowerHeight = height;
-                            }
-                        }
-                    }
-                    
-                    // Update goal heights if available
-                    if (gameState.contains("goalHeights")) {
-                        for (auto& [playerId, height] : gameState["goalHeights"].items()) {
-                            if (playerId == deviceId) {
-                                myGoalHeight = height;
-                            } else {
-                                opponentGoalHeight = height;
-                            }
-                        }
-                    }
-                    
-                    // Update shield status if available
-                    if (gameState.contains("playerShields")) {
-                        for (auto& [playerId, shieldActive] : gameState["playerShields"].items()) {
-                            if (playerId == deviceId) {
-                                myShieldActive = shieldActive;
-                            } else {
-                                opponentShieldActive = shieldActive;
-                            }
-                        }
-                    }
-                    
-                    std::cout << "Turn ended. Next player: " << currentTurnPlayerId 
-                              << (isMyTurn ? " (YOU)" : "") << std::endl;
-                    std::cout << "Your tower height: " << myTowerHeight << "/" << myGoalHeight 
-                              << ", Opponent: " << opponentTowerHeight << "/" << opponentGoalHeight << std::endl;
-                }
+        else if (j.contains("event") && j["event"] == "round_end") {
+            // Handle round end event - simplified
+            std::cout << "Round ended" << std::endl;
+            if (j.contains("payload") && j["payload"].contains("roundNumber")) {
+                int roundNumber = j["payload"]["roundNumber"];
+                std::cout << "Round #" << roundNumber << " completed" << std::endl;
             }
+            resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "game_started") {
-            // Handle game started event
-            std::lock_guard<std::mutex> lock(gameStateMutex);
-            
-            // Reset game state
-            myTowerHeight = 0;
-            opponentTowerHeight = 0;
-            myShieldActive = false;
-            opponentShieldActive = false;
-            isMyTurn = false;
+            // Handle game started event - just update game status
             gameInProgress = true;
-            
-            std::cout << "Game started!" << std::endl;
+            std::cout << "Game has started!" << std::endl;
+            resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "game_ended") {
             // Handle game ended event
-            if (j.contains("payload")) {
-                auto& payload = j["payload"];
-                if (payload.contains("winnerId")) {
-                    std::lock_guard<std::mutex> lock(gameStateMutex);
-                    
-                    std::string winnerId = payload["winnerId"];
-                    bool isWinner = (winnerId == deviceId);
-                    
-                    gameInProgress = false;
-                    
-                    std::cout << "Game ended. Winner: " << winnerId 
-                              << (isWinner ? " (YOU WIN!)" : " (You lose)") << std::endl;
-                }
+            if (j.contains("payload") && j["payload"].contains("winnerId")) {
+                std::string winnerId = j["payload"]["winnerId"];
+                bool isWinner = (winnerId == deviceId);
+                
+                std::cout << "Game ended. " << (isWinner ? "You won!" : "You lost.") << std::endl;
+                
+                // Mark game as no longer in progress
+                gameInProgress = false;
             }
+            resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "beagle_board_command") {
-            // Handle beagle board specific commands
+            // Handle beagle board specific commands - now we just log them
             if (j.contains("payload") && j["payload"].contains("command")) {
                 std::string command = j["payload"]["command"];
+                std::cout << "Received server command: " << command << std::endl;
                 
-                if (command == "CARDS" && j["payload"].contains("cards")) {
-                    // Process card data from server
-                    std::lock_guard<std::mutex> lock(cardsMutex);
-                    playerCards.clear();
-                    
-                    for (const auto& cardJson : j["payload"]["cards"]) {
-                        Card card;
-                        card.id = cardJson["id"];
-                        card.type = cardJson["type"];
-                        card.name = cardJson["name"];
-                        card.description = cardJson["description"];
-                        playerCards.push_back(card);
-                    }
-                    
-                    std::cout << "DEBUG: Received card update with " << playerCards.size() << " cards" << std::endl;
-                    for (const auto& card : playerCards) {
-                        std::cout << "DEBUG: Card - ID: " << card.id << ", Type: " << card.type << ", Name: " << card.name << std::endl;
-                    }
-                }
-                else if (command == "GAME_STATE" && j["payload"].contains("gameState")) {
-                    // Handle full game state update
-                    std::lock_guard<std::mutex> lock(gameStateMutex);
-                    
-                    auto& gameState = j["payload"]["gameState"];
-                    
-                    // Parse all relevant game state
-                    if (gameState.contains("towerHeights")) {
-                        for (auto& [playerId, height] : gameState["towerHeights"].items()) {
-                            if (playerId == deviceId) {
-                                myTowerHeight = height;
-                            } else {
-                                opponentTowerHeight = height;
-                            }
-                        }
-                    }
-                    
-                    if (gameState.contains("goalHeights")) {
-                        for (auto& [playerId, height] : gameState["goalHeights"].items()) {
-                            if (playerId == deviceId) {
-                                myGoalHeight = height;
-                            } else {
-                                opponentGoalHeight = height;
-                            }
-                        }
-                    }
-                    
-                    if (gameState.contains("currentTurn")) {
-                        currentTurnPlayerId = gameState["currentTurn"];
-                        isMyTurn = (currentTurnPlayerId == deviceId);
-                    }
-                    
-                    std::cout << "Received full game state update" << std::endl;
-                    std::cout << "Your tower: " << myTowerHeight << "/" << myGoalHeight 
-                              << ", Opponent: " << opponentTowerHeight << "/" << opponentGoalHeight << std::endl;
-                    std::cout << "Current turn: " << (isMyTurn ? "YOUR TURN" : "OPPONENT'S TURN") << std::endl;
+                // Log the details
+                if (j["payload"].contains("details")) {
+                    std::cout << "Command details: " << j["payload"]["details"].dump() << std::endl;
                 }
             }
             
             resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "gesture_event") {
-            // Handle gesture events
+            // Handle gesture events - just log them
             if (j.contains("payload")) {
                 auto& payload = j["payload"];
                 if (payload.contains("playerId") && payload.contains("gesture")) {
@@ -354,6 +257,13 @@ void RoomManager::handleMessage(const std::string& message) {
                 }
             }
             
+            resetLoadingState();
+        }
+        else if (j.contains("event") && j["event"] == "game_state_update") {
+            // Handle game state update events
+            if (j.contains("payload") && j["payload"].contains("gameState")) {
+                std::cout << "Received game state update from server" << std::endl;
+            }
             resetLoadingState();
         }
         else {
@@ -459,6 +369,50 @@ void RoomManager::parseRoomList(const std::string& response) {
     }
 }
 
+void RoomManager::parseJsonRoomList(const json& roomsJson) {
+    std::lock_guard<std::mutex> lock(roomsMutex);
+    availableRooms.clear();
+    
+    // Process each room in the JSON array
+    for (const auto& roomJson : roomsJson) {
+        Room room;
+        
+        if (roomJson.contains("id")) room.id = roomJson["id"];
+        if (roomJson.contains("name")) room.name = roomJson["name"];
+        if (roomJson.contains("playerCount")) room.playerCount = roomJson["playerCount"];
+        if (roomJson.contains("maxPlayers")) room.maxPlayers = roomJson["maxPlayers"];
+        if (roomJson.contains("status")) room.status = roomJson["status"];
+        
+        availableRooms.push_back(room);
+    }
+}
+
+void RoomManager::displayRoomList() {
+    std::lock_guard<std::mutex> lock(roomsMutex);
+    
+    if (availableRooms.empty()) {
+        std::cout << "No rooms available. Try creating a new room." << std::endl;
+        return;
+    }
+    
+    std::cout << "Available rooms:" << std::endl;
+    std::cout << "--------------------------------------------------------" << std::endl;
+    std::cout << std::left << std::setw(24) << "Room ID" << " | "
+              << std::setw(25) << "Name" << " | "
+              << std::setw(10) << "Players" << " | "
+              << std::setw(10) << "Status" << std::endl;
+    std::cout << "--------------------------------------------------------" << std::endl;
+    
+    for (const auto& room : availableRooms) {
+        std::cout << std::left << std::setw(24) << room.id << " | "
+                  << std::setw(25) << room.name << " | "
+                  << std::setw(10) << room.playerCount << "/" << room.maxPlayers << " | "
+                  << std::setw(10) << room.status << std::endl;
+    }
+    
+    std::cout << "--------------------------------------------------------" << std::endl;
+}
+
 bool RoomManager::fetchAvailableRooms() {
     // Create JSON message directly
     json message = json::object();
@@ -467,254 +421,35 @@ bool RoomManager::fetchAvailableRooms() {
     
     std::string jsonMessage = message.dump();
     
-    // Set request tracking for room_list to control logging
-    isWaitingForResponse = true;
-    currentRequestType = "room_list";
-    
-    // Direct send without logging or tracking for maximum performance
-    bool result = client->sendMessage(jsonMessage);
-    
-    // Make sure client processes the message right away
-    client->ensureMessageProcessing();
-    
-    return result;
-}
-
-bool RoomManager::joinRoom(const std::string& roomId) {
-    if (!client) {
-        return false;
-    }
-    
-    // Can't join a room if already in one
-    if (connected) {
-        std::cerr << "Already connected to a room. Leave current room first." << std::endl;
-        return false;
-    }
-    
-    // Create JSON message directly
-    json payload = json::object();
-    payload["roomId"] = roomId;
-    payload["playerId"] = deviceId;
-    payload["playerName"] = playerName;
-    
-    json message = json::object();
-    message["event"] = "join_room";
-    message["payload"] = payload;
-    
-    std::string jsonMessage = message.dump();
-    
-    // Store room ID for reference
-    currentRoomId = roomId;
-    
-    // Set request tracking
-    isWaitingForResponse = true;
-    currentRequestType = "join_room";
-    
     // Direct send for maximum performance
-    bool result = client->sendMessage(jsonMessage);
-    client->ensureMessageProcessing();
-    
-    return result;
-}
-
-bool RoomManager::leaveRoom() {
-    if (!client) {
-        return false;
-    }
-    
-    if (!connected) {
-        return false;
-    }
-    
-    // Create JSON message directly
-    json payload = json::object();
-    payload["roomId"] = currentRoomId;
-    payload["playerId"] = deviceId;
-    
-    json message = json::object();
-    message["event"] = "leave_room";
-    message["payload"] = payload;
-    
-    std::string jsonMessage = message.dump();
-    
-    // Set request tracking
-    isWaitingForResponse = true;
-    currentRequestType = "leave_room";
-    
-    // Set status immediately to improve user experience
-    connected = false;
-    std::cout << "Successfully left room" << std::endl;
-    
-    // Direct send for maximum performance and request callback immediately
-    bool result = client->sendMessage(jsonMessage);
-    client->ensureMessageProcessing();
-    
-    return result;
-}
-
-void RoomManager::setReady(bool isReady) {
-    if (!client || !connected) {
-        return;
-    }
-    
-    ready = isReady;
-    
-    // Create JSON message directly
-    json payload = json::object();
-    payload["roomId"] = currentRoomId;
-    payload["playerId"] = deviceId;
-    payload["isReady"] = isReady;
-    
-    json message = json::object();
-    message["event"] = "player_ready";
-    message["payload"] = payload;
-    
-    std::string jsonMessage = message.dump();
-    
-    // Set request tracking
-    isWaitingForResponse = true;
-    currentRequestType = "player_ready";
-    
-    // Direct send for maximum performance
-    client->sendMessage(jsonMessage);
-    client->ensureMessageProcessing();
-}
-
-bool RoomManager::sendGestureData(const std::string& gestureData) {
-    if (!client || !client->isConnected() || !connected) {
-        std::cerr << "Cannot send gesture data: not connected" << std::endl;
-        return false;
-    }
-    
-    // Simple string version for backward compatibility
-    std::string message = "GESTURE|DeviceID:" + deviceId + "|RoomID:" + currentRoomId + "|" + gestureData;
-    return client->sendMessage(message);
-}
-
-const std::vector<Room> RoomManager::getAvailableRooms() const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(roomsMutex));
-    return availableRooms;
-}
-
-// Add new method to parse JSON room list
-void RoomManager::parseJsonRoomList(const json& roomsArray) {
-    std::lock_guard<std::mutex> lock(roomsMutex);
-    availableRooms.clear();
-    
-    if (roomsArray.is_array()) {
-        for (const auto& roomJson : roomsArray) {
-            // Initialize all fields to ensure no garbage values
-            Room room;
-            room.id = "";
-            room.name = "";
-            room.playerCount = 0;
-            room.maxPlayers = 0;
-            room.status = "";
-            
-            // Extract required fields
-            if (roomJson.contains("id")) room.id = roomJson["id"];
-            if (roomJson.contains("name")) room.name = roomJson["name"];
-            if (roomJson.contains("status")) room.status = roomJson["status"];
-            
-            // Extract player count - use playerCount field if available (server filtered count)
-            if (roomJson.contains("playerCount")) {
-                try {
-                    room.playerCount = roomJson["playerCount"];
-                } catch (...) {
-                    room.playerCount = 0;
-                }
-            } else if (roomJson.contains("players") && roomJson["players"].is_array()) {
-                // If no playerCount field, count BeagleBoard players manually
-                int count = 0;
-                for (const auto& player : roomJson["players"]) {
-                    if (player.contains("playerType") && player["playerType"] == "beagleboard") {
-                        count++;
-                    }
-                }
-                room.playerCount = count;
-            }
-            
-            if (roomJson.contains("maxPlayers")) {
-                try {
-                    room.maxPlayers = roomJson["maxPlayers"];
-                } catch (...) {
-                    room.maxPlayers = 2; // Default value
-                }
-            }
-            
-            availableRooms.push_back(room);
-        }
-    }
-}
-
-void RoomManager::displayRoomList() {
-    std::lock_guard<std::mutex> lock(roomsMutex);
-    
-    if (availableRooms.empty()) {
-        std::cout << "No rooms available." << std::endl;
-    } else {
-        std::cout << "Available rooms:" << std::endl;
-        for (const auto& room : availableRooms) {
-            std::cout << "  ID: " << room.id << " | Name: " << room.name 
-                      << " | Players: " << room.playerCount << "/" << room.maxPlayers 
-                      << " | Status: " << room.status << std::endl;
-        }
-    }
+    return sendMessageWithTracking(jsonMessage, "room_list");
 }
 
 bool RoomManager::createRoom(const std::string& roomName) {
-    if (!client) {
+    if (!client || !client->isConnected()) {
+        std::cerr << "Cannot create room: WebSocket not connected" << std::endl;
         return false;
     }
     
-    // Can't create a room if already in one
-    if (connected) {
-        std::cerr << "Already connected to a room. Leave current room first." << std::endl;
+    if (roomName.empty()) {
+        std::cerr << "Cannot create room: Room name is empty" << std::endl;
         return false;
     }
     
-    // Check if player name is set
-    if (playerName.empty()) {
-        std::cerr << "Player name is not set. Please use 'setname' command first." << std::endl;
-        return false;
-    }
-    
-    // Generate a random room ID
-    std::string roomId = "BB_";
-    static const char alphanum[] =
-        "0123456789"
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, sizeof(alphanum) - 2);
-    
-    for (int i = 0; i < 5; ++i) {
-        roomId += alphanum[dis(gen)];
-    }
-    
-    // Store the intended room ID before sending the request
-    currentRoomId = roomId;
-    
-    // Use JSON message format directly
+    // Create room JSON object
     json room = json::object();
-    room["id"] = roomId;
     room["name"] = roomName;
-    room["maxPlayers"] = 2;  // Ensure this is set to 2 for multiplayer support
-    room["status"] = "waiting";
-    room["hostId"] = deviceId;
+    room["maxPlayers"] = 2;
     
-    // Create player object
+    // Create players array with the creator
+    json players = json::array();
     json player = json::object();
     player["id"] = deviceId;
-    player["name"] = playerName;
-    player["isReady"] = false;  // Player starts as not ready
-    player["connected"] = true;
-    player["playerType"] = "beagleboard";
-    
-    // Add player to room
-    json players = json::array();
+    player["name"] = playerName.empty() ? "BeagleBoard" : playerName;
+    player["playerType"] = "beagleboard"; // Important for the server to know this is a BeagleBoard client
+    player["ready"] = false;
     players.push_back(player);
+    
     room["players"] = players;
     
     // Create payload
@@ -766,101 +501,105 @@ bool RoomManager::sendMessageWithTracking(const std::string& message, const std:
     return client->sendMessage(message);
 }
 
-// Card management implementations
-const std::vector<Card> RoomManager::getPlayerCards() const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(cardsMutex));
-    return playerCards;
+// Getters implementation
+const std::vector<Room> RoomManager::getAvailableRooms() const {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(roomsMutex));
+    return availableRooms;
 }
 
-Card* RoomManager::findCardByType(const std::string& type) {
-    std::lock_guard<std::mutex> lock(cardsMutex);
-    for (auto& card : playerCards) {
-        if (card.type == type) {
-            return &card;
-        }
+bool RoomManager::joinRoom(const std::string& roomId) {
+    if (!client || !client->isConnected()) {
+        std::cerr << "Cannot join room: WebSocket not connected" << std::endl;
+        return false;
     }
-    return nullptr;
+    
+    if (roomId.empty()) {
+        std::cerr << "Cannot join room: Room ID is empty" << std::endl;
+        return false;
+    }
+    
+    if (playerName.empty()) {
+        std::cerr << "Cannot join room: Player name is not set" << std::endl;
+        return false;
+    }
+    
+    // Set current room ID for tracking purposes
+    currentRoomId = roomId;
+    
+    // Create JSON message
+    json player = json::object();
+    player["id"] = deviceId;
+    player["name"] = playerName;
+    player["playerType"] = "beagleboard"; // Important for the server to know this is a BeagleBoard client
+    player["ready"] = false;
+    
+    json payload = json::object();
+    payload["roomId"] = roomId;
+    payload["player"] = player;
+    
+    json message = json::object();
+    message["event"] = "join_room";
+    message["payload"] = payload;
+    
+    std::string jsonMessage = message.dump();
+    
+    return sendMessageWithTracking(jsonMessage, "join_room");
 }
 
-bool RoomManager::sendCardAction(const std::string& cardId, const std::string& action) {
+bool RoomManager::leaveRoom() {
+    if (!client || !connected) {
+        // If not connected to a room, there's nothing to leave
+        return false;
+    }
+    
+    // Create JSON message
+    json payload = json::object();
+    payload["roomId"] = currentRoomId;
+    payload["playerId"] = deviceId;
+    
+    json message = json::object();
+    message["event"] = "leave_room";
+    message["payload"] = payload;
+    
+    std::string jsonMessage = message.dump();
+    
+    connected = false; // Optimistically mark as disconnected
+    
+    return sendMessageWithTracking(jsonMessage, "leave_room");
+}
+
+void RoomManager::setReady(bool isReady) {
+    if (!client || !connected) {
+        std::cerr << "Cannot set ready status: not connected to a room" << std::endl;
+        return;
+    }
+    
+    // Create JSON message
+    json payload = json::object();
+    payload["roomId"] = currentRoomId;
+    payload["playerId"] = deviceId;
+    payload["isReady"] = isReady;
+    
+    json message = json::object();
+    message["event"] = "player_ready";
+    message["payload"] = payload;
+    
+    std::string jsonMessage = message.dump();
+    
+    // Set ready status for tracking purposes - will be confirmed by server response
+    ready = isReady;
+    
+    // Send the message - no tracking needed as we'll receive room_updated
+    client->sendMessage(jsonMessage);
+}
+
+bool RoomManager::sendGestureData(const std::string& gestureData) {
     if (!client || !client->isConnected() || !connected) {
-        std::cerr << "Cannot send card action: not connected" << std::endl;
+        std::cerr << "Cannot send gesture data: not connected" << std::endl;
         return false;
     }
     
-    // Check if the action is valid
-    if (action != "attack" && action != "defend" && action != "build") {
-        std::cerr << "Invalid card action: " << action << std::endl;
-        return false;
-    }
-    
-    // Check if we have this card
-    bool cardFound = false;
-    {
-        std::lock_guard<std::mutex> lock(cardsMutex);
-        for (const auto& card : playerCards) {
-            if (card.id == cardId) {
-                cardFound = true;
-                break;
-            }
-        }
-    }
-    
-    if (!cardFound) {
-        std::cerr << "Card not found: " << cardId << std::endl;
-        return false;
-    }
-    
-    // Create JSON gesture data
-    json gestureData = {
-        {"gesture", action},
-        {"cardId", cardId},
-        {"confidence", 1.0}
-    };
-    
-    // Send the gesture data
-    std::string message = "GESTURE|DeviceID:" + deviceId + "|RoomID:" + currentRoomId + "|" + gestureData.dump();
+    // Legacy format for backward compatibility
+    std::string message = "GESTURE|DeviceID:" + deviceId + "|RoomID:" + currentRoomId + "|" + gestureData;
     return client->sendMessage(message);
-}
-
-// Get the opponent's name
-std::string RoomManager::getOpponentName() const {
-    return opponentName;
-}
-
-// Get the remaining time in the current turn (in seconds)
-int RoomManager::getRemainingTurnTime() const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(gameStateMutex));
-    
-    auto now = std::chrono::steady_clock::now();
-    auto remaining = std::chrono::duration_cast<std::chrono::seconds>(turnEndTime - now).count();
-    
-    return remaining > 0 ? static_cast<int>(remaining) : 0;
-}
-
-// Check if it's this player's turn
-bool RoomManager::isPlayerTurn() const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(gameStateMutex));
-    return isMyTurn;
-}
-
-// Get the current tower heights and goal heights
-void RoomManager::getTowerStatus(int& myHeight, int& myGoal, int& oppHeight, int& oppGoal) const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(gameStateMutex));
-    myHeight = myTowerHeight;
-    myGoal = myGoalHeight;
-    oppHeight = opponentTowerHeight;
-    oppGoal = opponentGoalHeight;
-}
-
-// Check if my shield is active
-bool RoomManager::isShieldActive() const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(gameStateMutex));
-    return myShieldActive;
-}
-
-// Check if the game is in progress
-bool RoomManager::isGameActive() const {
-    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(gameStateMutex));
-    return gameInProgress;
 } 

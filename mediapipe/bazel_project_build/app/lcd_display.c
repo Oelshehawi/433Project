@@ -1,4 +1,3 @@
-
 /*
 #include "../lcd/lib/Config/DEV_Config.h"
 #include "../lcd/lib/LCD/LCD_1in54.h"
@@ -150,10 +149,8 @@ void lcd_place_message(char** messages, int length, lcd_location location){
                 break;
             }
 
-        printf("Placing image\n");
         message_size curr_size = get_message_size(messages[i]);
         Paint_DrawString_EN(x, y, messages[i], &Font16, WHITE, BLACK);
-        printf("Refreshing...\n");
         LCD_1IN54_DisplayWindows(x-x_clear, y, x+curr_size.x+30, y+curr_size.y, s_fb);
        
     }

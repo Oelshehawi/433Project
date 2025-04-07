@@ -5,7 +5,7 @@ import { sendToRoom } from "./messaging";
 // Constants for game configuration
 const MIN_GOAL_HEIGHT = 5;
 const MAX_GOAL_HEIGHT = 10;
-const TURN_DURATION_MS = 30000; // 30 seconds
+const ROUND_DURATION_MS = 30000; // 30 seconds
 
 // Initialize game state for a room
 export function initializeGameState(roomId: string): boolean {
@@ -27,18 +27,24 @@ export function initializeGameState(roomId: string): boolean {
     (player) => player.playerType === "beagleboard"
   );
 
-  if (beagleBoardPlayers.length < 2) {
-    console.error(`Not enough players in room ${roomId}`);
+  // TEMPORARY TEST MODE: Allow single player games
+  if (beagleBoardPlayers.length < 1) {
+    console.error(
+      `Not enough players in room ${roomId}. Minimum 1 player required in test mode.`
+    );
     return false;
   }
+  console.log(
+    `TESTING MODE: Initializing game with ${beagleBoardPlayers.length} BeagleBoard player(s).`
+  );
 
   // Create new game state
   const gameState: GameState = {
     towerHeights: new Map(),
     goalHeights: new Map(),
-    currentTurn: "",
-    turnStartTime: 0,
-    turnDuration: TURN_DURATION_MS,
+    roundNumber: 1,
+    roundStartTime: 0,
+    roundDuration: ROUND_DURATION_MS,
     playerShields: new Map(),
     playerMoves: new Map(),
   };
@@ -60,23 +66,33 @@ export function initializeGameState(roomId: string): boolean {
     gameState.playerMoves.set(player.id, false);
   });
 
-  // Randomly select first player
-  const startingPlayerIndex = Math.floor(
-    Math.random() * beagleBoardPlayers.length
-  );
-  gameState.currentTurn = beagleBoardPlayers[startingPlayerIndex].id;
+  // TEMPORARY TEST MODE: Add a virtual opponent for single player testing if needed
+  if (beagleBoardPlayers.length === 1) {
+    const virtualOpponentId = "virtual_opponent";
+    gameState.towerHeights.set(virtualOpponentId, 0);
+    gameState.goalHeights.set(
+      virtualOpponentId,
+      Math.floor(
+        Math.random() * (MAX_GOAL_HEIGHT - MIN_GOAL_HEIGHT + 1) +
+          MIN_GOAL_HEIGHT
+      )
+    );
+    gameState.playerShields.set(virtualOpponentId, false);
+    gameState.playerMoves.set(virtualOpponentId, false);
+    console.log(`TESTING MODE: Added virtual opponent for single player game.`);
+  }
 
   // Save game state to room
   room.gameState = gameState;
 
-  // Start the first turn
-  startTurn(roomId);
+  // Start the first round
+  startRound(roomId);
 
   return true;
 }
 
-// Start a new turn
-export function startTurn(roomId: string): boolean {
+// Start a new round
+export function startRound(roomId: string): boolean {
   if (!rooms.has(roomId)) {
     console.error(`Room ${roomId} not found`);
     return false;
@@ -89,41 +105,41 @@ export function startTurn(roomId: string): boolean {
     return false;
   }
 
-  // Set turn start time
-  room.gameState.turnStartTime = Date.now();
+  // Set round start time
+  room.gameState.roundStartTime = Date.now();
 
-  // Reset player moves for the new turn
+  // Reset player moves for the new round
   room.gameState.playerMoves.forEach((_, playerId) => {
     room.gameState!.playerMoves.set(playerId, false);
   });
 
-  // Send turn start event to all players
-  sendToRoom(roomId, "turn_start", {
+  // Send round start event to all players
+  sendToRoom(roomId, "round_start", {
     roomId,
-    playerId: room.gameState.currentTurn,
-    remainingTime: TURN_DURATION_MS,
+    roundNumber: room.gameState.roundNumber,
+    remainingTime: ROUND_DURATION_MS,
   });
 
-  // Set up timer to end turn automatically after TURN_DURATION_MS
+  // Set up timer to end round automatically after ROUND_DURATION_MS
   setTimeout(() => {
-    // Check if the turn is still active
-    if (rooms.has(roomId) && room.gameState?.turnStartTime) {
+    // Check if the round is still active
+    if (rooms.has(roomId) && room.gameState?.roundStartTime) {
       const currentTime = Date.now();
-      const elapsedTime = currentTime - room.gameState.turnStartTime;
+      const elapsedTime = currentTime - room.gameState.roundStartTime;
 
-      // Only end the turn if enough time has passed
-      if (elapsedTime >= TURN_DURATION_MS) {
-        // End turn automatically if time is up
-        endTurn(roomId);
+      // Only end the round if enough time has passed
+      if (elapsedTime >= ROUND_DURATION_MS) {
+        // End round automatically if time is up
+        endRound(roomId);
       }
     }
-  }, TURN_DURATION_MS + 100); // Add 100ms buffer
+  }, ROUND_DURATION_MS + 100); // Add 100ms buffer
 
   return true;
 }
 
-// End the current turn and start the next one
-export function endTurn(roomId: string): boolean {
+// End the current round and start the next one
+export function endRound(roomId: string): boolean {
   if (!rooms.has(roomId)) {
     console.error(`Room ${roomId} not found`);
     return false;
@@ -141,27 +157,18 @@ export function endTurn(roomId: string): boolean {
     (player) => player.playerType === "beagleboard"
   );
 
-  // Find the current player's index
-  const currentPlayerIndex = beagleBoardPlayers.findIndex(
-    (player) => player.id === room.gameState!.currentTurn
-  );
+  // Increment the round number
+  room.gameState.roundNumber += 1;
 
-  // Determine the next player
-  const nextPlayerIndex = (currentPlayerIndex + 1) % beagleBoardPlayers.length;
-  const nextPlayerId = beagleBoardPlayers[nextPlayerIndex].id;
-
-  // Update current turn
-  room.gameState.currentTurn = nextPlayerId;
-
-  // Reset player shields for the next turn
+  // Reset player shields at the end of the round
   room.gameState.playerShields.forEach((_, playerId) => {
     room.gameState!.playerShields.set(playerId, false);
   });
 
-  // Send turn end event
-  sendToRoom(roomId, "turn_end", {
+  // Send round end event
+  sendToRoom(roomId, "round_end", {
     roomId,
-    nextPlayerId,
+    roundNumber: room.gameState.roundNumber - 1,
     gameState: room.gameState,
   });
 
@@ -173,8 +180,8 @@ export function endTurn(roomId: string): boolean {
     return true;
   }
 
-  // Start next turn
-  startTurn(roomId);
+  // Start next round
+  startRound(roomId);
 
   return true;
 }
@@ -201,10 +208,52 @@ export function checkWinCondition(roomId: string): string | null {
     }
   }
 
+  // Get real players (not virtual opponent)
+  const beagleBoardPlayers = room.players.filter(
+    (player) => player.playerType === "beagleboard"
+  );
+
+  // TESTING MODE: Handle virtual opponent for tower reduction to 0
+  if (beagleBoardPlayers.length === 1) {
+    const realPlayer = beagleBoardPlayers[0];
+    const realPlayerHeight =
+      room.gameState.towerHeights.get(realPlayer.id) || 0;
+    const virtualOpponentHeight =
+      room.gameState.towerHeights.get("virtual_opponent") || 0;
+
+    // If real player's tower is reduced to 0, virtual opponent wins
+    if (realPlayerHeight <= 0) {
+      console.log(
+        `TESTING MODE: Player ${realPlayer.name} lost - tower height is 0`
+      );
+      return "virtual_opponent";
+    }
+
+    // If virtual opponent's tower is reduced to 0, real player wins
+    if (virtualOpponentHeight <= 0) {
+      console.log(`TESTING MODE: Virtual opponent lost - tower height is 0`);
+      return realPlayer.id;
+    }
+
+    return null;
+  }
+
+  // Regular multiplayer mode - check if any player's tower has been reduced to 0
+  for (const player of beagleBoardPlayers) {
+    const towerHeight = room.gameState.towerHeights.get(player.id) || 0;
+    if (towerHeight <= 0) {
+      // The player with the remaining tower wins
+      const opponent = beagleBoardPlayers.find((p) => p.id !== player.id);
+      if (opponent) {
+        return opponent.id;
+      }
+    }
+  }
+
   return null;
 }
 
-// End the game with a winner
+// End the game and declare a winner
 export function endGame(roomId: string, winnerId: string): boolean {
   if (!rooms.has(roomId)) {
     console.error(`Room ${roomId} not found`);
@@ -218,11 +267,10 @@ export function endGame(roomId: string, winnerId: string): boolean {
     return false;
   }
 
-  // Update game state
-  room.gameState.winner = winnerId;
-  room.status = "ended";
+  // Set game status to completed
+  room.status = "completed";
 
-  // Send game ended event
+  // Send game_ended event to all players
   sendToRoom(roomId, "game_ended", {
     roomId,
     winnerId,
@@ -257,16 +305,28 @@ export function processAction(
   const beagleBoardPlayers = room.players.filter(
     (player) => player.playerType === "beagleboard"
   );
-  const opponentPlayer = beagleBoardPlayers.find(
-    (player) => player.id !== playerId
-  );
 
-  if (!opponentPlayer) {
-    console.error(`Opponent not found for player ${playerId}`);
-    return false;
+  let opponentId: string;
+  let isSinglePlayerMode = false;
+
+  if (beagleBoardPlayers.length >= 2) {
+    // Regular multiplayer mode
+    const opponentPlayer = beagleBoardPlayers.find(
+      (player) => player.id !== playerId
+    );
+
+    if (!opponentPlayer) {
+      console.error(`Opponent not found for player ${playerId}`);
+      return false;
+    }
+
+    opponentId = opponentPlayer.id;
+  } else {
+    // TESTING MODE: Single player with virtual opponent
+    opponentId = "virtual_opponent";
+    isSinglePlayerMode = true;
+    console.log(`TESTING MODE: Using virtual opponent for player ${playerId}`);
   }
-
-  const opponentId = opponentPlayer.id;
 
   // Process action based on type
   switch (action) {
@@ -293,15 +353,59 @@ export function processAction(
       break;
   }
 
+  // TESTING MODE: Make virtual opponent respond if in single player mode
+  if (isSinglePlayerMode) {
+    // Choose a random action for the virtual opponent
+    const actions: GameActionType[] = ["attack", "defend", "build"];
+    const randomIndex = Math.floor(Math.random() * actions.length);
+    const opponentAction = actions[randomIndex];
+
+    console.log(`TESTING MODE: Virtual opponent chooses: ${opponentAction}`);
+
+    // Mark the virtual opponent's move as complete
+    room.gameState.playerMoves.set(opponentId, true);
+
+    // Process the virtual opponent's action
+    switch (opponentAction) {
+      case "attack":
+        // If player has a shield, attack is blocked
+        if (!room.gameState.playerShields.get(playerId)) {
+          // Attack reduces player's tower height by 1
+          const playerHeight = room.gameState.towerHeights.get(playerId) || 0;
+          if (playerHeight > 0) {
+            room.gameState.towerHeights.set(playerId, playerHeight - 1);
+          }
+        }
+        break;
+
+      case "defend":
+        // Set opponent's shield to true
+        room.gameState.playerShields.set(opponentId, true);
+        break;
+
+      case "build":
+        // Build adds 1 to the opponent's tower height
+        const opponentHeight = room.gameState.towerHeights.get(opponentId) || 0;
+        room.gameState.towerHeights.set(opponentId, opponentHeight + 1);
+        break;
+    }
+  }
+
+  // Send immediate update of game state to all clients
+  sendToRoom(roomId, "game_state_update", {
+    roomId,
+    gameState: room.gameState,
+  });
+
   // Check if all players have made their moves
   let allMovesMade = true;
   room.gameState.playerMoves.forEach((moveMade) => {
     if (!moveMade) allMovesMade = false;
   });
 
-  // If all players have made their moves, end the turn early
+  // If all players have made their moves, end the round early
   if (allMovesMade) {
-    endTurn(roomId);
+    endRound(roomId);
   }
 
   return true;

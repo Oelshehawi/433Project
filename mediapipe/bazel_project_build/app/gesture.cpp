@@ -16,6 +16,7 @@
 #include "../hal/rotary_press_statemachine.h"
 #include "lcd_display.h"
 #include <sys/stat.h>
+#include <nlohmann/json.hpp>
 
 using namespace cv;
 #define WAIT_TIME 3000
@@ -89,68 +90,151 @@ bool detect_gesture(GestureResult *result, CameraHAL &camera) {
 }
 
 // GestureDetector class implementation
-GestureDetector::GestureDetector() : running(false), roomManager(nullptr), camera("/dev/video3") {}
+GestureDetector::GestureDetector() : running(false), roomManager(nullptr) {}
 
 GestureDetector::~GestureDetector() {
-    stopDetection();
+    if (running) {
+        stopDetection();
+    }
 }
 
-// Start detection in a separate thread
+void GestureDetector::setRoomManager(RoomManager* rm) {
+    roomManager = rm;
+}
+
+// Test camera access without starting gesture detection
+bool GestureDetector::testCameraAccess() {
+    CameraHAL testCamera;
+    bool success = testCamera.openCamera();
+    if (success) {
+        cv::Mat frame;
+        success = testCamera.captureFrame(frame);
+        testCamera.closeCamera();
+    }
+    return success;
+}
+
+// Simple function to run camera in testing mode
+void GestureDetector::runTestingMode() {
+    std::cout << "Running camera test mode. Press any key to exit." << std::endl;
+    
+    // Just test the camera with simple feedback
+    CameraHAL testCamera;
+    if (!testCamera.openCamera()) {
+        std::cerr << "Error: Could not open camera for testing" << std::endl;
+        return;
+    }
+    
+    // Show info on LCD
+    char* testMsg[] = {"Camera Test Mode", "Running..."};
+    lcd_place_message(testMsg, 2, lcd_center);
+    
+    bool firstCapture = true;
+    int frames = 0;
+    auto startTime = std::chrono::steady_clock::now();
+    
+    while (true) {
+        cv::Mat frame;
+        
+        if (!testCamera.captureFrame(frame)) {
+            std::cerr << "Error: Could not capture frame" << std::endl;
+            break;
+        }
+        
+        // If this is our first frame, show success message
+        if (firstCapture) {
+            std::cout << "Camera working! First frame captured successfully." << std::endl;
+            std::cout << "Frame size: " << frame.cols << "x" << frame.rows << std::endl;
+            firstCapture = false;
+            
+            char* successMsg[] = {"Camera working!", "Press to exit"};
+            lcd_place_message(successMsg, 2, lcd_center);
+        }
+        
+        frames++;
+        
+        // Check how long we've been running
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - startTime).count();
+        
+        // Every 5 seconds, display frame rate
+        if (elapsed >= 5) {
+            double fps = static_cast<double>(frames) / elapsed;
+            std::cout << "Frames captured: " << frames << " (" << std::fixed << std::setprecision(1) << fps << " FPS)" << std::endl;
+            
+            char fpsMsg[32];
+            snprintf(fpsMsg, sizeof(fpsMsg), "%.1f FPS", fps);
+            char* successMsg[] = {"Camera working!", fpsMsg};
+            lcd_place_message(successMsg, 2, lcd_center);
+            
+            // Reset counters
+            frames = 0;
+            startTime = now;
+        }
+        
+        // Check for button press to exit
+        if (rotary_press_statemachine_wasButtonPressed()) {
+            std::cout << "Button pressed, exiting camera test" << std::endl;
+            break;
+        }
+        
+        // Small delay to prevent consuming too much CPU
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    
+    testCamera.closeCamera();
+    
+    // Show exit message
+    char* exitMsg[] = {"Camera test", "complete"};
+    lcd_place_message(exitMsg, 2, lcd_center);
+}
+
 void GestureDetector::startDetection() {
+    if (running) {
+        std::cout << "Gesture detection is already running" << std::endl;
+        return;
+    }
     
     if (!roomManager) {
-        std::cerr << "Error: Room manager not set. Call setRoomManager() before starting detection." << std::endl;
+        std::cerr << "Error: RoomManager is not set" << std::endl;
         return;
     }
     
     running = true;
-    detectionThread = std::thread(detectionLoop, this);
+    detectionThread = std::thread(&GestureDetector::detectionLoop, this);
 }
 
-// Stop detection
 void GestureDetector::stopDetection() {
-    running = false;
-    if (detectionThread.joinable()) detectionThread.join();
-}
-
-// Test if the camera is accessible
-bool GestureDetector::testCameraAccess() {
-    if (camera.openCamera()) {
-        // Successfully opened camera, close it again
-        cv::Mat testFrame;
-        bool frameSuccess = camera.captureFrame(testFrame);
-        camera.closeCamera();
-        return frameSuccess;
-    }
-    return false;
-}
-static long long getTimeInMs(void)
-{
-    long long MS_PER_SEC = 1000;
-    long long NS_PER_MS = 1000000;
-    struct timespec spec;
-    clock_gettime(CLOCK_REALTIME, &spec);
-    long long seconds = spec.tv_sec;
-    long long nanoSeconds = spec.tv_nsec;
-    long long milliSeconds = seconds * MS_PER_SEC
-    + nanoSeconds / NS_PER_MS;
-    return milliSeconds;
-}
-// Detection loop
-void GestureDetector::detectionLoop(GestureDetector* detector) {
-    
-    if (!detector->roomManager) {
-        std::cerr << "Error: Room manager not set. Cannot start detection." << std::endl;
+    if (!running) {
+        std::cout << "Gesture detection is not running" << std::endl;
         return;
     }
     
-    // Get a reference to room manager for easier access
-    RoomManager& roomManager = *(detector->roomManager);
+    running = false;
+    if (detectionThread.joinable()) {
+        detectionThread.join();
+    }
     
-    std::cout << "Gesture detector started with Device ID: " << roomManager.getDeviceId() << std::endl;
+    // Cleanup camera if needed
+    camera.closeCamera();
+    
+    // Reset LCD display
+    char* stoppedMsg[] = {"Gesture detection", "stopped"};
+    lcd_place_message(stoppedMsg, 2, lcd_center);
+}
+
+void GestureDetector::detectionLoop() {
+    // Check if room manager is available
+    if (!roomManager) {
+        std::cerr << "Error: RoomManager not set for GestureDetector" << std::endl;
+        running = false;
+        return;
+    }
+    
+    std::cout << "Gesture detector started with Device ID: " << roomManager->getDeviceId() << std::endl;
     
     // Attempt to open the camera
-    if (!detector->camera.openCamera()) {
+    if (!camera.openCamera()) {
         std::cerr << "Error: Could not open camera on /dev/video3" << std::endl;
         return;
     }
@@ -160,33 +244,14 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     lcd_place_message(startingMsg, 2, lcd_center);
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     
-    // Check if we have cards first
-    std::vector<Card> initialCards = roomManager.getPlayerCards();
-    if (initialCards.empty()) {
-        std::cout << "No cards available. Waiting for cards from server..." << std::endl;
-        
-        // Show waiting message on LCD
-        char* waitingMsg[] = {"Waiting for cards", "from server..."};
+    // Server-based card management message
+    if (roomManager->isGameActive()) {
+        char* waitingMsg[] = {"Game in progress", "Server manages cards"};
         lcd_place_message(waitingMsg, 2, lcd_center);
-        
-        // Wait a bit for cards to be received
-        std::this_thread::sleep_for(std::chrono::seconds(3));
-        
-        // Check again for cards
-        initialCards = roomManager.getPlayerCards();
-        if (initialCards.empty()) {
-            std::cout << "Still no cards available. Make sure game has started properly." << std::endl;
-            
-            // Show error message on LCD
-            char* noCardsMsg[] = {"No cards received", "Start game first!"};
-            lcd_place_message(noCardsMsg, 2, lcd_center);
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-        }
-    }
-    
-    // If we have cards, display them
-    if (!initialCards.empty()) {
-        displayCardsOnLCD(initialCards);
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    } else {
+        char* notInGameMsg[] = {"Not in game", "Join room & start"};
+        lcd_place_message(notInGameMsg, 2, lcd_center);
         std::this_thread::sleep_for(std::chrono::seconds(2));
     }
     
@@ -197,49 +262,14 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
     
     // Variables for logging control
     int loopCounter = 0;
-    std::vector<Card> lastPlayerCards;
     
     // Main detection loop
-    while (detector->running) {
+    while (running) {
         loopCounter++;
         bool shouldLog = (loopCounter % 20 == 0); // Only log every 20th iteration
         
-        // Get current cards and display them first
-        std::vector<Card> playerCards = roomManager.getPlayerCards();
-        
-        // Debug card info
-        if (shouldLog || playerCards.size() != lastPlayerCards.size()) {
-            std::cout << "Current cards: " << playerCards.size() << std::endl;
-            for (const auto& card : playerCards) {
-                std::cout << "  Card: ID=" << card.id << ", Type=" << card.type << ", Name=" << card.name << std::endl;
-            }
-        }
-        
-        // Check if cards have changed without using direct vector comparison
-        bool cardsChanged = false;
-        if (playerCards.size() != lastPlayerCards.size()) {
-            cardsChanged = true;
-            std::cout << "Card count changed from " << lastPlayerCards.size() << " to " << playerCards.size() << std::endl;
-        } else {
-            // Check if any card IDs are different
-            for (size_t i = 0; i < playerCards.size(); i++) {
-                if (playerCards[i].id != lastPlayerCards[i].id) {
-                    cardsChanged = true;
-                    std::cout << "Card changed: " << lastPlayerCards[i].id << " -> " << playerCards[i].id << std::endl;
-                    break;
-                }
-            }
-        }
-        
-        if (!playerCards.empty() && cardsChanged) {
-            // Display cards on LCD
-            displayCardsOnLCD(playerCards);
-            lastPlayerCards = playerCards;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1500));
-        }
-        
         // Simple prompt for gesture
-        char* promptMsg[] = {"Show gesture", "to play card"};
+        char* promptMsg[] = {"Show gesture", "for action"};
         lcd_place_message(promptMsg, 2, lcd_center);
         
         bool gestureDetected = false;
@@ -247,12 +277,12 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
         std::string actionType = "";
         
         // Gesture detection phase
-        while (detector->running && !gestureDetected) {
+        while (running && !gestureDetected) {
             // Capture frame and analyze hand position
             cv::Mat frame;
             if (shouldLog) std::cout << "Waiting for gesture..." << std::endl;
             
-            if (!detector->camera.captureFrame(frame)) {
+            if (!camera.captureFrame(frame)) {
                 std::cerr << "Error: Could not capture frame" << std::endl;
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 continue;
@@ -298,7 +328,7 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
         }
         
         // If we detected a valid gesture, ask for confirmation
-        if (gestureDetected && detector->running) {
+        if (gestureDetected && running) {
             // Display the detected gesture and ask for confirmation
             char gestureMsgLine1[32];
             snprintf(gestureMsgLine1, sizeof(gestureMsgLine1), "%s detected", detectedMove.c_str());
@@ -316,7 +346,7 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
             bool gestureConfirmed = false;
             
             // Wait for confirmation or timeout
-            while (detector->running && getTimeInMs() - startTime < 5000) { // 5 second timeout
+            while (running && getTimeInMs() - startTime < 5000) { // 5 second timeout
                 if (startValue != rotary_press_statemachine_getValue()) {
                     gestureConfirmed = true;
                     break;
@@ -326,106 +356,83 @@ void GestureDetector::detectionLoop(GestureDetector* detector) {
             
             // If user confirmed, send the gesture data
             if (gestureConfirmed) {
-                // Check if we're in a game and if it's our turn
-                bool canTakeAction = !roomManager.isGameActive() || roomManager.isPlayerTurn();
-                
-                if (canTakeAction) {
-                    // Find a matching card for the action
-                    Card* matchingCard = nullptr;
-                    if (actionType != "") {
-                        matchingCard = roomManager.findCardByType(actionType);
-                    }
+                if (roomManager->isConnected()) {
+                    // Create JSON gesture data
+                    json gestureData = {
+                        {"gesture", actionType},
+                        {"confidence", 0.95}
+                    };
                     
-                    // Show sending message
-                    char* sendingMsg[] = {"Sending..."};
-                    lcd_place_message(sendingMsg, 1, lcd_center);
+                    // Send the gesture data
+                    bool success = roomManager->sendGestureData(gestureData.dump());
                     
-                    if (matchingCard != nullptr) {
-                        // Send the card action
-                        std::cout << "Using card: " << matchingCard->name << " (" << matchingCard->id << ")" << std::endl;
-                        roomManager.sendCardAction(matchingCard->id, actionType);
+                    if (success) {
+                        std::cout << "Gesture data sent: " << actionType << std::endl;
+                        char* sentMsg[] = {"Gesture sent", "to server"};
+                        lcd_place_message(sentMsg, 2, lcd_center);
                     } else {
-                        // No matching card, send basic gesture
-                        std::cout << "Sending basic action: " << detectedMove << std::endl;
-                        roomManager.sendGestureData(detectedMove);
-                    }
-                    
-                    // Show brief confirmation
-                    char* sentMsg[] = {"Card played!"};
-                    lcd_place_message(sentMsg, 1, lcd_center);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                    
-                    // Update display with new cards
-                    std::vector<Card> updatedCards = roomManager.getPlayerCards();
-                    
-                    // Check if cards have changed
-                    bool cardsUpdated = false;
-                    if (updatedCards.size() != lastPlayerCards.size()) {
-                        cardsUpdated = true;
-                    } else {
-                        // Check if any card IDs are different
-                        for (size_t i = 0; i < updatedCards.size(); i++) {
-                            if (updatedCards[i].id != lastPlayerCards[i].id) {
-                                cardsUpdated = true;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (!updatedCards.empty() && cardsUpdated) {
-                        displayCardsOnLCD(updatedCards);
-                        lastPlayerCards = updatedCards;
+                        std::cout << "Failed to send gesture data" << std::endl;
+                        char* failMsg[] = {"Failed to send", "gesture data"};
+                        lcd_place_message(failMsg, 2, lcd_center);
                     }
                 } else {
-                    // Not our turn
-                    char* notTurnMsg[] = {"Not your turn"};
-                    lcd_place_message(notTurnMsg, 1, lcd_center);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(800));
+                    std::cout << "Not connected to a room. Cannot send gesture." << std::endl;
+                    char* notConnectedMsg[] = {"Not in a room", "Join room first"};
+                    lcd_place_message(notConnectedMsg, 2, lcd_center);
                 }
+                
+                // Pause briefly to display the confirmation message
+                std::this_thread::sleep_for(std::chrono::seconds(1));
             } else {
-                // User didn't confirm, show brief message
-                char* cancelledMsg[] = {"Cancelled"};
-                lcd_place_message(cancelledMsg, 1, lcd_center);
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                // User did not confirm within the timeout period
+                std::cout << "Gesture confirmation timed out" << std::endl;
+                char* timeoutMsg[] = {"Confirmation", "timed out"};
+                lcd_place_message(timeoutMsg, 2, lcd_center);
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             }
         }
         
-        // Short delay before next detection cycle
+        // Short pause before next detection cycle
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
     
-    // When stopping, leave the room if we're in one
-    if (roomManager.isConnected()) {
-        roomManager.leaveRoom();
-    }
-    
     // Cleanup
-    detector->camera.closeCamera();
-    
-    // Show simple stopped message
-    char* stoppedMsg[] = {"Detection stopped"};
-    lcd_place_message(stoppedMsg, 1, lcd_center);
+    camera.closeCamera();
 }
 
-// New helper function to display cards on LCD
+static long long getTimeInMs(void)
+{
+    struct timespec spec;
+    clock_gettime(CLOCK_REALTIME, &spec);
+    long long seconds = spec.tv_sec;
+    long long nanoSeconds = spec.tv_nsec;
+    long long milliSeconds = seconds * 1000
+            + nanoSeconds / 1000000;
+    return milliSeconds;
+}
+
+// Display a list of cards on the LCD
 void displayCardsOnLCD(const std::vector<Card>& cards) {
-    char** cardMessages = new char*[cards.size()];
-    
-    // Prepare card messages with simple numbered format
-    for (size_t i = 0; i < cards.size(); i++) {
-        std::string cardText = std::to_string(i+1) + ": " + cards[i].type;
-        cardMessages[i] = new char[cardText.length() + 1];
-        strcpy(cardMessages[i], cardText.c_str());
+    if (cards.empty()) {
+        char* noCardsMsg[] = {"No cards", "available"};
+        lcd_place_message(noCardsMsg, 2, lcd_center);
+        return;
     }
     
-    // Display cards on LCD
-    lcd_place_message(cardMessages, cards.size(), lcd_center);
-    
-    // Clean up memory
-    for (size_t i = 0; i < cards.size(); i++) {
-        delete[] cardMessages[i];
+    for (const auto& card : cards) {
+        char nameLine[32];
+        char typeLine[32];
+        
+        // Format the card information
+        snprintf(nameLine, sizeof(nameLine), "Card: %s", card.name.c_str());
+        snprintf(typeLine, sizeof(typeLine), "Type: %s", card.type.c_str());
+        
+        char* cardMsg[] = {nameLine, typeLine};
+        lcd_place_message(cardMsg, 2, lcd_center);
+        
+        // Display each card for 1.5 seconds
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
     }
-    delete[] cardMessages;
 }
 
 // Training section
@@ -449,33 +456,4 @@ void save_gesture_to_csv(int label, const std::vector<float>& data) {
     file << label;
     for (const auto& val : data) file << "," << val;
     file << "\n";
-}
-
-void GestureDetector::runTestingMode() {
-    cv::VideoCapture cap("/dev/video3");
-    if (!cap.isOpened()) {
-        std::cerr << "ERROR: Cannot open /dev/video3\n";
-        return;
-    }
-
-    cv::Mat frame;
-    while (true) {
-        cap >> frame;
-        if (frame.empty()) break;
-
-
-        std::string text = "Test Screen.";
-        cv::putText(frame, text, {220, 20}, cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-
-        std::string textExit = "Press ESC to Exit";
-        cv::putText(frame, textExit, {220, 430}, cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 255), 2);
-
-        cv::imshow("Test Screen", frame);
-        char key = static_cast<char>(cv::waitKey(10));
-
-        if (key == 27) break; // ESC
-    }
-
-    cap.release();
-    cv::destroyAllWindows();
 }

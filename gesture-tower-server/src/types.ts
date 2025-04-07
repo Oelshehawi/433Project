@@ -26,6 +26,9 @@ export type ServerEventType =
   | "gesture_event"
   | "turn_start"
   | "turn_end"
+  | "round_start"
+  | "round_end"
+  | "game_state_update"
   | "beagle_board_command";
 
 // WebSocket client extended with custom properties
@@ -55,7 +58,7 @@ export interface Room {
   createdAt: number;
   hostId: string;
   players: Player[];
-  status: "waiting" | "playing" | "ended";
+  status: "waiting" | "playing" | "ended" | "completed";
   maxPlayers: number;
   playerCards?: Map<string, PlayerCards>; // Map player IDs to their cards
   gameState?: GameState; // Game state for tower building game
@@ -130,22 +133,13 @@ export type GameActionType = "attack" | "defend" | "build";
 
 // Game state for tower building game
 export interface GameState {
-  // Player tower heights
   towerHeights: Map<string, number>;
-  // Player goal heights (random between 5-10)
   goalHeights: Map<string, number>;
-  // Current player turn ID
-  currentTurn: string;
-  // Turn start timestamp
-  turnStartTime: number;
-  // Turn duration in milliseconds (30 seconds)
-  turnDuration: number;
-  // Player shield status (true if defended)
   playerShields: Map<string, boolean>;
-  // Game winner (if game ended)
-  winner?: string;
-  // Player move status for current turn
   playerMoves: Map<string, boolean>;
+  roundNumber: number;
+  roundStartTime: number;
+  roundDuration: number;
 }
 
 // Card definition

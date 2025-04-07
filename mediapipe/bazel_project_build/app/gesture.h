@@ -31,12 +31,15 @@ private:
     RoomManager* roomManager;
     CameraHAL camera;
 
-    // Helper function for the detection thread
-    static void detectionLoop(GestureDetector* detector);
+    // Member detection loop function
+    void detectionLoop();
 
 public:
     GestureDetector();
     ~GestureDetector();
+
+    // Set room manager
+    void setRoomManager(RoomManager* rm);
 
     // Start gesture detection in a separate thread
     void startDetection();
@@ -44,13 +47,10 @@ public:
     // Stop gesture detection
     void stopDetection();
 
-    // Set room manager
-    void setRoomManager(RoomManager* manager) { roomManager = manager; }
-
     // Test if the camera is accessible
     bool testCameraAccess();
 
-    // Run webcam in testing mode (shows camera preview)
+    // Run webcam in testing mode
     void runTestingMode();
 };
 
