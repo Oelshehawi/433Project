@@ -24,6 +24,8 @@ export type ServerEventType =
   | "game_ended"
   | "error"
   | "gesture_event"
+  | "turn_start"
+  | "turn_end"
   | "beagle_board_command";
 
 // WebSocket client extended with custom properties
@@ -55,6 +57,9 @@ export interface Room {
   players: Player[];
   status: "waiting" | "playing" | "ended";
   maxPlayers: number;
+  playerCards?: Map<string, PlayerCards>; // Map player IDs to their cards
+  gameState?: GameState; // Game state for tower building game
+  currentTurn?: string; // Player ID whose turn it is
 }
 
 // Room list item for summary information
@@ -120,10 +125,61 @@ export interface GameStartedPayload {
   roomId: string;
 }
 
+// Game action types for gesture recognition
+export type GameActionType = "attack" | "defend" | "build";
+
+// Game state for tower building game
+export interface GameState {
+  // Player tower heights
+  towerHeights: Map<string, number>;
+  // Player goal heights (random between 5-10)
+  goalHeights: Map<string, number>;
+  // Current player turn ID
+  currentTurn: string;
+  // Turn start timestamp
+  turnStartTime: number;
+  // Turn duration in milliseconds (30 seconds)
+  turnDuration: number;
+  // Player shield status (true if defended)
+  playerShields: Map<string, boolean>;
+  // Game winner (if game ended)
+  winner?: string;
+  // Player move status for current turn
+  playerMoves: Map<string, boolean>;
+}
+
+// Card definition
+export interface Card {
+  id: string;
+  type: GameActionType;
+  name: string;
+  description: string;
+}
+
+// Player cards
+export interface PlayerCards {
+  playerId: string;
+  cards: Card[];
+}
+
+// Add new payload types for card actions
+export interface CardDistributionPayload {
+  playerId: string;
+  cards: Card[];
+}
+
+export interface CardActionPayload {
+  playerId: string;
+  cardId: string;
+  action: GameActionType;
+}
+
+// Update GestureEventPayload
 export interface GestureEventPayload {
   playerId: string;
-  gesture: GestureType;
+  gesture: GameActionType | GestureType;
   confidence: number;
+  cardId?: string; // Optional card ID used for the gesture
 }
 
 export interface ErrorPayload {
@@ -148,3 +204,22 @@ export type BeagleBoard = {
 
 // Update the beagleBoards map type
 export type BeagleBoardsMap = Map<string, BeagleBoard>;
+
+// Add new payload types for game state events
+export interface TurnStartPayload {
+  roomId: string;
+  playerId: string; // Player whose turn it is
+  remainingTime: number; // Time in milliseconds
+}
+
+export interface TurnEndPayload {
+  roomId: string;
+  nextPlayerId: string; // Next player's turn
+  gameState: GameState; // Updated game state
+}
+
+export interface GameEndedPayload {
+  roomId: string;
+  winnerId: string;
+  gameState: GameState;
+}

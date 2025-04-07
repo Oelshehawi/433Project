@@ -1,5 +1,10 @@
 import WebSocket from "ws";
-import { ExtendedWebSocket, WebSocketMessage, ServerEventType } from "./types";
+import {
+  ExtendedWebSocket,
+  WebSocketMessage,
+  ServerEventType,
+  GameActionType,
+} from "./types";
 import { v4 as uuidv4 } from "uuid";
 import {
   handleCreateRoom,
@@ -640,30 +645,30 @@ function setBeagleBoardReady(
       isReady ? "ready" : "not ready"
     }`
   );
-  
+
   // *** Add game start detection ***
   // Only check for game start when a player becomes ready
   if (isReady) {
     // Check if all players are ready and there are at least 2 players
-    const allPlayersReady = room.players.every(p => p.isReady);
+    const allPlayersReady = room.players.every((p) => p.isReady);
     const minPlayersForGame = 2;
     const hasEnoughPlayers = room.players.length >= minPlayersForGame;
-    
+
     if (allPlayersReady && hasEnoughPlayers) {
       console.log(`All players in room ${roomId} are ready! Starting game...`);
-      
+
       // Update room status to playing
       room.status = "playing";
-      
+
       // Send game_starting event to all clients in the room
-      sendToRoom(roomId, "game_starting", { 
+      sendToRoom(roomId, "game_starting", {
         roomId: roomId,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
-      
+
       // Update room with new status
       sendToRoom(roomId, "room_updated", { room });
-      
+
       // Also broadcast room_updated to ALL clients
       broadcastToAll("room_updated", { room });
     }
@@ -677,8 +682,9 @@ function handleGestureData(
   gestureData: string
 ) {
   try {
-    // Parse the gesture data as JSON
-    const gestureJson = JSON.parse(gestureData);
+    // Parse the gesture data
+    const gestureJson =
+      typeof gestureData === "object" ? gestureData : JSON.parse(gestureData);
 
     // Ensure a room exists with this ID
     if (!rooms.has(roomId)) {
@@ -706,18 +712,114 @@ function handleGestureData(
       return;
     }
 
+    // Determine the gesture type
+    let gestureType: string;
+    let cardId: string | undefined;
+
+    // Handle game-specific gestures for our tower defense game
+    if (typeof gestureJson === "string") {
+      // Simple string format (e.g., "basic attack", "basic defend", "basic build")
+      gestureType = gestureJson.includes("attack")
+        ? "attack"
+        : gestureJson.includes("defend")
+        ? "defend"
+        : gestureJson.includes("build")
+        ? "build"
+        : "unknown";
+    } else {
+      // JSON object format with gesture field
+      gestureType = gestureJson.gesture || "unknown";
+      // If there's a cardId in the data, use it
+      cardId = gestureJson.cardId;
+    }
+
+    console.log(`Parsed gesture: ${gestureType} from device ${deviceId}`);
+
+    // If the room has player cards, find a matching card to use
+    if (room.playerCards && room.playerCards.has(player.id) && !cardId) {
+      const playerCards = room.playerCards.get(player.id);
+      if (playerCards) {
+        // Find the first card that matches the gesture type
+        const matchingCard = playerCards.cards.find(
+          (card) => card.type === gestureType
+        );
+        if (matchingCard) {
+          cardId = matchingCard.id;
+          console.log(
+            `Found matching card ${cardId} of type ${gestureType} for player ${player.id}`
+          );
+        }
+      }
+    }
+
     // Create gesture event payload
     const payload = {
       playerId: player.id,
-      gesture: gestureJson.gesture,
+      gesture: gestureType,
       confidence: gestureJson.confidence || 1.0,
+      cardId,
     };
 
     // Send the gesture event to all clients in the room
     sendToRoom(roomId, "gesture_event", payload);
 
+    // If this is a game action and we have found a matching card
+    if (
+      (gestureType === "attack" ||
+        gestureType === "defend" ||
+        gestureType === "build") &&
+      cardId &&
+      room.playerCards &&
+      room.playerCards.has(player.id)
+    ) {
+      const playerCards = room.playerCards.get(player.id)!;
+
+      // Find the card in the player's hand
+      const cardIndex = playerCards.cards.findIndex(
+        (card) => card.id === cardId
+      );
+      if (cardIndex !== -1) {
+        // Remove the used card
+        const usedCard = playerCards.cards.splice(cardIndex, 1)[0];
+        console.log(
+          `Player ${player.id} used card ${usedCard.name} (${usedCard.id})`
+        );
+
+        // Draw a new card - use basic types only
+        const newCard = {
+          id: `card-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          type: ["attack", "defend", "build"][
+            Math.floor(Math.random() * 3)
+          ] as GameActionType,
+          name: `Basic ${
+            ["Attack", "Defend", "Build"][Math.floor(Math.random() * 3)]
+          }`,
+          description: `A basic card for ${player.name}`,
+        };
+
+        // Add the new card to the player's hand
+        playerCards.cards.push(newCard);
+        console.log(
+          `Player ${player.id} drew new card ${newCard.name} (${newCard.id})`
+        );
+
+        // Send the updated cards to the player
+        if (board.client) {
+          board.client.send(
+            JSON.stringify({
+              event: "beagle_board_command",
+              payload: {
+                command: "CARDS",
+                cards: playerCards.cards,
+              },
+            })
+          );
+        }
+      }
+    }
+
     console.log(
-      `Processed gesture ${gestureJson.gesture} from device ${deviceId} in room ${roomId}`
+      `Processed gesture ${gestureType} from device ${deviceId} in room ${roomId}`
     );
   } catch (error) {
     console.error("Error handling gesture data:", error);

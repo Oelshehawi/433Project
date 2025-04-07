@@ -1,77 +1,52 @@
 import { motion } from "framer-motion";
 
 interface ShieldProps {
-  isActive: boolean;
-  playerSide: 'left' | 'right';
-  blockCount: number;
+  playerId: string;
+  isVisible: boolean;
 }
 
-export default function Shield({ isActive, playerSide, blockCount = 0 }: ShieldProps) {
-  if (!isActive) return null;
-  
-  // Calculate position based on tower blocks
-  const blockHeight = 40; // Same as in TowerBlock component
-  const bottomOffset = blockCount * blockHeight;
-  
-  // Position adjustments to place shield in front of player
-  const positionStyles = {
-    left: playerSide === 'left' ? 'calc(25% - 20px)' : 'auto',
-    right: playerSide === 'right' ? 'calc(25% - 20px)' : 'auto',
-    bottom: `${bottomOffset + 20}px`
-  };
-  
+export default function Shield({ playerId, isVisible }: ShieldProps) {
+  if (!isVisible) return null;
+
+  const isPlayer1 = playerId === "player1";
+
   return (
     <motion.div
-      className="absolute z-50"
-      style={positionStyles}
-      initial={{ opacity: 0, scale: 0.8 }}
-      animate={{ 
-        opacity: 1, 
-        scale: [0.9, 1.1, 1],
-      }}
-      transition={{
-        duration: 0.5,
-        scale: {
-          repeat: Infinity,
-          repeatType: "reverse",
-          duration: 2
-        }
-      }}
+      className={`absolute bottom-48 ${
+        isPlayer1 ? "left-[25%]" : "right-[25%]"
+      } transform ${isPlayer1 ? "-translate-x-1/2" : "translate-x-1/2"}`}
+      initial={{ opacity: 0, scale: 0 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0 }}
+      transition={{ type: "spring", damping: 12 }}
     >
-      {/* Shield circle */}
-      <div 
-        className="w-36 h-36 rounded-full"
-        style={{
-          background: "radial-gradient(circle, rgba(147, 51, 234, 0.7) 0%, rgba(168, 85, 247, 0.5) 40%, rgba(192, 132, 252, 0.3) 80%, rgba(216, 180, 254, 0) 100%)",
-          boxShadow: "0 0 15px #a855f7, 0 0 30px #a855f7",
-          filter: "blur(1px)"
-        }}
-      />
-      
-      {/* Shield inner glow/pulsing effect */}
-      <motion.div 
-        className="absolute inset-0 w-36 h-36 rounded-full"
-        style={{
-          background: "radial-gradient(circle, rgba(168, 85, 247, 0.4) 0%, rgba(192, 132, 252, 0.1) 50%, transparent 70%)",
-        }}
-        animate={{
-          opacity: [0.3, 0.8, 0.3]
-        }}
-        transition={{
-          duration: 1.5,
-          repeat: Infinity,
-          ease: "easeInOut"
-        }}
-      />
-      
-      {/* Shield hexagon pattern */}
-      <div 
-        className="absolute inset-0 w-36 h-36 rounded-full overflow-hidden opacity-20"
-        style={{
-          backgroundImage: "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"50\" viewBox=\"0 0 50 50\"><path d=\"M25,2 L48,13 L48,37 L25,48 L2,37 L2,13 Z\" fill=\"none\" stroke=\"%23d8b4fe\" stroke-width=\"1\"/></svg>')",
-          backgroundSize: "15px 15px"
-        }}
-      />
+      {/* Shield Glow Effect */}
+      <div className="absolute inset-0 bg-purple-500 rounded-full filter blur-xl opacity-50 scale-125 animate-pulse"></div>
+
+      {/* Shield Circle */}
+      <motion.div
+        className={`w-24 h-24 rounded-full bg-gradient-to-br ${
+          isPlayer1
+            ? "from-blue-400 to-purple-600"
+            : "from-red-400 to-purple-600"
+        } flex items-center justify-center border-4 border-white/30 shadow-lg z-10`}
+        animate={{ rotate: 360 }}
+        transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+      >
+        <motion.div
+          className="w-16 h-16 rounded-full bg-purple-500/30 backdrop-blur-sm flex items-center justify-center border border-white/50"
+          animate={{ scale: [1, 1.1, 1] }}
+          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <svg
+            className="w-10 h-10 text-white"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" />
+          </svg>
+        </motion.div>
+      </motion.div>
     </motion.div>
   );
-} 
+}

@@ -44,6 +44,17 @@ export default function GamePage() {
   const [player1Name, setPlayer1Name] = useState("Player 1");
   const [player2Name, setPlayer2Name] = useState("Player 2");
 
+  // Game state for tower building
+  const [player1TowerHeight, setPlayer1TowerHeight] = useState(0);
+  const [player2TowerHeight, setPlayer2TowerHeight] = useState(0);
+  const [player1GoalHeight, setPlayer1GoalHeight] = useState(5);
+  const [player2GoalHeight, setPlayer2GoalHeight] = useState(5);
+  const [currentTurn, setCurrentTurn] = useState<string>("");
+  const [turnTimeRemaining, setTurnTimeRemaining] = useState(30);
+  const [turnTimer, setTurnTimer] = useState<NodeJS.Timeout | null>(null);
+  const [gameEnded, setGameEnded] = useState(false);
+  const [winner, setWinner] = useState<string>("");
+
   // Initialize WebSocket connection
   useEffect(() => {
     const socket = initializeSocket();
@@ -115,6 +126,150 @@ export default function GamePage() {
     }
   }, [gameState, textAnimationComplete, rulesAnimationComplete]);
 
+  // Add event listeners for tower game events
+  useEffect(() => {
+    if (socketConnected) {
+      // Turn start event handler
+      const handleTurnStart = (event: CustomEvent) => {
+        const data = event.detail;
+        if (data.roomId === roomId) {
+          setCurrentTurn(data.playerId);
+          setTurnTimeRemaining(Math.floor(data.remainingTime / 1000));
+
+          // Start countdown timer
+          if (turnTimer) clearInterval(turnTimer);
+          const timer = setInterval(() => {
+            setTurnTimeRemaining((prev) => {
+              if (prev <= 1) {
+                clearInterval(timer);
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+
+          setTurnTimer(timer);
+        }
+      };
+
+      // Turn end event handler
+      const handleTurnEnd = (event: CustomEvent) => {
+        const data = event.detail;
+        if (data.roomId === roomId) {
+          setCurrentTurn(data.nextPlayerId);
+
+          // Update game state
+          if (data.gameState) {
+            const gameState = data.gameState;
+
+            // Get player IDs from the room data
+            const beagleBoardPlayers =
+              currentRoom?.players.filter(
+                (p) => p.playerType === "beagleboard"
+              ) || [];
+
+            // Update tower heights
+            if (gameState.towerHeights && beagleBoardPlayers.length >= 2) {
+              const player1Id = beagleBoardPlayers[0].id;
+              const player2Id = beagleBoardPlayers[1].id;
+
+              setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
+              setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
+            }
+
+            // Update goal heights if they exist
+            if (gameState.goalHeights && beagleBoardPlayers.length >= 2) {
+              const player1Id = beagleBoardPlayers[0].id;
+              const player2Id = beagleBoardPlayers[1].id;
+
+              setPlayer1GoalHeight(gameState.goalHeights[player1Id] || 5);
+              setPlayer2GoalHeight(gameState.goalHeights[player2Id] || 5);
+            }
+          }
+        }
+      };
+
+      // Game ended event handler
+      const handleGameEnded = (event: CustomEvent) => {
+        const data = event.detail;
+        if (data.roomId === roomId) {
+          setGameEnded(true);
+          setWinner(data.winnerId);
+
+          // Clear any existing timer
+          if (turnTimer) clearInterval(turnTimer);
+
+          // Update final game state
+          if (data.gameState) {
+            const gameState = data.gameState;
+
+            // Get player IDs from the room data
+            const beagleBoardPlayers =
+              currentRoom?.players.filter(
+                (p) => p.playerType === "beagleboard"
+              ) || [];
+
+            // Update tower heights
+            if (gameState.towerHeights && beagleBoardPlayers.length >= 2) {
+              const player1Id = beagleBoardPlayers[0].id;
+              const player2Id = beagleBoardPlayers[1].id;
+
+              setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
+              setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
+            }
+          }
+        }
+      };
+
+      // Gesture event handler to update UI
+      const handleGestureEvent = (event: CustomEvent) => {
+        const data = event.detail;
+        // Update UI based on the gesture (could add animations later)
+        console.log(
+          "Gesture received:",
+          data.gesture,
+          "from player:",
+          data.playerId
+        );
+      };
+
+      // Add event listeners
+      window.addEventListener("turn_start", handleTurnStart as EventListener);
+      window.addEventListener("turn_end", handleTurnEnd as EventListener);
+      window.addEventListener("game_ended", handleGameEnded as EventListener);
+      window.addEventListener(
+        "gesture_event",
+        handleGestureEvent as EventListener
+      );
+
+      // Cleanup on unmount
+      return () => {
+        window.removeEventListener(
+          "turn_start",
+          handleTurnStart as EventListener
+        );
+        window.removeEventListener("turn_end", handleTurnEnd as EventListener);
+        window.removeEventListener(
+          "game_ended",
+          handleGameEnded as EventListener
+        );
+        window.removeEventListener(
+          "gesture_event",
+          handleGestureEvent as EventListener
+        );
+
+        if (turnTimer) clearInterval(turnTimer);
+      };
+    }
+  }, [socketConnected, roomId, currentRoom, turnTimer]);
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (turnTimer) clearInterval(turnTimer);
+    };
+  }, [turnTimer]);
+
   // Shield toggle handlers
   const togglePlayer1Shield = () => {
     setPlayer1ShieldActive((prev) => !prev);
@@ -139,6 +294,25 @@ export default function GamePage() {
 
   const removePlayer2Block = () => {
     setPlayer2BlockCount((prev) => Math.max(0, prev - 1));
+  };
+
+  // Update player names display
+  const getPlayerNameById = (playerId: string): string => {
+    if (!currentRoom) return playerId;
+    const player = currentRoom.players.find((p) => p.id === playerId);
+    return player ? player.name : playerId;
+  };
+
+  // Determine whose turn it is for display
+  const getCurrentTurnDisplay = (): string => {
+    if (!currentTurn) return "Waiting for turn to start...";
+    return `${getPlayerNameById(currentTurn)}'s Turn (${turnTimeRemaining}s)`;
+  };
+
+  // Game ending display
+  const getGameEndedDisplay = (): string => {
+    if (!winner) return "Game Ended";
+    return `${getPlayerNameById(winner)} Wins!`;
   };
 
   // Loading states
@@ -187,103 +361,58 @@ export default function GamePage() {
         {/* Center Divider */}
         <CenterDivider />
 
-        {/* Shield Control Buttons */}
-        <ShieldButtons
-          isVisible={
-            gameState === "playing" ||
-            (gameState === "starting" && animationComplete)
-          }
-          onPlayer1Shield={togglePlayer1Shield}
-          onPlayer2Shield={togglePlayer2Shield}
-          isPlayer1ShieldActive={player1ShieldActive}
-          isPlayer2ShieldActive={player2ShieldActive}
-        />
+        {/* Game state display */}
+        {gameState === "playing" && (
+          <>
+            {/* Turn indicator */}
+            <div className="absolute top-4 left-0 right-0 text-center">
+              <div className="bg-gray-800/80 text-white px-4 py-2 rounded-md inline-block">
+                {gameEnded ? getGameEndedDisplay() : getCurrentTurnDisplay()}
+              </div>
+            </div>
 
-        {/* Tower Control Buttons */}
-        <TowerControls
-          isVisible={
-            gameState === "playing" ||
-            (gameState === "starting" && animationComplete)
-          }
-          playerSide="left"
-          onAdd={addPlayer1Block}
-          onRemove={removePlayer1Block}
-          blockCount={player1BlockCount}
-        />
+            {/* Tower blocks for both players */}
+            <TowerBlocks
+              player1Blocks={player1TowerHeight}
+              player2Blocks={player2TowerHeight}
+              player1Goal={player1GoalHeight}
+              player2Goal={player2GoalHeight}
+              isVisible={gameState === "playing"}
+            />
 
-        <TowerControls
-          isVisible={
-            gameState === "playing" ||
-            (gameState === "starting" && animationComplete)
-          }
-          playerSide="right"
-          onAdd={addPlayer2Block}
-          onRemove={removePlayer2Block}
-          blockCount={player2BlockCount}
-        />
+            {/* Player displays */}
+            <Player
+              playerId="player1"
+              name={player1Name}
+              isVisible={
+                gameState === "playing" ||
+                (gameState === "starting" && animationComplete)
+              }
+            />
+            <Player
+              playerId="player2"
+              name={player2Name}
+              isVisible={
+                gameState === "playing" ||
+                (gameState === "starting" && animationComplete)
+              }
+            />
 
-        {/* Player 1 Side with Shield */}
-        <div className="relative w-1/2 h-full flex items-end justify-center">
-          <Player
-            playerNumber={1}
-            isVisible={
-              gameState === "playing" ||
-              (gameState === "starting" && animationComplete)
-            }
-            blockCount={player1BlockCount}
-            playerName={player1Name}
-          />
-          <TowerBlocks count={player1BlockCount} playerSide="left" />
-        </div>
-        <Shield
-          isActive={player1ShieldActive}
-          playerSide="left"
-          blockCount={player1BlockCount}
-        />
-
-        {/* Player 2 Side with Shield */}
-        <div className="relative w-1/2 h-full flex items-end justify-center">
-          <Player
-            playerNumber={2}
-            isVisible={
-              gameState === "playing" ||
-              (gameState === "starting" && animationComplete)
-            }
-            blockCount={player2BlockCount}
-            playerName={player2Name}
-          />
-          <TowerBlocks count={player2BlockCount} playerSide="right" />
-        </div>
-        <Shield
-          isActive={player2ShieldActive}
-          playerSide="right"
-          blockCount={player2BlockCount}
-        />
-
-        {/* Room Info - using real room ID from params */}
-        <RoomInfo
-          roomId={roomId}
-          isVisible={
-            gameState === "playing" ||
-            (gameState === "starting" && animationComplete)
-          }
-        />
-
-        {/* Back Button - returns to home */}
-        <BackButton
-          isVisible={
-            gameState === "playing" ||
-            (gameState === "starting" && animationComplete)
-          }
-          returnToRoom={false}
-        />
-
-        {/* Error display */}
-        {error && (
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-danger/50 text-white p-3 rounded-md z-50">
-            {error}
-          </div>
+            {/* Display shields if active */}
+            <Shield
+              playerId="player1"
+              isVisible={player1ShieldActive && gameState === "playing"}
+            />
+            <Shield
+              playerId="player2"
+              isVisible={player2ShieldActive && gameState === "playing"}
+            />
+          </>
         )}
+
+        {/* Game info and back button */}
+        <RoomInfo roomId={roomId} />
+        <BackButton />
       </div>
     </div>
   );

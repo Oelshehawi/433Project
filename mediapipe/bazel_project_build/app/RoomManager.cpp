@@ -166,13 +166,194 @@ void RoomManager::handleMessage(const std::string& message) {
             }
             resetLoadingState();
         }
-        else if (j.contains("event") && j["event"] == "gesture_event") {
-            // Handle gesture events if needed
+        else if (j.contains("event") && j["event"] == "turn_start") {
+            // Handle turn start event
+            if (j.contains("payload")) {
+                auto& payload = j["payload"];
+                if (payload.contains("playerId") && payload.contains("remainingTime")) {
+                    std::lock_guard<std::mutex> lock(gameStateMutex);
+                    
+                    std::string turnPlayerId = payload["playerId"];
+                    int remainingTime = payload["remainingTime"];
+                    
+                    // Update current turn
+                    currentTurnPlayerId = turnPlayerId;
+                    isMyTurn = (turnPlayerId == deviceId);
+                    
+                    // Calculate turn end time
+                    turnTimeoutSeconds = remainingTime / 1000; // Convert ms to seconds
+                    turnEndTime = std::chrono::steady_clock::now() + std::chrono::milliseconds(remainingTime);
+                    
+                    std::cout << "Turn started for player " << turnPlayerId 
+                              << (isMyTurn ? " (YOU)" : "") 
+                              << ". Time remaining: " << turnTimeoutSeconds << " seconds" << std::endl;
+                }
+            }
+        }
+        else if (j.contains("event") && j["event"] == "turn_end") {
+            // Handle turn end event
+            if (j.contains("payload")) {
+                auto& payload = j["payload"];
+                if (payload.contains("nextPlayerId") && payload.contains("gameState")) {
+                    std::lock_guard<std::mutex> lock(gameStateMutex);
+                    
+                    // Update whose turn is next
+                    currentTurnPlayerId = payload["nextPlayerId"];
+                    isMyTurn = (currentTurnPlayerId == deviceId);
+                    
+                    // Parse the game state
+                    auto& gameState = payload["gameState"];
+                    
+                    // Update tower heights if available as JSON objects
+                    if (gameState.contains("towerHeights")) {
+                        for (auto& [playerId, height] : gameState["towerHeights"].items()) {
+                            if (playerId == deviceId) {
+                                myTowerHeight = height;
+                            } else {
+                                opponentTowerHeight = height;
+                            }
+                        }
+                    }
+                    
+                    // Update goal heights if available
+                    if (gameState.contains("goalHeights")) {
+                        for (auto& [playerId, height] : gameState["goalHeights"].items()) {
+                            if (playerId == deviceId) {
+                                myGoalHeight = height;
+                            } else {
+                                opponentGoalHeight = height;
+                            }
+                        }
+                    }
+                    
+                    // Update shield status if available
+                    if (gameState.contains("playerShields")) {
+                        for (auto& [playerId, shieldActive] : gameState["playerShields"].items()) {
+                            if (playerId == deviceId) {
+                                myShieldActive = shieldActive;
+                            } else {
+                                opponentShieldActive = shieldActive;
+                            }
+                        }
+                    }
+                    
+                    std::cout << "Turn ended. Next player: " << currentTurnPlayerId 
+                              << (isMyTurn ? " (YOU)" : "") << std::endl;
+                    std::cout << "Your tower height: " << myTowerHeight << "/" << myGoalHeight 
+                              << ", Opponent: " << opponentTowerHeight << "/" << opponentGoalHeight << std::endl;
+                }
+            }
+        }
+        else if (j.contains("event") && j["event"] == "game_started") {
+            // Handle game started event
+            std::lock_guard<std::mutex> lock(gameStateMutex);
+            
+            // Reset game state
+            myTowerHeight = 0;
+            opponentTowerHeight = 0;
+            myShieldActive = false;
+            opponentShieldActive = false;
+            isMyTurn = false;
+            gameInProgress = true;
+            
+            std::cout << "Game started!" << std::endl;
+        }
+        else if (j.contains("event") && j["event"] == "game_ended") {
+            // Handle game ended event
+            if (j.contains("payload")) {
+                auto& payload = j["payload"];
+                if (payload.contains("winnerId")) {
+                    std::lock_guard<std::mutex> lock(gameStateMutex);
+                    
+                    std::string winnerId = payload["winnerId"];
+                    bool isWinner = (winnerId == deviceId);
+                    
+                    gameInProgress = false;
+                    
+                    std::cout << "Game ended. Winner: " << winnerId 
+                              << (isWinner ? " (YOU WIN!)" : " (You lose)") << std::endl;
+                }
+            }
+        }
+        else if (j.contains("event") && j["event"] == "beagle_board_command") {
+            // Handle beagle board specific commands
+            if (j.contains("payload") && j["payload"].contains("command")) {
+                std::string command = j["payload"]["command"];
+                
+                if (command == "CARDS" && j["payload"].contains("cards")) {
+                    // Process card data from server
+                    std::lock_guard<std::mutex> lock(cardsMutex);
+                    playerCards.clear();
+                    
+                    for (const auto& cardJson : j["payload"]["cards"]) {
+                        Card card;
+                        card.id = cardJson["id"];
+                        card.type = cardJson["type"];
+                        card.name = cardJson["name"];
+                        card.description = cardJson["description"];
+                        playerCards.push_back(card);
+                    }
+                    
+                    std::cout << "Received " << playerCards.size() << " cards from server" << std::endl;
+                    for (const auto& card : playerCards) {
+                        std::cout << "Card: " << card.name << " (" << card.type << ") - " << card.description << std::endl;
+                    }
+                }
+                else if (command == "GAME_STATE" && j["payload"].contains("gameState")) {
+                    // Handle full game state update
+                    std::lock_guard<std::mutex> lock(gameStateMutex);
+                    
+                    auto& gameState = j["payload"]["gameState"];
+                    
+                    // Parse all relevant game state
+                    if (gameState.contains("towerHeights")) {
+                        for (auto& [playerId, height] : gameState["towerHeights"].items()) {
+                            if (playerId == deviceId) {
+                                myTowerHeight = height;
+                            } else {
+                                opponentTowerHeight = height;
+                            }
+                        }
+                    }
+                    
+                    if (gameState.contains("goalHeights")) {
+                        for (auto& [playerId, height] : gameState["goalHeights"].items()) {
+                            if (playerId == deviceId) {
+                                myGoalHeight = height;
+                            } else {
+                                opponentGoalHeight = height;
+                            }
+                        }
+                    }
+                    
+                    if (gameState.contains("currentTurn")) {
+                        currentTurnPlayerId = gameState["currentTurn"];
+                        isMyTurn = (currentTurnPlayerId == deviceId);
+                    }
+                    
+                    std::cout << "Received full game state update" << std::endl;
+                    std::cout << "Your tower: " << myTowerHeight << "/" << myGoalHeight 
+                              << ", Opponent: " << opponentTowerHeight << "/" << opponentGoalHeight << std::endl;
+                    std::cout << "Current turn: " << (isMyTurn ? "YOUR TURN" : "OPPONENT'S TURN") << std::endl;
+                }
+            }
+            
             resetLoadingState();
         }
-        else if (j.contains("event") && j["event"] == "game_start") {
-            // Handle game start event
-            std::cout << "Game is starting!" << std::endl;
+        else if (j.contains("event") && j["event"] == "gesture_event") {
+            // Handle gesture events
+            if (j.contains("payload")) {
+                auto& payload = j["payload"];
+                if (payload.contains("playerId") && payload.contains("gesture")) {
+                    std::string playerId = payload["playerId"];
+                    std::string gesture = payload["gesture"];
+                    
+                    // Log gesture event
+                    std::cout << "Gesture event: " << gesture << " from player " << playerId 
+                              << (playerId == deviceId ? " (YOU)" : "") << std::endl;
+                }
+            }
+            
             resetLoadingState();
         }
         else {
@@ -400,16 +581,14 @@ void RoomManager::setReady(bool isReady) {
 }
 
 bool RoomManager::sendGestureData(const std::string& gestureData) {
-    if (!client || !connected) {
+    if (!client || !client->isConnected() || !connected) {
+        std::cerr << "Cannot send gesture data: not connected" << std::endl;
         return false;
     }
-
-    // Keep the GESTURE command format as it's expected by the server
-    std::string cmd = "GESTURE|DeviceID:" + deviceId + 
-                     "|RoomID:" + currentRoomId + 
-                     "|" + gestureData;
     
-    return client->sendMessage(cmd);
+    // Simple string version for backward compatibility
+    std::string message = "GESTURE|DeviceID:" + deviceId + "|RoomID:" + currentRoomId + "|" + gestureData;
+    return client->sendMessage(message);
 }
 
 const std::vector<Room> RoomManager::getAvailableRooms() const {
@@ -585,4 +764,103 @@ bool RoomManager::sendMessageWithTracking(const std::string& message, const std:
     
     // Send the message
     return client->sendMessage(message);
+}
+
+// Card management implementations
+const std::vector<Card> RoomManager::getPlayerCards() const {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(cardsMutex));
+    return playerCards;
+}
+
+Card* RoomManager::findCardByType(const std::string& type) {
+    std::lock_guard<std::mutex> lock(cardsMutex);
+    for (auto& card : playerCards) {
+        if (card.type == type) {
+            return &card;
+        }
+    }
+    return nullptr;
+}
+
+bool RoomManager::sendCardAction(const std::string& cardId, const std::string& action) {
+    if (!client || !client->isConnected() || !connected) {
+        std::cerr << "Cannot send card action: not connected" << std::endl;
+        return false;
+    }
+    
+    // Check if the action is valid
+    if (action != "attack" && action != "defend" && action != "build") {
+        std::cerr << "Invalid card action: " << action << std::endl;
+        return false;
+    }
+    
+    // Check if we have this card
+    bool cardFound = false;
+    {
+        std::lock_guard<std::mutex> lock(cardsMutex);
+        for (const auto& card : playerCards) {
+            if (card.id == cardId) {
+                cardFound = true;
+                break;
+            }
+        }
+    }
+    
+    if (!cardFound) {
+        std::cerr << "Card not found: " << cardId << std::endl;
+        return false;
+    }
+    
+    // Create JSON gesture data
+    json gestureData = {
+        {"gesture", action},
+        {"cardId", cardId},
+        {"confidence", 1.0}
+    };
+    
+    // Send the gesture data
+    std::string message = "GESTURE|DeviceID:" + deviceId + "|RoomID:" + currentRoomId + "|" + gestureData.dump();
+    return client->sendMessage(message);
+}
+
+// Get the opponent's name
+std::string RoomManager::getOpponentName() const {
+    return opponentName;
+}
+
+// Get the remaining time in the current turn (in seconds)
+int RoomManager::getRemainingTurnTime() const {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(gameStateMutex));
+    
+    auto now = std::chrono::steady_clock::now();
+    auto remaining = std::chrono::duration_cast<std::chrono::seconds>(turnEndTime - now).count();
+    
+    return remaining > 0 ? static_cast<int>(remaining) : 0;
+}
+
+// Check if it's this player's turn
+bool RoomManager::isPlayerTurn() const {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(gameStateMutex));
+    return isMyTurn;
+}
+
+// Get the current tower heights and goal heights
+void RoomManager::getTowerStatus(int& myHeight, int& myGoal, int& oppHeight, int& oppGoal) const {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(gameStateMutex));
+    myHeight = myTowerHeight;
+    myGoal = myGoalHeight;
+    oppHeight = opponentTowerHeight;
+    oppGoal = opponentGoalHeight;
+}
+
+// Check if my shield is active
+bool RoomManager::isShieldActive() const {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(gameStateMutex));
+    return myShieldActive;
+}
+
+// Check if the game is in progress
+bool RoomManager::isGameActive() const {
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(gameStateMutex));
+    return gameInProgress;
 } 

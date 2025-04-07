@@ -10,9 +10,12 @@ import {
   PlayerReadyPayload,
   GameStartedPayload,
   GestureEventPayload,
+  GameActionType,
 } from "./types";
-import { broadcastToAll, sendToClient, sendToRoom } from "./messaging";
+import { broadcastToAll, sendToClient, sendToRoom, clients } from "./messaging";
 import { broadcastToAllClients } from "./server";
+import { initializeCardsForRoom } from "./cardManager";
+import { initializeGameState, processAction } from "./gameManager";
 
 // Store active rooms
 export const rooms: Map<string, Room> = new Map();
@@ -390,39 +393,75 @@ export const handleGameStart = (
 
     const room = rooms.get(roomId)!;
 
-    // Check if all players are ready
-    const allPlayersReady = room.players.every((player) => player.isReady);
+    // Check if at least 2 players are ready
+    const readyBeagleBoardPlayers = room.players.filter(
+      (player) => player.playerType === "beagleboard" && player.isReady
+    );
 
-    if (!allPlayersReady) {
+    if (readyBeagleBoardPlayers.length < 2) {
       return sendToClient(client, "error", {
-        error: "Not all players are ready",
+        error: "At least 2 BeagleBoard players must be ready to start",
       } as ErrorPayload);
     }
 
-    // Restore proper host check for multiplayer
-    // Check if client is the host
-    if (client.playerId !== room.hostId) {
-      return sendToClient(client, "error", {
-        error: "Only the host can start the game",
-      } as ErrorPayload);
-    }
-
-    // Update room status
+    // Set room status to playing
     room.status = "playing";
 
-    console.log(`Game started in room ${room.name} (${roomId})`);
+    // Initialize cards for the room
+    const cardsInitialized = initializeCardsForRoom(roomId);
+    if (!cardsInitialized) {
+      console.error(`Failed to initialize cards for room ${roomId}`);
+      // Continue anyway, the game can still start without cards
+    }
 
-    // Notify all clients in the room
-    sendToRoom(roomId, "room_updated", { room });
-    sendToRoom(roomId, "game_started", { roomId });
+    // Send a countdown to all clients in the room
+    sendToRoom(roomId, "game_starting", { countdown: 3 });
 
-    // Update room list for all clients
-    broadcastToAllClients({
-      event: "room_list",
-      payload: {
-        rooms: getRoomList(),
-      },
-    });
+    // Delay the actual game start to allow for countdown animation
+    setTimeout(() => {
+      // Notify all clients that the game has started
+      sendToRoom(roomId, "game_started", { roomId });
+
+      // For each BeagleBoard player, send their initial cards
+      if (room.playerCards) {
+        room.players
+          .filter((player) => player.playerType === "beagleboard")
+          .forEach((player) => {
+            const playerCards = room.playerCards!.get(player.id);
+
+            if (playerCards) {
+              // Find the client for this player
+              const playerClient = Array.from(clients.values()).find(
+                (c: ExtendedWebSocket) => c.playerId === player.id
+              );
+
+              if (playerClient) {
+                sendToClient(playerClient, "beagle_board_command", {
+                  command: "CARDS",
+                  cards: playerCards.cards,
+                });
+              }
+            }
+          });
+      }
+
+      // Initialize game state with goal heights and turn order
+      const gameStateInitialized = initializeGameState(roomId);
+      if (!gameStateInitialized) {
+        console.error(`Failed to initialize game state for room ${roomId}`);
+        // This is more serious, but we'll continue and try to recover
+      }
+
+      // Update room list
+      broadcastToAllClients({
+        event: "room_list",
+        payload: {
+          rooms: getRoomList(),
+        },
+      });
+    }, 3000); // 3 second countdown
+
+    console.log(`Game started in room ${roomId}`);
   } catch (error) {
     console.error("Error starting game:", error);
     sendToClient(client, "error", {
@@ -437,7 +476,7 @@ export const handleGestureEvent = (
   payload: GestureEventPayload
 ) => {
   try {
-    const { playerId, gesture, confidence } = payload;
+    const { playerId, gesture, confidence, cardId } = payload;
     const roomId = client.roomId;
 
     // Validate data
@@ -450,12 +489,95 @@ export const handleGestureEvent = (
       return;
     }
 
+    const room = rooms.get(roomId)!;
+
     console.log(
       `Gesture event: ${gesture} from player ${playerId} (conf: ${confidence})`
     );
 
+    // Check if it's this player's turn or if we allow simultaneous play
+    if (room.gameState && room.gameState.currentTurn !== playerId) {
+      // If it's not the player's turn, check if they have already moved this turn
+      if (room.gameState.playerMoves.get(playerId)) {
+        // Player has already moved this turn
+        console.log(`Player ${playerId} has already moved this turn`);
+        return;
+      }
+    }
+
+    // If this is a game action (attack, defend, build)
+    if (gesture === "attack" || gesture === "defend" || gesture === "build") {
+      // Process the action in the game state
+      if (room.gameState) {
+        const actionProcessed = processAction(
+          roomId,
+          playerId,
+          gesture as GameActionType
+        );
+        if (!actionProcessed) {
+          console.error(
+            `Failed to process action ${gesture} for player ${playerId}`
+          );
+        }
+      }
+
+      // If there's a card ID, process card usage
+      if (cardId && room.playerCards && room.playerCards.has(playerId)) {
+        // Process card action
+        const playerCards = room.playerCards.get(playerId);
+
+        if (playerCards) {
+          // Find the card
+          const cardIndex = playerCards.cards.findIndex(
+            (card) => card.id === cardId
+          );
+
+          if (cardIndex !== -1) {
+            const card = playerCards.cards[cardIndex];
+
+            // Check if card type matches the gesture
+            if (card.type === gesture) {
+              // Remove the used card
+              playerCards.cards.splice(cardIndex, 1);
+
+              // Draw a new card - use basic types only
+              const newCard = {
+                id: `new-${Date.now()}`,
+                type: ["attack", "defend", "build"][
+                  Math.floor(Math.random() * 3)
+                ] as GameActionType,
+                name: `Basic ${
+                  gesture.charAt(0).toUpperCase() + gesture.slice(1)
+                }`,
+                description: `A basic ${gesture} card`,
+              };
+
+              playerCards.cards.push(newCard);
+
+              // Send the updated cards back to the player
+              const playerClient = Array.from(clients.values()).find(
+                (c: ExtendedWebSocket) => c.playerId === playerId
+              );
+
+              if (playerClient) {
+                sendToClient(playerClient, "beagle_board_command", {
+                  command: "CARDS",
+                  cards: playerCards.cards,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Broadcast gesture event to all players in the room
-    sendToRoom(roomId, "gesture_event", { playerId, gesture, confidence });
+    sendToRoom(roomId, "gesture_event", {
+      playerId,
+      gesture,
+      confidence,
+      cardId,
+    });
   } catch (error) {
     console.error("Error handling gesture event:", error);
   }

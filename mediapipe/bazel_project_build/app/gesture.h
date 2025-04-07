@@ -7,12 +7,22 @@
 #include <thread>
 #include <atomic>
 #include <string>
+#include <vector>
 
 // Define gesture result structure
 struct GestureResult {
     const char* gesture_name;
     float confidence;
 };
+
+// Forward declaration
+class RoomManager;
+
+// Detect gesture function prototype
+bool detect_gesture(GestureResult* result, CameraHAL& camera);
+
+// Helper function to display cards on LCD
+void displayCardsOnLCD(const std::vector<Card>& cards);
 
 class GestureDetector {
 private:
@@ -43,8 +53,5 @@ public:
     // Run webcam in testing mode (shows camera preview)
     void runTestingMode();
 };
-
-// Function to detect gesture
-bool detect_gesture(GestureResult* result, CameraHAL& camera);
 
 #endif // GESTURE_H

@@ -1,87 +1,48 @@
 import { motion } from "framer-motion";
-import Image from "next/image";
 
 interface PlayerProps {
-  playerNumber: 1 | 2;
+  playerId: string;
+  name: string;
   isVisible: boolean;
-  blockCount: number;
-  playerName?: string;
 }
 
-export default function Player({ playerNumber, isVisible, blockCount = 0, playerName }: PlayerProps) {
-  // Different animation timing for visual interest between players
-  const bounceDuration = playerNumber === 1 ? 1.5 : 1.8;
-  
-  // Calculate bottom position based on tower blocks
-  const blockHeight = 40; // Same as in TowerBlock component
-  const bottomPosition = blockCount * blockHeight;
-  
-  // Default player name if not provided
-  const displayName = playerName || `Player ${playerNumber}`;
-  
+export default function Player({ playerId, name, isVisible }: PlayerProps) {
+  if (!isVisible) return null;
+
+  const isPlayer1 = playerId === "player1";
+
   return (
     <motion.div
-       className={`absolute ${playerNumber === 1 ? 'left-[25%]' : 'right-[25%]'}`}
-      initial={{ y: 500, opacity: 0 }}
-      animate={isVisible ? { y: 0, opacity: 1 } : { y: 500, opacity: 0 }}
-      style={{ 
-        bottom: `${bottomPosition}px`,
-        transform: 'translateX(-40%)'
-      }}
-      transition={{ 
-        type: "spring", 
-        damping: 12,
-        stiffness: 100,
-        delay: 1.3
-      }}
+      className={`absolute bottom-5 ${
+        isPlayer1 ? "left-[25%]" : "right-[25%]"
+      } transform ${
+        isPlayer1 ? "-translate-x-1/2" : "translate-x-1/2"
+      } flex flex-col items-center`}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2 }}
     >
-      {/* Player Name Label */}
-      <motion.div 
-        className="absolute left-1/2 -translate-x-1/2 -top-12 whitespace-nowrap"
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1.5 }}
+      {/* Player Avatar */}
+      <div
+        className={`w-20 h-20 rounded-full bg-gradient-to-br ${
+          isPlayer1 ? "from-blue-500 to-blue-700" : "from-red-500 to-red-700"
+        } flex items-center justify-center shadow-lg`}
       >
-        <div className="bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full border border-white/20 shadow-lg">
-          <span className="text-white font-bold">{displayName}</span>
-        </div>
-      </motion.div>
-      
-      {/* Player Shadow */}
-      <motion.div 
-        className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-24 h-6 bg-black/30 rounded-full blur-sm z-0"
-        animate={{ 
-          scaleX: [1, 1.05, 1],
-          scaleY: [1, 0.95, 1],
-        }}
-        transition={{
-          repeat: Infinity,
-          duration: bounceDuration,
-          ease: "easeInOut"
-        }}
-      />
-      
-      {/* Player Sprite */}
-      <motion.div
-        className="z-20 flex justify-center"
-        animate={{ 
-          y: [0, -5, 0],
-        }}
-        transition={{
-          repeat: Infinity,
-          duration: bounceDuration,
-          ease: "easeInOut"
-        }}
-      >
-        <Image 
-          src={`/p${playerNumber}.png`}
-          alt={`Player ${playerNumber}`}
-          width={180}
-          height={180}
-          className="z-10"
-          priority
-        />
-      </motion.div>
+        <span className="text-white text-3xl font-bold">
+          {isPlayer1 ? "P1" : "P2"}
+        </span>
+      </div>
+
+      {/* Player Name */}
+      <div className="mt-2 bg-gray-900/70 px-3 py-1 rounded-md">
+        <span
+          className={`text-lg font-bold ${
+            isPlayer1 ? "text-blue-300" : "text-red-300"
+          }`}
+        >
+          {name}
+        </span>
+      </div>
     </motion.div>
   );
-} 
+}
