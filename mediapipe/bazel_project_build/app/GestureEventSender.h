@@ -25,8 +25,8 @@ public:
     void setCurrentRoomId(const std::string& roomId);
     
     // Send a gesture event to the server
-    bool sendGesture(const std::string& gestureType, float confidence);
+    bool sendGesture(const std::string& gestureType, float confidence, const std::string& cardId = "");
     
     // Create a gesture payload
-    json createGesturePayload(const std::string& gestureType, float confidence);
+    json createGesturePayload(const std::string& gestureType, float confidence, const std::string& cardId = "");
 }; 

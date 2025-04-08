@@ -63,6 +63,11 @@ export function initializeGameState(roomId: string): boolean {
     playerMoves: new Map(),
   };
 
+  console.log(`\n=== INITIALIZING GAME STATE FOR ROOM ${roomId} ===`);
+  console.log(
+    `MIN_GOAL_HEIGHT: ${MIN_GOAL_HEIGHT}, MAX_GOAL_HEIGHT: ${MAX_GOAL_HEIGHT}`
+  );
+
   // Initialize player tower heights and goal heights
   beagleBoardPlayers.forEach((player) => {
     gameState.towerHeights.set(player.id, 0);
@@ -78,26 +83,25 @@ export function initializeGameState(roomId: string): boolean {
 
     // Initialize player moves to false
     gameState.playerMoves.set(player.id, false);
+
+    console.log(
+      `Player ${player.name} (${player.id}) - Initial Tower: 0, Goal: ${goalHeight}`
+    );
   });
 
   // In TEST MODE, set up virtual opponent
   if (useTestMode) {
     const virtualOpponentId = "virtual_opponent";
     gameState.towerHeights.set(virtualOpponentId, 0);
-    gameState.goalHeights.set(
-      virtualOpponentId,
-      Math.floor(
-        Math.random() * (MAX_GOAL_HEIGHT - MIN_GOAL_HEIGHT + 1) +
-          MIN_GOAL_HEIGHT
-      )
+    const opponentGoalHeight = Math.floor(
+      Math.random() * (MAX_GOAL_HEIGHT - MIN_GOAL_HEIGHT + 1) + MIN_GOAL_HEIGHT
     );
+    gameState.goalHeights.set(virtualOpponentId, opponentGoalHeight);
     gameState.playerShields.set(virtualOpponentId, false);
     gameState.playerMoves.set(virtualOpponentId, false);
 
     console.log(
-      `Virtual opponent initialized with goal height: ${gameState.goalHeights.get(
-        virtualOpponentId
-      )}`
+      `Virtual opponent - Initial Tower: 0, Goal: ${opponentGoalHeight}`
     );
   }
 
@@ -277,10 +281,22 @@ export function checkWinCondition(roomId: string): string | null {
     return null;
   }
 
+  // Log current tower heights and goal heights for all players
+  console.log(`\n=== CHECKING WIN CONDITION FOR ROOM ${roomId} ===`);
+  for (const [playerId, towerHeight] of room.gameState.towerHeights.entries()) {
+    const goalHeight = room.gameState.goalHeights.get(playerId) || 0;
+    console.log(
+      `Player ${playerId}: Tower Height = ${towerHeight}, Goal Height = ${goalHeight}`
+    );
+  }
+
   // Check if any player has reached their goal height
   for (const [playerId, towerHeight] of room.gameState.towerHeights.entries()) {
     const goalHeight = room.gameState.goalHeights.get(playerId) || 0;
     if (towerHeight >= goalHeight) {
+      console.log(
+        `WIN: Player ${playerId} has reached goal height: ${towerHeight} >= ${goalHeight}`
+      );
       return playerId;
     }
   }
@@ -290,42 +306,47 @@ export function checkWinCondition(roomId: string): string | null {
     (player) => player.playerType === "beagleboard"
   );
 
-  // TESTING MODE: Handle virtual opponent for tower reduction to 0
+  // TESTING MODE: Handle virtual opponent for single player mode
   if (beagleBoardPlayers.length === 1) {
     const realPlayer = beagleBoardPlayers[0];
-    const realPlayerHeight =
+    const realPlayerTowerHeight =
       room.gameState.towerHeights.get(realPlayer.id) || 0;
-    const virtualOpponentHeight =
+    const realPlayerGoalHeight =
+      room.gameState.goalHeights.get(realPlayer.id) || 0;
+    const virtualOpponentTowerHeight =
       room.gameState.towerHeights.get("virtual_opponent") || 0;
+    const virtualOpponentGoalHeight =
+      room.gameState.goalHeights.get("virtual_opponent") || 0;
 
-    // If real player's tower is reduced to 0, virtual opponent wins
-    if (realPlayerHeight <= 0) {
+    console.log(
+      `TESTING MODE: Player ${realPlayer.name} - Tower: ${realPlayerTowerHeight}/${realPlayerGoalHeight}`
+    );
+    console.log(
+      `TESTING MODE: Virtual opponent - Tower: ${virtualOpponentTowerHeight}/${virtualOpponentGoalHeight}`
+    );
+
+    // Only return a winner if a player has reached their goal height
+    // Do NOT end the game if tower height is 0 - that's the starting value!
+    if (realPlayerTowerHeight >= realPlayerGoalHeight) {
       console.log(
-        `TESTING MODE: Player ${realPlayer.name} lost - tower height is 0`
+        `TESTING MODE: Player ${realPlayer.name} won by reaching goal height!`
       );
-      return "virtual_opponent";
+      return realPlayer.id;
     }
 
-    // If virtual opponent's tower is reduced to 0, real player wins
-    if (virtualOpponentHeight <= 0) {
-      console.log(`TESTING MODE: Virtual opponent lost - tower height is 0`);
-      return realPlayer.id;
+    if (virtualOpponentTowerHeight >= virtualOpponentGoalHeight) {
+      console.log(
+        `TESTING MODE: Virtual opponent won by reaching goal height!`
+      );
+      return "virtual_opponent";
     }
 
     return null;
   }
 
-  // Regular multiplayer mode - check if any player's tower has been reduced to 0
-  for (const player of beagleBoardPlayers) {
-    const towerHeight = room.gameState.towerHeights.get(player.id) || 0;
-    if (towerHeight <= 0) {
-      // The player with the remaining tower wins
-      const opponent = beagleBoardPlayers.find((p) => p.id !== player.id);
-      if (opponent) {
-        return opponent.id;
-      }
-    }
-  }
+  // Regular multiplayer mode
+  // We should remove the old logic that ends the game if a player's tower is 0
+  // since that's the starting height - makes no sense!
 
   return null;
 }
@@ -375,36 +396,55 @@ export function processAction(
     return false;
   }
 
-  // Mark this player's move as complete
-  room.gameState.playerMoves.set(playerId, true);
-  console.log(`Player ${playerId} submitted action: ${action}`);
+  console.log(
+    `\n=== PROCESSING ACTION: ${action} for player ${playerId} in room ${roomId} ===`
+  );
 
-  // Get the opponent's player ID
+  // Get BeagleBoard players
   const beagleBoardPlayers = room.players.filter(
     (player) => player.playerType === "beagleboard"
   );
 
-  let opponentId: string;
-  let isSinglePlayerMode = false;
+  // Mark this player's move as made
+  room.gameState.playerMoves.set(playerId, true);
 
-  if (beagleBoardPlayers.length >= 2) {
-    // Regular multiplayer mode
-    const opponentPlayer = beagleBoardPlayers.find(
+  // Determine who the opponent is
+  let opponentId: string;
+
+  // TESTING MODE: In single player mode, the opponent is the virtual one
+  const isSinglePlayerMode = beagleBoardPlayers.length === 1;
+  if (isSinglePlayerMode) {
+    opponentId = "virtual_opponent";
+    console.log(`TESTING MODE: Using virtual opponent for player ${playerId}`);
+  } else {
+    // Find opponent in multiplayer mode (first player that isn't the current one)
+    const opponent = beagleBoardPlayers.find(
       (player) => player.id !== playerId
     );
-
-    if (!opponentPlayer) {
-      console.error(`Opponent not found for player ${playerId}`);
+    if (!opponent) {
+      console.error(`No opponent found for player ${playerId}`);
       return false;
     }
-
-    opponentId = opponentPlayer.id;
-  } else {
-    // TESTING MODE: Single player with virtual opponent
-    opponentId = "virtual_opponent";
-    isSinglePlayerMode = true;
-    console.log(`TESTING MODE: Using virtual opponent for player ${playerId}`);
+    opponentId = opponent.id;
   }
+
+  // Log current tower heights before the action
+  const playerTowerHeight = room.gameState.towerHeights.get(playerId) || 0;
+  const playerGoalHeight = room.gameState.goalHeights.get(playerId) || 0;
+  const opponentTowerHeight = room.gameState.towerHeights.get(opponentId) || 0;
+  const opponentGoalHeight = room.gameState.goalHeights.get(opponentId) || 0;
+
+  console.log(`Before action:`);
+  console.log(
+    `- Player ${playerId}: Tower=${playerTowerHeight}/${playerGoalHeight}, Shield=${room.gameState.playerShields.get(
+      playerId
+    )}`
+  );
+  console.log(
+    `- Opponent ${opponentId}: Tower=${opponentTowerHeight}/${opponentGoalHeight}, Shield=${room.gameState.playerShields.get(
+      opponentId
+    )}`
+  );
 
   // Process action based on type
   switch (action) {
@@ -415,19 +455,36 @@ export function processAction(
         const currentHeight = room.gameState.towerHeights.get(opponentId) || 0;
         if (currentHeight > 0) {
           room.gameState.towerHeights.set(opponentId, currentHeight - 1);
+          console.log(
+            `Attack successful! Opponent ${opponentId}'s tower reduced from ${currentHeight} to ${
+              currentHeight - 1
+            }`
+          );
+        } else {
+          console.log(
+            `Attack had no effect - opponent's tower is already at 0`
+          );
         }
+      } else {
+        console.log(`Attack blocked by opponent's shield!`);
       }
       break;
 
     case "defend":
       // Set player's shield to true
       room.gameState.playerShields.set(playerId, true);
+      console.log(`Player ${playerId} activated shield`);
       break;
 
     case "build":
       // Build adds 1 to the player's tower height
       const currentHeight = room.gameState.towerHeights.get(playerId) || 0;
       room.gameState.towerHeights.set(playerId, currentHeight + 1);
+      console.log(
+        `Build successful! Player ${playerId}'s tower increased from ${currentHeight} to ${
+          currentHeight + 1
+        }`
+      );
       break;
   }
 
@@ -438,7 +495,7 @@ export function processAction(
     const randomIndex = Math.floor(Math.random() * actions.length);
     const opponentAction = actions[randomIndex];
 
-    console.log(`TESTING MODE: Virtual opponent chooses: ${opponentAction}`);
+    console.log(`\nTESTING MODE: Virtual opponent chooses: ${opponentAction}`);
 
     // Mark the virtual opponent's move as complete
     room.gameState.playerMoves.set(opponentId, true);
@@ -452,22 +509,53 @@ export function processAction(
           const playerHeight = room.gameState.towerHeights.get(playerId) || 0;
           if (playerHeight > 0) {
             room.gameState.towerHeights.set(playerId, playerHeight - 1);
+            console.log(
+              `Virtual opponent attack successful! Player ${playerId}'s tower reduced from ${playerHeight} to ${
+                playerHeight - 1
+              }`
+            );
           }
+        } else {
+          console.log(`Virtual opponent attack blocked by player's shield!`);
         }
         break;
 
       case "defend":
         // Set opponent's shield to true
         room.gameState.playerShields.set(opponentId, true);
+        console.log(`Virtual opponent activated shield`);
         break;
 
       case "build":
         // Build adds 1 to the opponent's tower height
         const opponentHeight = room.gameState.towerHeights.get(opponentId) || 0;
         room.gameState.towerHeights.set(opponentId, opponentHeight + 1);
+        console.log(
+          `Virtual opponent build successful! Tower increased from ${opponentHeight} to ${
+            opponentHeight + 1
+          }`
+        );
         break;
     }
   }
+
+  // Log the updated tower heights after actions
+  const updatedPlayerTowerHeight =
+    room.gameState.towerHeights.get(playerId) || 0;
+  const updatedOpponentTowerHeight =
+    room.gameState.towerHeights.get(opponentId) || 0;
+
+  console.log(`\nAfter all actions:`);
+  console.log(
+    `- Player ${playerId}: Tower=${updatedPlayerTowerHeight}/${playerGoalHeight}, Shield=${room.gameState.playerShields.get(
+      playerId
+    )}`
+  );
+  console.log(
+    `- Opponent ${opponentId}: Tower=${updatedOpponentTowerHeight}/${opponentGoalHeight}, Shield=${room.gameState.playerShields.get(
+      opponentId
+    )}`
+  );
 
   // Send immediate update of game state to all clients
   sendToRoom(roomId, "game_state_update", {

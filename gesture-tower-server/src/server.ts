@@ -69,7 +69,15 @@ wss.on("connection", (ws: WebSocket) => {
     try {
       const data = JSON.parse(message.toString());
       console.log(`Received event: ${data.event}`);
-      console.log(`Payload for ${data.event}:`, JSON.stringify(data.payload));
+
+      // Fix payload logging for ping events and add null check
+      if (data.event === "ping") {
+        // Add a default empty payload if none exists
+        data.payload = data.payload || { timestamp: Date.now() };
+        console.log(`Payload for ${data.event}:`, JSON.stringify(data.payload));
+      } else {
+        console.log(`Payload for ${data.event}:`, JSON.stringify(data.payload));
+      }
 
       // Reset ping timeout when any message is received
       resetPingTimeoutOnMessage(client);

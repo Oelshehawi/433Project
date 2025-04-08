@@ -56,25 +56,39 @@ void GameState::updateTimer() {
         
         // Update the timer
         {
-            std::cout << "[GameState.cpp] Timer loop iteration #" << debugCounter << std::endl;
+            // Only log every 5 seconds or last 3 seconds
+            bool shouldLog = (currentTurnTimeRemaining % 5 == 0 || currentTurnTimeRemaining <= 3);
+            
+            if (shouldLog) {
+                std::cout << "[GameState.cpp] Timer loop iteration #" << debugCounter << std::endl;
+            }
+            
             std::lock_guard<std::mutex> lock(timerMutex);
             
-            // Check thread state again inside the mutex
-            std::cout << "[GameState.cpp] Thread state inside mutex: timerThreadRunning=" 
-                      << (timerThreadRunning ? "true" : "false") 
-                      << ", timerActive=" << (timerActive ? "true" : "false") << std::endl;
+            // Check thread state again inside the mutex - only if logging
+            if (shouldLog) {
+                std::cout << "[GameState.cpp] Thread state inside mutex: timerThreadRunning=" 
+                          << (timerThreadRunning ? "true" : "false") 
+                          << ", timerActive=" << (timerActive ? "true" : "false") << std::endl;
+            }
             
             if (currentTurnTimeRemaining > 0) {
                 currentTurnTimeRemaining--;
                 
-                // Add debug print to verify timer value is decreasing
-                std::cout << "[GameState.cpp] Timer updated: " << currentTurnTimeRemaining << " seconds remaining" << std::endl;
+                // Add debug print to verify timer value is decreasing - only if logging
+                if (shouldLog) {
+                    std::cout << "[GameState.cpp] Timer updated: " << currentTurnTimeRemaining << " seconds remaining" << std::endl;
+                }
                 
                 // Update the display with the new time
                 if (displayManager) {
                     // Force a display update every second to show timer changing
                     displayManager->updateCardAndGameDisplay();
-                    std::cout << "[GameState.cpp] Display updated with new timer value: " << currentTurnTimeRemaining << " seconds" << std::endl;
+                    
+                    // Only log display updates at significant intervals
+                    if (shouldLog) {
+                        std::cout << "[GameState.cpp] Display updated with new timer value: " << currentTurnTimeRemaining << " seconds" << std::endl;
+                    }
                 } else {
                     std::cerr << "[GameState.cpp] Display manager is NULL, cannot update display" << std::endl;
                 }
@@ -298,30 +312,32 @@ void GameState::autoPlayCard() {
         return;
     }
     
-    // Choose a random card to play based on available types
-    std::vector<std::string> availableTypes;
+    // Choose a random card of an available type
+    std::vector<Card> availableCards;
+    std::map<std::string, bool> typeAdded;
     
-    // Count available card types
+    // Group one card of each type
     for (const auto& card : lastReceivedCards) {
-        // Only add each type once
-        if (std::find(availableTypes.begin(), availableTypes.end(), card.type) == availableTypes.end()) {
-            availableTypes.push_back(card.type);
+        if (!typeAdded[card.type]) {
+            availableCards.push_back(card);
+            typeAdded[card.type] = true;
         }
     }
     
-    if (!availableTypes.empty()) {
-        // Randomly select a card type
+    if (!availableCards.empty()) {
+        // Randomly select a card
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dist(0, availableTypes.size() - 1);
-        std::string selectedType = availableTypes[dist(gen)];
+        std::uniform_int_distribution<> dist(0, availableCards.size() - 1);
+        const Card& selectedCard = availableCards[dist(gen)];
         
-        std::cout << "Auto-playing a " << selectedType << " card" << std::endl;
+        std::cout << "[GameState.cpp] Auto-playing a " << selectedCard.type << " card (ID: " << selectedCard.id << ")" << std::endl;
         
-        // Create and send gesture data for the selected type
+        // Create and send gesture data with cardId included
         json gestureData = {
-            {"gesture", selectedType},
-            {"confidence", 0.95}
+            {"gesture", selectedCard.type},
+            {"confidence", 0.95},
+            {"cardId", selectedCard.id}
         };
         
         // Send the gesture data
@@ -329,7 +345,7 @@ void GameState::autoPlayCard() {
         
         // Display auto-play message
         if (displayManager) {
-            displayManager->displayAutoPlay(selectedType);
+            displayManager->displayAutoPlay(selectedCard.type);
             
             // Wait a moment before returning to card display
             std::this_thread::sleep_for(std::chrono::seconds(2));

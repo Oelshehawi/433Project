@@ -13,7 +13,8 @@ DisplayManager::~DisplayManager() {
 }
 
 void DisplayManager::updateCardAndGameDisplay() {
-    std::cout << "\n[DisplayManager.cpp] ====== UPDATING DISPLAY ======" << std::endl;
+    // Only log when debugging display issues
+    // std::cout << "\n[DisplayManager.cpp] ====== UPDATING DISPLAY ======" << std::endl;
     
     if (!gameState) {
         std::cerr << "[DisplayManager.cpp] ERROR: GameState not set for DisplayManager" << std::endl;
@@ -30,11 +31,11 @@ void DisplayManager::updateCardAndGameDisplay() {
     int timeRemaining = gameState->getCurrentTurnTimeRemaining();
     int roundNumber = gameState->getCurrentRoundNumber();
     
-    // Debug info about what we're displaying
-    std::cout << "[DisplayManager.cpp] Display update called with:" << std::endl;
-    std::cout << "[DisplayManager.cpp] Round: " << roundNumber << std::endl;
-    std::cout << "[DisplayManager.cpp] Time remaining: " << timeRemaining << " seconds" << std::endl;
-    std::cout << "[DisplayManager.cpp] Cards: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
+    // Debug info about what we're displaying - reduced verbosity
+    // std::cout << "[DisplayManager.cpp] Display update called with:" << std::endl;
+    // std::cout << "[DisplayManager.cpp] Round: " << roundNumber << std::endl;
+    // std::cout << "[DisplayManager.cpp] Time remaining: " << timeRemaining << " seconds" << std::endl;
+    // std::cout << "[DisplayManager.cpp] Cards: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
     
     // Create game info display
     char line1[32];
@@ -50,27 +51,31 @@ void DisplayManager::updateCardAndGameDisplay() {
     // Format countdown timer (both players move simultaneously)
     snprintf(line3, sizeof(line3), "TIME: %d sec", timeRemaining);
     
-    // Debug output before displaying
-    std::cout << "[DisplayManager.cpp] LCD Line 1: " << line1 << std::endl;
-    std::cout << "[DisplayManager.cpp] LCD Line 2: " << line2 << std::endl;
-    std::cout << "[DisplayManager.cpp] LCD Line 3: " << line3 << std::endl;
+    // Debug output before displaying - reduced verbosity
+    // std::cout << "[DisplayManager.cpp] LCD Line 1: " << line1 << std::endl;
+    // std::cout << "[DisplayManager.cpp] LCD Line 2: " << line2 << std::endl;
+    // std::cout << "[DisplayManager.cpp] LCD Line 3: " << line3 << std::endl;
     
     // Display the summary on LCD
-    std::cout << "[DisplayManager.cpp] Sending to LCD via lcd_place_message..." << std::endl;
+    // std::cout << "[DisplayManager.cpp] Sending to LCD via lcd_place_message..." << std::endl;
     char* cardMsg[] = {line1, line2, line3};
     lcd_place_message(cardMsg, 3, lcd_center);
-    std::cout << "[DisplayManager.cpp] LCD update complete" << std::endl;
+    // std::cout << "[DisplayManager.cpp] LCD update complete" << std::endl;
     
-    // Also log to console
-    std::cout << "\n************************************" << std::endl;
-    std::cout << "*       GAME STATE UPDATE        *" << std::endl;
-    std::cout << "************************************" << std::endl;
-    std::cout << "* ROUND: " << roundNumber << std::endl;
-    std::cout << "* TIME:  " << timeRemaining << "s" << std::endl;
-    std::cout << "* CARDS: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
-    std::cout << "************************************\n" << std::endl;
+    // Also log to console - only log major changes to avoid excessive output
+    static int lastTimeRemaining = -1;
+    if (timeRemaining % 5 == 0 || timeRemaining <= 3 || lastTimeRemaining != timeRemaining) {
+        std::cout << "\n************************************" << std::endl;
+        std::cout << "*       GAME STATE UPDATE        *" << std::endl;
+        std::cout << "************************************" << std::endl;
+        std::cout << "* ROUND: " << roundNumber << std::endl;
+        std::cout << "* TIME:  " << timeRemaining << "s" << std::endl;
+        std::cout << "* CARDS: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
+        std::cout << "************************************\n" << std::endl;
+    }
+    lastTimeRemaining = timeRemaining;
     
-    std::cout << "[DisplayManager.cpp] ====== DISPLAY UPDATE COMPLETE ======\n" << std::endl;
+    // std::cout << "[DisplayManager.cpp] ====== DISPLAY UPDATE COMPLETE ======\n" << std::endl;
 }
 
 void DisplayManager::displayRoundStart(int roundNumber, int timeRemaining) {
