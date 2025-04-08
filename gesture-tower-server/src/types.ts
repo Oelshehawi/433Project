@@ -34,12 +34,13 @@ export type ServerEventType =
 // WebSocket client extended with custom properties
 export interface ExtendedWebSocket extends WebSocket {
   id: string;
+  isAlive: boolean;
   roomId?: string;
   playerId?: string;
   playerName?: string;
   deviceId?: string;
   playerType?: string;
-  isAlive: boolean;
+  pingTimeout?: NodeJS.Timeout;
 }
 
 // Player definition

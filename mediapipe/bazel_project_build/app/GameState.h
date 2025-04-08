@@ -69,6 +69,7 @@ public:
     
     // Process card data from server
     void processCards(const json& cardsPayload);
+    void processCardsDirectly(const json& cardsPayload);
 
     // Count cards by type
     void getCardCounts(int& attackCount, int& defendCount, int& buildCount) const;

@@ -45,8 +45,9 @@ void GameState::updateTimer() {
                 
                 // Update the display with the new time
                 if (displayManager) {
-                    // Ensure display is updated even if no cards are present
+                    // Force a display update every second to show timer changing
                     displayManager->updateCardAndGameDisplay();
+                    std::cout << "[GameState.cpp] Display updated with new timer value: " << currentTurnTimeRemaining << " seconds" << std::endl;
                 } else {
                     std::cerr << "[GameState.cpp] Display manager is NULL, cannot update display" << std::endl;
                 }
@@ -102,6 +103,13 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
         std::cout << "[GameState.cpp] WARNING: Round start payload does not contain roundNumber!" << std::endl;
     }
     
+    // Always set the timer first to ensure we have a proper countdown
+    // Always use fixed 30-second timer regardless of what server sends
+    currentTurnTimeRemaining = 30; // Fixed 30 seconds per round
+    lastTimerUpdate = std::chrono::steady_clock::now();
+    timerActive = true;
+    std::cout << "[GameState.cpp] Setting timer to " << currentTurnTimeRemaining << " seconds" << std::endl;
+    
     // Handle cards if they're included in round_start payload (new format)
     bool foundCards = false;
     
@@ -128,7 +136,9 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
             
             std::cout << "[GameState.cpp] Found " << cards.size() << " cards in round_start event, processing them now" << std::endl;
             std::cout << "[GameState.cpp] First card preview: " << (cards.size() > 0 ? cards[0].dump() : "No cards") << std::endl;
-            processCards(cardsPayload);
+            
+            // Process cards WITHOUT checking timer (we already set it above)
+            processCardsDirectly(cardsPayload);
             foundCards = true;
         } else {
             std::cout << "[GameState.cpp] WARNING: Our device ID '" << ourDeviceId << "' not found in playerCards data!" << std::endl;
@@ -146,41 +156,43 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
         std::cout << "[GameState.cpp] WARNING: No cards found in round_start event!" << std::endl;
     }
     
-    // Check if the timer is already active (cards were received before round_start)
-    if (timerActive && timerThreadRunning && currentTurnTimeRemaining > 0) {
-        std::cout << "[GameState.cpp] Timer already active from early card processing. Current time: " 
-                  << currentTurnTimeRemaining << " seconds" << std::endl;
-        
-        // Force an immediate display update to refresh with current state
-        if (displayManager) {
-            std::cout << "[GameState.cpp] Forcing display update with current timer value" << std::endl;
-            displayManager->updateCardAndGameDisplay();
-        } else {
-            std::cerr << "[GameState.cpp] ERROR: Display manager is NULL when trying to update display" << std::endl;
-        }
-        return;
-    }
-    
-    // Always use fixed 30-second timer regardless of what server sends
-    currentTurnTimeRemaining = 30; // Fixed 30 seconds per round
-    lastTimerUpdate = std::chrono::steady_clock::now();
-    timerActive = true;
-    
-    std::cout << "[GameState.cpp] New round started - setting timer to " << currentTurnTimeRemaining << " seconds" << std::endl;
-    
-    // Force an immediate display update to show the new timer
+    // Force an immediate display update with current game state
     if (displayManager) {
-        std::cout << "[GameState.cpp] Calling displayManager->updateCardAndGameDisplay() to show new round" << std::endl;
+        std::cout << "[GameState.cpp] Forcing display update to show cards and round info" << std::endl;
         displayManager->updateCardAndGameDisplay();
-        std::cout << "[GameState.cpp] Display update completed" << std::endl;
     } else {
-        std::cerr << "[GameState.cpp] ERROR: Display manager is NULL when initializing timer" << std::endl;
+        std::cerr << "[GameState.cpp] ERROR: Display manager is NULL when trying to update display" << std::endl;
     }
     
     // Start the timer thread
     std::cout << "[GameState.cpp] Starting timer thread for round " << currentRoundNumber << std::endl;
     startTimerThread();
     std::cout << "[GameState.cpp] ====== ROUND START PROCESSING COMPLETE ======\n" << std::endl;
+}
+
+// New method to process cards directly without timer checks
+void GameState::processCardsDirectly(const json& cardsPayload) {
+    if (!cardsPayload.contains("cards")) {
+        std::cerr << "[GameState.cpp] Error: Cards payload does not contain cards array" << std::endl;
+        return;
+    }
+    
+    // Clear the current cards
+    lastReceivedCards.clear();
+    
+    // Parse the cards
+    for (const auto& cardJson : cardsPayload["cards"]) {
+        Card card;
+        card.id = cardJson.contains("id") ? cardJson["id"].get<std::string>() : "";
+        card.type = cardJson.contains("type") ? cardJson["type"].get<std::string>() : "";
+        card.name = cardJson.contains("name") ? cardJson["name"].get<std::string>() : "";
+        card.description = cardJson.contains("description") ? cardJson["description"].get<std::string>() : "";
+        
+        std::cout << "[GameState.cpp]   Card: " << card.name << " (" << card.type << ")" << std::endl;
+        lastReceivedCards.push_back(card);
+    }
+    
+    std::cout << "[GameState.cpp] Processed " << lastReceivedCards.size() << " cards" << std::endl;
 }
 
 void GameState::processCards(const json& cardsPayload) {

@@ -322,7 +322,16 @@ export default function RoomPage() {
         <h2 className="game-title text-3xl font-bold mb-4">Room not found</h2>
         <button
           className="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg"
-          onClick={() => router.push("/")}
+          onClick={() => {
+            // Clear localStorage data before going back
+            if (typeof window !== "undefined") {
+              localStorage.removeItem("currentRoomId");
+              localStorage.removeItem("currentPlayerId");
+              localStorage.removeItem("currentPlayerName");
+              console.log("Cleared room data from localStorage");
+            }
+            router.push("/");
+          }}
         >
           Back to Home
         </button>

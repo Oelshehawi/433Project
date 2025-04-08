@@ -1138,3 +1138,48 @@ function startRoomGame(roomId: string) {
 
   console.log(`Game started in room ${roomId}`);
 }
+
+// Add a handler for ping events
+export const setupPingHandler = (client: ExtendedWebSocket) => {
+  client.on("message", (message: WebSocket.Data) => {
+    try {
+      const data = JSON.parse(message.toString());
+
+      // Handle ping event explicitly
+      if (data.event === "ping") {
+        // Send a pong response immediately
+        client.send(JSON.stringify({ event: "pong", timestamp: Date.now() }));
+
+        // Reset client's ping timers since we received activity
+        if (client.pingTimeout) {
+          clearTimeout(client.pingTimeout);
+          setPingTimeout(client);
+        }
+      }
+    } catch (e) {
+      // Ignore parsing errors
+    }
+  });
+};
+
+// Update client connections when not using WebSocket native ping/pong
+export const setPingTimeout = (client: ExtendedWebSocket) => {
+  // Clear existing timeout if any
+  if (client.pingTimeout) {
+    clearTimeout(client.pingTimeout);
+  }
+
+  // Set new ping timeout - terminate connection after 60 seconds of inactivity
+  client.pingTimeout = setTimeout(() => {
+    console.log("Client ping timeout - terminating connection");
+    client.terminate();
+  }, 60000); // 60 seconds
+};
+
+// Add this function to reset ping timeout when any message is received
+export const resetPingTimeoutOnMessage = (client: ExtendedWebSocket) => {
+  if (client.pingTimeout) {
+    clearTimeout(client.pingTimeout);
+    setPingTimeout(client);
+  }
+};

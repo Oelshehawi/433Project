@@ -110,6 +110,7 @@ void WebSocketClient::run() {
     auto startTime = std::chrono::steady_clock::now();
     bool connectionTimedOut = false;
     auto lastStatsLog = std::chrono::steady_clock::now();
+    auto lastPingTime = std::chrono::steady_clock::now();
     
     // Adaptive timing - use lower intervals when busy, higher when idle
     int currentServiceInterval = SERVICE_INTERVAL_MS;
@@ -150,6 +151,30 @@ void WebSocketClient::run() {
             hasMessages = (queueSize > 0);
         }
         
+        // Send periodic ping to keep connection alive
+        auto now = std::chrono::steady_clock::now();
+        auto timeSinceLastPing = std::chrono::duration_cast<std::chrono::seconds>(
+            now - lastPingTime).count();
+        
+        // Send a ping every 20 seconds
+        if (connected && timeSinceLastPing > 20) {
+            // Queue a simple ping message
+            std::string pingMsg = "{\"event\":\"ping\"}";
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                messageQueue.push(pingMsg);
+            }
+            
+            // Request writable callback to send ping
+            if (wsi) {
+                lws_callback_on_writable(wsi);
+            }
+            
+            // Update ping time
+            lastPingTime = now;
+            std::cout << "[WebSocketClient.cpp] Queued ping message to keep connection alive" << std::endl;
+        }
+        
         // Adapt service interval based on queue status
         if (hasMessages) {
             // When we have messages, use the minimum service interval for maximum responsiveness
@@ -178,7 +203,6 @@ void WebSocketClient::run() {
         }
         
         // Log statistics periodically
-        auto now = std::chrono::steady_clock::now();
         auto timeSinceLastStats = std::chrono::duration_cast<std::chrono::milliseconds>(
             now - lastStatsLog).count();
         
@@ -623,6 +647,9 @@ int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason,
                         lws_callback_on_writable(wsi);
                     }
                 }
+                
+                // Enable ping/pong to keep connection alive
+                lws_set_timer_usecs(wsi, 30 * 1000 * 1000); // 30 second ping interval
             }
             break;
         }
@@ -753,6 +780,27 @@ int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason,
                 client->connected = false;
             }
             return -1; // Signal to destroy the connection
+        }
+        
+        case LWS_CALLBACK_TIMER: {
+            // Send a ping when the timer fires
+            std::cout << "[WebSocketClient.cpp] Sending ping to keep connection alive" << std::endl;
+            
+            // Schedule another timer event in 30 seconds
+            lws_set_timer_usecs(wsi, 30 * 1000 * 1000); // 30 second ping interval
+            
+            // Send a ping frame
+            unsigned char pingData[LWS_PRE + 16];
+            memset(pingData, 0, sizeof(pingData));
+            lws_write(wsi, &pingData[LWS_PRE], 0, LWS_WRITE_PING);
+            
+            return 0;
+        }
+        
+        case LWS_CALLBACK_CLIENT_RECEIVE_PONG: {
+            // Just log pong receipt for debugging
+            std::cout << "[WebSocketClient.cpp] Received pong from server" << std::endl;
+            return 0;
         }
         
         default:
