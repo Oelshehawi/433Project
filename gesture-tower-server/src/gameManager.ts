@@ -133,6 +133,10 @@ export function startRound(roomId: string): boolean {
       (player) => player.playerType === "beagleboard"
     );
 
+    console.log(
+      `[Round ${room.gameState.roundNumber}] Sending cards to ${beagleBoardPlayers.length} players in room ${roomId}`
+    );
+
     for (const player of beagleBoardPlayers) {
       const playerCards = room.playerCards.get(player.id);
 

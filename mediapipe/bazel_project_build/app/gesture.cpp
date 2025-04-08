@@ -443,17 +443,23 @@ void displayCardsOnLCD(const std::vector<Card>& cards) {
     }
     
     // Format the header line
-    snprintf(line1, sizeof(line1), "Your Cards (%zu)", cards.size());
+    snprintf(line1, sizeof(line1), "YOUR CARDS:");
     
     // Format the card type counts
     snprintf(line2, sizeof(line2), "ATK:%d DEF:%d BLD:%d", attackCount, defendCount, buildCount);
     
     // Info line
-    snprintf(line3, sizeof(line3), "Run 'start' to play");
+    snprintf(line3, sizeof(line3), "Start to play");
     
     // Display the summary
     char* cardMsg[] = {line1, line2, line3};
     lcd_place_message(cardMsg, 3, lcd_center);
+    
+    // Log what we're displaying
+    std::cout << "LCD now displaying cards:" << std::endl;
+    std::cout << "- Attack cards: " << attackCount << std::endl;
+    std::cout << "- Defend cards: " << defendCount << std::endl;
+    std::cout << "- Build cards: " << buildCount << std::endl;
 }
 
 // Training section

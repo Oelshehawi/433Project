@@ -5,6 +5,19 @@
 #include <algorithm>
 #include <nlohmann/json.hpp>
 
+// Forward declarations for LCD functions (from lcd_display.h)
+extern "C" {
+    typedef enum {
+        lcd_center,
+        lcd_top_left,
+        lcd_top_right,
+        lcd_bottom_left,
+        lcd_bottom_right
+    } lcd_location;
+    
+    void lcd_place_message(char** messages, int length, lcd_location location);
+}
+
 // For convenience
 using json = nlohmann::json;
 
@@ -213,10 +226,25 @@ void RoomManager::handleMessage(const std::string& message) {
             }
             resetLoadingState();
         }
+        else if (j.contains("event") && j["event"] == "game_starting") {
+            // Handle game starting event (countdown)
+            std::cout << "Game is starting soon..." << std::endl;
+            
+            // Update the LCD to show countdown
+            char* startingMsg[] = {"Game starting", "Get ready..."};
+            lcd_place_message(startingMsg, 2, lcd_center);
+            
+            resetLoadingState();
+        }
         else if (j.contains("event") && j["event"] == "game_started") {
             // Handle game started event - just update game status
             gameInProgress = true;
             std::cout << "Game has started!" << std::endl;
+            
+            // Update the LCD to show game has started
+            char* gameStartMsg[] = {"Game Started!", "Waiting for cards..."};
+            lcd_place_message(gameStartMsg, 2, lcd_center);
+            
             resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "game_ended") {
@@ -250,11 +278,18 @@ void RoomManager::handleMessage(const std::string& message) {
                         card.type = cardJson.contains("type") ? cardJson["type"].get<std::string>() : "";
                         card.name = cardJson.contains("name") ? cardJson["name"].get<std::string>() : "";
                         card.description = cardJson.contains("description") ? cardJson["description"].get<std::string>() : "";
+                        
+                        std::cout << "  Card: " << card.name << " (" << card.type << ")" << std::endl;
                         cards.push_back(card);
                     }
                     
                     // Display cards on LCD
-                    displayCardsOnLCD(cards);
+                    if (!cards.empty()) {
+                        std::cout << "Displaying " << cards.size() << " cards on LCD" << std::endl;
+                        displayCardsOnLCD(cards);
+                    } else {
+                        std::cout << "Warning: Received empty cards array" << std::endl;
+                    }
                 }
                 
                 // Log the details

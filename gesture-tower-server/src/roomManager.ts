@@ -11,11 +11,20 @@ import {
   GameStartedPayload,
   GestureEventPayload,
   GameActionType,
+  BeagleBoard,
+  WebSocketMessage,
 } from "./types";
-import { broadcastToAll, sendToClient, sendToRoom, clients } from "./messaging";
+import {
+  broadcastToAll,
+  sendToClient,
+  sendToRoom,
+  clients,
+  beagleBoards,
+} from "./messaging";
 import { broadcastToAllClients } from "./server";
 import { initializeCardsForRoom } from "./cardManager";
 import { initializeGameState, processAction } from "./gameManager";
+import { v4 as uuidv4 } from "uuid";
 
 // Store active rooms
 export const rooms: Map<string, Room> = new Map();
@@ -95,11 +104,8 @@ export const handleCreateRoom = (
     sendToClient(client, "room_updated", { room: newRoom });
 
     // Update room list for all clients
-    broadcastToAllClients({
-      event: "room_list",
-      payload: {
-        rooms: getRoomList(),
-      },
+    broadcastToAll("room_list", {
+      rooms: getRoomList(),
     });
   } catch (error) {
     console.error("Error creating room:", error);
@@ -186,11 +192,8 @@ export const handleJoinRoom = (
     broadcastToAll("room_updated", { room });
 
     // Update room list for all clients
-    broadcastToAllClients({
-      event: "room_list",
-      payload: {
-        rooms: getRoomList(),
-      },
+    broadcastToAll("room_list", {
+      rooms: getRoomList(),
     });
   } catch (error) {
     console.error("Error joining room:", error);
@@ -253,11 +256,8 @@ export const handleLeaveRoom = (
       }
 
       // Update room list for all clients
-      broadcastToAllClients({
-        event: "room_list",
-        payload: {
-          rooms: getRoomList(),
-        },
+      broadcastToAll("room_list", {
+        rooms: getRoomList(),
       });
     }
   } catch (error) {
@@ -321,14 +321,10 @@ export const handlePlayerReady = (
     sendToRoom(effectiveRoomId, "room_updated", { room });
 
     // Also broadcast room_updated to ALL clients for better state synchronization
-    broadcastToAllClients({
-      event: "room_updated",
-      payload: { room },
-    });
+    broadcastToAll("room_updated", { room });
 
     // Update room list for all clients
-    broadcastToAllClients({
-      event: "room_list",
+    broadcastToAll("room_list", {
       payload: {
         rooms: getRoomList(),
       },
@@ -372,10 +368,7 @@ export const handlePlayerReady = (
         sendToRoom(effectiveRoomId, "room_updated", { room });
 
         // Also broadcast room_updated to ALL clients for better state synchronization
-        broadcastToAllClients({
-          event: "room_updated",
-          payload: { room },
-        });
+        broadcastToAll("room_updated", { room });
       }
     }
   } catch (error) {
@@ -393,9 +386,11 @@ export const handleGameStart = (
 ) => {
   try {
     const { roomId } = payload;
+    console.log(`Handling game start request for room ${roomId}`);
 
     // Validate data
     if (!roomId) {
+      console.error("Missing roomId in game start request");
       return sendToClient(client, "error", {
         error: "Missing room ID",
       } as ErrorPayload);
@@ -403,19 +398,28 @@ export const handleGameStart = (
 
     // Check if room exists
     if (!rooms.has(roomId)) {
+      console.error(`Room ${roomId} not found for game start`);
       return sendToClient(client, "error", {
         error: "Room not found",
       } as ErrorPayload);
     }
 
     const room = rooms.get(roomId)!;
+    console.log(`Room status: ${room.status}, Players: ${room.players.length}`);
 
     // Check if at least 1 player is ready (TEST MODE)
     const readyBeagleBoardPlayers = room.players.filter(
       (player) => player.playerType === "beagleboard" && player.isReady
     );
 
+    console.log(
+      `Ready BeagleBoard players: ${readyBeagleBoardPlayers.length}/${
+        room.players.filter((p) => p.playerType === "beagleboard").length
+      }`
+    );
+
     if (readyBeagleBoardPlayers.length < 1) {
+      console.error("Not enough ready BeagleBoard players to start game");
       return sendToClient(client, "error", {
         error:
           "At least 1 BeagleBoard player must be ready to start (TEST MODE)",
@@ -431,51 +435,114 @@ export const handleGameStart = (
     room.status = "playing";
 
     // Initialize cards for the room
+    console.log(`Initializing cards for room ${roomId}`);
     const cardsInitialized = initializeCardsForRoom(roomId);
     if (!cardsInitialized) {
       console.error(`Failed to initialize cards for room ${roomId}`);
       // Continue anyway, the game can still start without cards
+    } else {
+      console.log(`Cards successfully initialized for room ${roomId}`);
     }
 
     // Send a countdown to all clients in the room
+    console.log(`Sending game_starting event to room ${roomId}`);
     sendToRoom(roomId, "game_starting", { countdown: 3 });
 
     // Delay the actual game start to allow for countdown animation
     setTimeout(() => {
-      // Notify all clients that the game has started
-      sendToRoom(roomId, "game_started", { roomId });
+      // First, initialize game state with goal heights and turn order
+      console.log(`Initializing game state for room ${roomId}`);
+      const gameStateInitialized = initializeGameState(roomId);
+      if (!gameStateInitialized) {
+        console.error(`Failed to initialize game state for room ${roomId}`);
+        // This is more serious, but we'll continue and try to recover
+      } else {
+        console.log(`Game state successfully initialized for room ${roomId}`);
+      }
 
-      // For each BeagleBoard player, send their initial cards
+      // Notify all clients that the game has started - SEND THIS EXPLICITLY
+      console.log(`Broadcasting game_started event to room ${roomId}`);
+      sendToRoom(roomId, "game_started", {
+        roomId,
+        timestamp: Date.now(),
+      });
+
+      // Immediately distribute cards to all BeagleBoard players
+      console.log(`Sending initial cards to all players in room ${roomId}`);
+
       if (room.playerCards) {
-        room.players
-          .filter((player) => player.playerType === "beagleboard")
-          .forEach((player) => {
-            const playerCards = room.playerCards!.get(player.id);
+        const beagleBoardPlayers = room.players.filter(
+          (player) => player.playerType === "beagleboard"
+        );
+        console.log(`Found ${beagleBoardPlayers.length} BeagleBoard players`);
 
-            if (playerCards) {
-              // Find the client for this player
-              const playerClient = Array.from(clients.values()).find(
-                (c: ExtendedWebSocket) => c.playerId === player.id
+        beagleBoardPlayers.forEach((player) => {
+          const playerCards = room.playerCards!.get(player.id);
+
+          if (playerCards) {
+            console.log(
+              `Player ${player.name} has ${playerCards.cards.length} cards`
+            );
+            // Find the client for this player by playerId
+            const playerClient = Array.from(clients.values()).find(
+              (c) => c.playerId === player.id
+            );
+
+            if (playerClient) {
+              console.log(
+                `Found client for ${player.name} (${player.id}), sending cards`
+              );
+              sendToClient(playerClient, "beagle_board_command", {
+                command: "CARDS",
+                cards: playerCards.cards,
+              });
+              console.log(`Cards sent to ${player.name} via client`);
+            } else {
+              console.log(
+                `No client found for player ${player.name} by ID, trying to find by name`
+              );
+              // Try to find client by matching player name with beagleBoard deviceId
+              const beagleBoard = Array.from(beagleBoards.values()).find(
+                (board: BeagleBoard) => board.playerName === player.name
               );
 
-              if (playerClient) {
+              if (beagleBoard && beagleBoard.client) {
                 console.log(
-                  `Sending initial cards to player ${player.name} (${player.id})`
+                  `Found beagleboard for ${player.name}: ${beagleBoard.deviceId}`
                 );
-                sendToClient(playerClient, "beagle_board_command", {
+
+                beagleBoard.client.send(
+                  JSON.stringify({
+                    event: "beagle_board_command",
+                    payload: {
+                      command: "CARDS",
+                      cards: playerCards.cards,
+                    },
+                  })
+                );
+                console.log(
+                  `Cards sent to BeagleBoard ${beagleBoard.deviceId}`
+                );
+              } else {
+                console.error(
+                  `No client found for player ${player.name} (${player.id})`
+                );
+
+                // Fallback: Broadcast the cards to the whole room
+                console.log(`Fallback: Broadcasting cards to entire room`);
+                sendToRoom(roomId, "beagle_board_command", {
+                  targetPlayerId: player.id,
                   command: "CARDS",
                   cards: playerCards.cards,
                 });
               }
             }
-          });
-      }
-
-      // Initialize game state with goal heights and turn order
-      const gameStateInitialized = initializeGameState(roomId);
-      if (!gameStateInitialized) {
-        console.error(`Failed to initialize game state for room ${roomId}`);
-        // This is more serious, but we'll continue and try to recover
+          } else {
+            console.error(`No cards found for player ${player.name}`);
+          }
+        });
+      } else {
+        console.error(`No player cards initialized for room ${roomId}`);
       }
 
       // Update room list
