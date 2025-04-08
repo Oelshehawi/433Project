@@ -105,6 +105,52 @@ export const handleCreateRoom = (
 
     console.log(`Room created: ${newRoom.id} - ${newRoom.name}`);
 
+    // Check if this client is a BeagleBoard client creating the room
+    const hostPlayer = newRoom.players.find(
+      (player) => player.id === newRoom.hostId
+    );
+    if (
+      hostPlayer &&
+      (hostPlayer.id === client.playerId ||
+        hostPlayer.playerType === "beagleboard")
+    ) {
+      console.log(`\n=========== BEAGLEBOARD CLIENT CREATING ROOM ===========`);
+      console.log(`Room ID: ${newRoom.id}`);
+      console.log(`Host ID: ${newRoom.hostId}`);
+
+      // Update client properties to ensure it's properly registered
+      client.roomId = newRoom.id;
+      client.playerId = hostPlayer.id;
+      client.playerName = hostPlayer.name;
+      client.playerType = "beagleboard";
+
+      console.log(
+        `Set client properties: roomId=${client.roomId}, playerId=${client.playerId}, playerType=${client.playerType}`
+      );
+
+      // Register this client in the beagleBoards map
+      const beagleBoard: BeagleBoard = {
+        deviceId: hostPlayer.id,
+        roomId: newRoom.id,
+        client: client,
+      };
+
+      beagleBoards.set(client.id, beagleBoard);
+      console.log(
+        `Added BeagleBoard client to beagleBoards map with key ${client.id}`
+      );
+      console.log(`BeagleBoard map now has ${beagleBoards.size} entries`);
+
+      // Log all BeagleBoard entries for debugging
+      beagleBoards.forEach((bb, key) => {
+        console.log(
+          `  Entry ${key}: deviceId=${bb.deviceId}, roomId=${bb.roomId}`
+        );
+      });
+
+      console.log(`============================================\n`);
+    }
+
     // Notify the client
     sendToClient(client, "room_updated", { room: newRoom });
 
