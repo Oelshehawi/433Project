@@ -3,7 +3,7 @@
  */
 import { Player } from './common';
 
-export type GestureType = string; 
+export type GestureType = string;
 
 // More specific gesture types for reference
 export const GESTURES = {
@@ -105,4 +105,88 @@ export interface GestureEventPayload {
   playerId: string;
   gesture: string;
   confidence: number;
+}
+
+// Game action types from server
+export type GameActionType = 'attack' | 'defend' | 'build';
+
+// Game state for the store
+export interface GameStateData {
+  towerHeights: { [playerId: string]: number };
+  goalHeights: { [playerId: string]: number };
+  roundNumber: number;
+  roundStartTime: number;
+  playerShields?: { [playerId: string]: boolean };
+}
+
+// Round data for current round
+export interface RoundData {
+  roundNumber: number;
+  timeRemaining: number;
+  isTransitioning: boolean;
+}
+
+// Types for animations
+export interface AnimationState {
+  showTitleAnimation: boolean;
+  showRulesAnimation: boolean;
+  titleAnimationComplete: boolean;
+  rulesAnimationComplete: boolean;
+  animationComplete: boolean;
+  isAnimating: boolean;
+}
+
+// Player move information
+export interface PlayerMove {
+  playerId: string;
+  gesture: string;
+  cardId?: string;
+}
+
+// Game store interface for Zustand
+export interface GameStore {
+  // Game state
+  gameState: GameStateData | null;
+  gameStatus: GameStatus;
+  roundData: RoundData;
+  players: Player[];
+  currentRoom: string | null;
+  player1Name: string;
+  player2Name: string;
+  player1TowerHeight: number;
+  player2TowerHeight: number;
+  player1GoalHeight: number;
+  player2GoalHeight: number;
+  player1ShieldActive: boolean;
+  player2ShieldActive: boolean;
+  player1CardPlayed: string;
+  player2CardPlayed: string;
+  isGameEnded: boolean;
+  winner: string | null;
+  roundEndMessage: string;
+
+  // Animation states
+  animationState: AnimationState;
+  moveAnimations: PlayerMove[];
+  pendingRoundNumber: number | null;
+
+  // Event logs for debugging
+  eventLogs: string[];
+
+  // Loading state
+  loading: boolean;
+  error: string | null;
+  socketConnected: boolean;
+
+  // Game actions
+  initialize: (roomId: string) => Promise<boolean>;
+  setAnimationComplete: (type: keyof AnimationState, value: boolean) => void;
+  startGame: () => Promise<void>;
+  acknowledgeMoves: () => Promise<void>;
+  readyForNextRound: (roundNumber: number) => Promise<void>;
+  resetGame: () => void;
+
+  // Utility functions
+  addEventLog: (message: string, source?: string) => void;
+  clearEventLogs: () => void;
 }

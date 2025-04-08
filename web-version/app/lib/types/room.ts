@@ -1,10 +1,10 @@
 /**
  * Room and lobby related types
  */
-import { Player } from "./common";
+import { Player } from './common';
 
 // Room status enum
-export type RoomStatus = "waiting" | "playing" | "ended";
+export type RoomStatus = 'waiting' | 'playing' | 'ended';
 
 // Full room interface with all details
 export interface Room {
@@ -35,19 +35,19 @@ export interface CreateRoomParams {
 export interface JoinRoomParams {
   roomId: string;
   playerName: string;
-  playerType?: "webviewer" | "beagleboard";
+  playerType?: 'webviewer' | 'beagleboard';
 }
 
 // WebSocket events and payloads for room operations
 export type RoomSocketEventType =
-  | "create_room"
-  | "join_room"
-  | "leave_room"
-  | "room_list"
-  | "room_updated"
-  | "player_ready"
-  | "game_started"
-  | "game_starting";
+  | 'create_room'
+  | 'join_room'
+  | 'leave_room'
+  | 'room_list'
+  | 'room_updated'
+  | 'player_ready'
+  | 'game_started'
+  | 'game_starting';
 
 export interface RoomUpdatedPayload {
   room: Room;
@@ -81,6 +81,7 @@ export interface RoomStore {
   gameStartTimestamp: number | null;
 
   // Room actions
+  initialize: () => Promise<boolean>;
   createRoom: (params: CreateRoomParams) => Promise<void>;
   joinRoom: (params: JoinRoomParams) => Promise<void>;
   leaveRoom: () => Promise<void>;

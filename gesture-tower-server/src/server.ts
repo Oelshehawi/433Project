@@ -17,7 +17,7 @@ import {
   handleGameReady,
   handleNextRoundReady,
 } from "./roomManager";
-import { clients, beagleBoards } from "./messaging";
+import { clients } from "./messaging";
 import {
   setupPingHandler,
   setPingTimeout,

@@ -1,12 +1,13 @@
 // Single source of truth for WebSocket connection
 let socket: WebSocket | null = null;
-let socketStatus: "disconnected" | "connecting" | "connected" = "disconnected";
+let socketStatus: 'disconnected' | 'connecting' | 'connected' = 'disconnected';
 let pingInterval: NodeJS.Timeout | null = null; // Track ping interval
 let lastPongTime: number = 0; // Track last pong received
+let connectionTimeout: NodeJS.Timeout | null = null; // Connection timeout handler
 
 // Initialize WebSocket connection
 export const initializeSocket = (
-  url: string = "wss://four33project.onrender.com"
+  url: string = 'wss://four33project.onrender.com'
 ): WebSocket | null => {
   // Use existing socket if connected or connecting
   if (
@@ -15,70 +16,128 @@ export const initializeSocket = (
       socket.readyState === WebSocket.CONNECTING)
   ) {
     console.log(
-      "[websocket.ts] WebSocket already initialized and in state:",
-      socket.readyState === WebSocket.OPEN ? "OPEN" : "CONNECTING"
+      '[websocket.ts] WebSocket already initialized and in state:',
+      socket.readyState === WebSocket.OPEN ? 'OPEN' : 'CONNECTING'
     );
     return socket;
   }
 
   // Set status to connecting
-  socketStatus = "connecting";
+  socketStatus = 'connecting';
+  console.log('[websocket.ts] Setting socket status to CONNECTING');
 
   // Don't create multiple connections
-  if (socketStatus === "connecting" && socket) {
-    console.log("[websocket.ts] WebSocket connection already in progress");
+  if (socketStatus === 'connecting' && socket) {
+    console.log('[websocket.ts] WebSocket connection already in progress');
     return socket;
   }
 
+  // Clear any existing timeout
+  if (connectionTimeout) {
+    clearTimeout(connectionTimeout);
+    connectionTimeout = null;
+  }
+
+  // Set connection timeout (10 seconds)
+  connectionTimeout = setTimeout(() => {
+    if (socketStatus === 'connecting') {
+      console.error('[websocket.ts] Connection timeout after 10 seconds');
+
+      // If socket exists but is still in CONNECTING state, close it
+      if (socket && socket.readyState === WebSocket.CONNECTING) {
+        console.log('[websocket.ts] Forcing close of stalled connection');
+        socket.close();
+      }
+
+      socket = null;
+      socketStatus = 'disconnected';
+
+      // Dispatch connection failure event
+      window.dispatchEvent(
+        new CustomEvent('ws_connection_failed', {
+          detail: { reason: 'timeout' },
+        })
+      );
+    }
+  }, 10000);
+
   try {
-    console.log("[websocket.ts] Initializing WebSocket connection to", url);
+    console.log('[websocket.ts] Initializing WebSocket connection to', url);
 
     // Create WebSocket connection
     socket = new WebSocket(url);
 
     // Handle connection open
     socket.onopen = () => {
-      console.log("[websocket.ts] WebSocket connection established");
-      socketStatus = "connected";
+      console.log('[websocket.ts] WebSocket connection established');
+
+      // Clear connection timeout
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+        connectionTimeout = null;
+      }
+
+      socketStatus = 'connected';
       lastPongTime = Date.now(); // Initialize pong time
 
       // Start ping interval to keep connection alive
       startPingInterval();
 
       // Dispatch a custom event that components can listen for
-      window.dispatchEvent(new CustomEvent("ws_connected"));
+      window.dispatchEvent(new CustomEvent('ws_connected'));
 
       // If we have saved room info, immediately request room data
       const savedInfo = getSavedRoomInfo();
       if (savedInfo.roomId) {
         console.log(
-          "[websocket.ts] Found saved room info, requesting room data:",
+          '[websocket.ts] Found saved room info, requesting room data:',
           savedInfo.roomId
         );
-        sendMessage("get_room", { roomId: savedInfo.roomId });
+        sendMessage('get_room', { roomId: savedInfo.roomId });
       }
     };
 
     socket.onclose = (event) => {
       console.log(
         `[websocket.ts] WebSocket connection closed: Code ${event.code}${
-          event.reason ? " - " + event.reason : ""
+          event.reason ? ' - ' + event.reason : ''
         }`
       );
+
+      // Clear connection timeout if it exists
+      if (connectionTimeout) {
+        clearTimeout(connectionTimeout);
+        connectionTimeout = null;
+      }
+
       socket = null;
-      socketStatus = "disconnected";
+      socketStatus = 'disconnected';
       stopPingInterval();
+
+      // Dispatch connection closed event
+      window.dispatchEvent(
+        new CustomEvent('ws_connection_closed', {
+          detail: { code: event.code, reason: event.reason },
+        })
+      );
 
       // Auto reconnect if it wasn't intentionally closed
       if (event.code !== 1000) {
-        console.log("[websocket.ts] Attempting to reconnect in 2 seconds...");
+        console.log('[websocket.ts] Attempting to reconnect in 2 seconds...');
         setTimeout(() => initializeSocket(url), 2000);
       }
     };
 
     socket.onerror = (error) => {
-      console.error("[websocket.ts] WebSocket connection error:", error);
-      socketStatus = "disconnected";
+      console.error('[websocket.ts] WebSocket connection error:', error);
+      socketStatus = 'disconnected';
+
+      // Dispatch connection error event
+      window.dispatchEvent(
+        new CustomEvent('ws_connection_error', {
+          detail: { error },
+        })
+      );
     };
 
     socket.onmessage = (event) => {
@@ -86,17 +145,17 @@ export const initializeSocket = (
         const data = JSON.parse(event.data);
 
         // Handle pong messages separately
-        if (data.event === "pong") {
+        if (data.event === 'pong') {
           lastPongTime = Date.now();
           return;
         }
 
-        console.log("[websocket.ts] WebSocket message received:", data);
+        console.log('[websocket.ts] WebSocket message received:', data);
 
         // Special handling for game_starting to make it more visible in logs
-        if (data.event === "game_starting") {
+        if (data.event === 'game_starting') {
           console.log(
-            "[websocket.ts] 🎮 GAME STARTING EVENT RECEIVED:",
+            '[websocket.ts] 🎮 GAME STARTING EVENT RECEIVED:',
             data.payload
           );
         }
@@ -111,7 +170,7 @@ export const initializeSocket = (
         window.dispatchEvent(customEvent);
       } catch (error) {
         console.error(
-          "[websocket.ts] Error processing WebSocket message:",
+          '[websocket.ts] Error processing WebSocket message:',
           error,
           event.data
         );
@@ -120,9 +179,24 @@ export const initializeSocket = (
 
     return socket;
   } catch (error) {
-    console.error("[websocket.ts] Failed to initialize WebSocket:", error);
-    socketStatus = "disconnected";
+    console.error('[websocket.ts] Failed to initialize WebSocket:', error);
+
+    // Clear connection timeout
+    if (connectionTimeout) {
+      clearTimeout(connectionTimeout);
+      connectionTimeout = null;
+    }
+
+    socketStatus = 'disconnected';
     socket = null;
+
+    // Dispatch connection error event
+    window.dispatchEvent(
+      new CustomEvent('ws_connection_error', {
+        detail: { error },
+      })
+    );
+
     return null;
   }
 };
@@ -135,16 +209,16 @@ const startPingInterval = () => {
   // Send ping every 30 seconds
   pingInterval = setInterval(() => {
     if (socket && socket.readyState === WebSocket.OPEN) {
-      console.log("[websocket.ts] Sending ping to server");
-      sendMessage("ping", { timestamp: Date.now() }).catch((err) => {
-        console.error("[websocket.ts] Error sending ping:", err);
+      console.log('[websocket.ts] Sending ping to server');
+      sendMessage('ping', { timestamp: Date.now() }).catch((err) => {
+        console.error('[websocket.ts] Error sending ping:', err);
       });
 
       // Check if we've received a pong in the last 45 seconds
       const now = Date.now();
       if (now - lastPongTime > 45000) {
         console.warn(
-          "[websocket.ts] No pong received in 45 seconds, reconnecting"
+          '[websocket.ts] No pong received in 45 seconds, reconnecting'
         );
         closeSocket();
         initializeSocket();
@@ -163,20 +237,20 @@ const stopPingInterval = () => {
 
 // Function to clear room data from localStorage
 export const clearRoomData = (): void => {
-  localStorage.removeItem("currentRoomId");
-  localStorage.removeItem("currentPlayerId");
-  localStorage.removeItem("currentPlayerName");
-  console.log("[websocket.ts] Cleared room data from localStorage");
+  localStorage.removeItem('currentRoomId');
+  localStorage.removeItem('currentPlayerId');
+  localStorage.removeItem('currentPlayerName');
+  console.log('[websocket.ts] Cleared room data from localStorage');
 };
 
 // Get saved room info from localStorage
 export const getSavedRoomInfo = () => {
-  if (typeof window === "undefined")
+  if (typeof window === 'undefined')
     return { roomId: null, playerId: null, playerName: null };
   return {
-    roomId: localStorage.getItem("currentRoomId"),
-    playerId: localStorage.getItem("currentPlayerId"),
-    playerName: localStorage.getItem("currentPlayerName"),
+    roomId: localStorage.getItem('currentRoomId'),
+    playerId: localStorage.getItem('currentPlayerId'),
+    playerName: localStorage.getItem('currentPlayerName'),
   };
 };
 
@@ -186,11 +260,11 @@ export const saveRoomInfo = (
   playerId: string,
   playerName: string
 ): void => {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("currentRoomId", roomId);
-  localStorage.setItem("currentPlayerId", playerId);
-  localStorage.setItem("currentPlayerName", playerName);
-  console.log("Saved room info to localStorage:", {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('currentRoomId', roomId);
+  localStorage.setItem('currentPlayerId', playerId);
+  localStorage.setItem('currentPlayerName', playerName);
+  console.log('Saved room info to localStorage:', {
     roomId,
     playerId,
     playerName,
@@ -206,7 +280,7 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
     }
 
     if (!socket) {
-      reject(new Error("Could not initialize WebSocket connection"));
+      reject(new Error('Could not initialize WebSocket connection'));
       return;
     }
 
@@ -221,11 +295,11 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
 
     try {
       const message = { event: type, payload };
-      console.log("Sending WebSocket message:", message);
+      console.log('Sending WebSocket message:', message);
       socket.send(JSON.stringify(message));
       resolve();
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error('Error sending message:', error);
       reject(error);
     }
   });
@@ -238,10 +312,10 @@ export const sendWebSocketMessage = (message: {
 }): void => {
   try {
     sendMessage(message.event, message.payload).catch((error) => {
-      console.error("Error sending WebSocket message:", error);
+      console.error('Error sending WebSocket message:', error);
     });
   } catch (error) {
-    console.error("Error in sendWebSocketMessage:", error);
+    console.error('Error in sendWebSocketMessage:', error);
   }
 };
 
@@ -251,7 +325,7 @@ export const getSocketStatus = () => socketStatus;
 // Close WebSocket connection
 export const closeSocket = (): void => {
   if (socket) {
-    console.log("[websocket.ts] Closing WebSocket connection");
+    console.log('[websocket.ts] Closing WebSocket connection');
     stopPingInterval();
     socket.close();
     socket = null;
@@ -268,13 +342,13 @@ export const closeSocketAndClearData = (): void => {
 const getReadyStateLabel = (readyState: number): string => {
   switch (readyState) {
     case WebSocket.CONNECTING:
-      return "CONNECTING";
+      return 'CONNECTING';
     case WebSocket.OPEN:
-      return "OPEN";
+      return 'OPEN';
     case WebSocket.CLOSING:
-      return "CLOSING";
+      return 'CLOSING';
     case WebSocket.CLOSED:
-      return "CLOSED";
+      return 'CLOSED';
     default:
       return `UNKNOWN (${readyState})`;
   }
@@ -290,16 +364,25 @@ export const signalNextRoundReady = (
   );
 
   try {
-    sendMessage("next_round_ready", { roomId, roundNumber }).catch((error) => {
+    sendMessage('next_round_ready', { roomId, roundNumber }).catch((error) => {
       console.error(
-        "[websocket.ts] Error sending next_round_ready signal:",
+        '[websocket.ts] Error sending next_round_ready signal:',
         error
       );
     });
   } catch (error) {
     console.error(
-      "[websocket.ts] Exception sending next_round_ready signal:",
+      '[websocket.ts] Exception sending next_round_ready signal:',
       error
     );
   }
+};
+
+// Add a new function to check if the socket is truly healthy
+export const isSocketHealthy = (): boolean => {
+  return (
+    socket !== null &&
+    socket.readyState === WebSocket.OPEN &&
+    socketStatus === 'connected'
+  );
 };
