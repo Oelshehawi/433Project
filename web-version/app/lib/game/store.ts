@@ -1,0 +1,588 @@
+import { create } from 'zustand';
+import { GameStore, AnimationState, PlayerMove } from '../types/game';
+import {
+  initializeSocket,
+  sendMessage,
+  getSocketStatus,
+  signalNextRoundReady,
+} from '../websocket';
+
+// Function to create a GameStore
+export const useGameStore = create<GameStore>((set, get) => ({
+  // Initial game state
+  gameState: null,
+  gameStatus: 'waiting',
+  roundData: {
+    roundNumber: 1,
+    timeRemaining: 30,
+    isTransitioning: false,
+  },
+  players: [],
+  currentRoom: null,
+  player1Name: 'Player 1',
+  player2Name: 'Player 2',
+  player1TowerHeight: 0,
+  player2TowerHeight: 0,
+  player1GoalHeight: 5,
+  player2GoalHeight: 5,
+  player1ShieldActive: false,
+  player2ShieldActive: false,
+  player1CardPlayed: '',
+  player2CardPlayed: '',
+  isGameEnded: false,
+  winner: null,
+  roundEndMessage: '',
+
+  // Animation states
+  animationState: {
+    showTitleAnimation: true,
+    showRulesAnimation: false,
+    titleAnimationComplete: false,
+    rulesAnimationComplete: false,
+    animationComplete: false,
+    isAnimating: false,
+  },
+  moveAnimations: [],
+  pendingRoundNumber: null,
+
+  // Event logs
+  eventLogs: [],
+
+  // Loading state
+  loading: false,
+  error: null,
+  socketConnected: false,
+
+  // Initialize game with room ID
+  initialize: async (roomId: string) => {
+    try {
+      console.log('[game/store] Initializing game store for room:', roomId);
+      set({ loading: true, error: null, currentRoom: roomId });
+
+      // Initialize WebSocket if not already connected
+      initializeSocket();
+
+      // Wait for connection to be established
+      if (getSocketStatus() !== 'connected') {
+        console.log('[game/store] Waiting for WebSocket connection...');
+        // We'll let the event listeners handle the connection
+      }
+
+      // Initialize the game state
+      set({
+        loading: false,
+        gameStatus: 'waiting',
+        roundData: {
+          roundNumber: 1,
+          timeRemaining: 30,
+          isTransitioning: false,
+        },
+        animationState: {
+          showTitleAnimation: true,
+          showRulesAnimation: false,
+          titleAnimationComplete: false,
+          rulesAnimationComplete: false,
+          animationComplete: false,
+          isAnimating: false,
+        },
+      });
+
+      // Add an event log
+      get().addEventLog('Game initialized', 'System');
+
+      return true;
+    } catch (error) {
+      console.error('[game/store] Error initializing game:', error);
+      set({ error: (error as Error).message, loading: false });
+      return false;
+    }
+  },
+
+  // Animation control
+  setAnimationComplete: (type: keyof AnimationState, value: boolean) => {
+    const state = get();
+    const animationState = { ...state.animationState };
+
+    animationState[type] = value;
+
+    // If title animation completes, show rules
+    if (type === 'titleAnimationComplete' && value === true) {
+      animationState.showRulesAnimation = true;
+      animationState.showTitleAnimation = false;
+    }
+
+    // If rules animation completes, mark entire animation as complete
+    if (type === 'rulesAnimationComplete' && value === true) {
+      animationState.showRulesAnimation = false;
+      animationState.animationComplete = true;
+
+      // If we're in a room, signal to the server that we're ready
+      if (state.currentRoom) {
+        // Signal game_ready to server
+        sendMessage('game_ready', { roomId: state.currentRoom }).catch(
+          console.error
+        );
+        get().addEventLog('Sent game_ready signal to server', 'Animation');
+      }
+    }
+
+    set({ animationState });
+  },
+
+  // Start the game
+  startGame: async () => {
+    try {
+      const { currentRoom } = get();
+      if (!currentRoom) {
+        throw new Error('Not in a room');
+      }
+
+      console.log('[game/store] Starting game');
+      set({ loading: true, error: null });
+
+      // Send game start message
+      await sendMessage('game_start', {
+        roomId: currentRoom,
+      });
+
+      set({ gameStatus: 'playing', loading: false });
+      get().addEventLog('Game started', 'System');
+    } catch (error) {
+      console.error('[game/store] Failed to start game:', error);
+      set({ error: (error as Error).message, loading: false });
+    }
+  },
+
+  // Acknowledge player moves are complete for the round
+  acknowledgeMoves: async () => {
+    try {
+      const { currentRoom, roundData } = get();
+      if (!currentRoom) {
+        throw new Error('Not in a room');
+      }
+
+      console.log('[game/store] Acknowledging round moves complete');
+
+      // Send round_end_ack message
+      await sendMessage('round_end_ack', {
+        roomId: currentRoom,
+        roundNumber: roundData.roundNumber,
+      });
+
+      get().addEventLog(
+        `Round ${roundData.roundNumber} acknowledged complete`,
+        'System'
+      );
+    } catch (error) {
+      console.error('[game/store] Failed to acknowledge moves:', error);
+    }
+  },
+
+  // Signal ready for next round
+  readyForNextRound: async (roundNumber: number) => {
+    try {
+      const { currentRoom } = get();
+      if (!currentRoom) {
+        throw new Error('Not in a room');
+      }
+
+      console.log(`[game/store] Signaling ready for round ${roundNumber}`);
+
+      // Use the helper function to send next_round_ready message
+      signalNextRoundReady(currentRoom, roundNumber);
+
+      get().addEventLog(`Ready for round ${roundNumber}`, 'System');
+    } catch (error) {
+      console.error('[game/store] Failed to signal next round ready:', error);
+    }
+  },
+
+  // Reset game state
+  resetGame: () => {
+    set({
+      gameState: null,
+      gameStatus: 'waiting',
+      roundData: {
+        roundNumber: 1,
+        timeRemaining: 30,
+        isTransitioning: false,
+      },
+      player1TowerHeight: 0,
+      player2TowerHeight: 0,
+      player1ShieldActive: false,
+      player2ShieldActive: false,
+      player1CardPlayed: '',
+      player2CardPlayed: '',
+      isGameEnded: false,
+      winner: null,
+      roundEndMessage: '',
+      animationState: {
+        showTitleAnimation: true,
+        showRulesAnimation: false,
+        titleAnimationComplete: false,
+        rulesAnimationComplete: false,
+        animationComplete: false,
+        isAnimating: false,
+      },
+      moveAnimations: [],
+      pendingRoundNumber: null,
+    });
+    get().addEventLog('Game reset', 'System');
+  },
+
+  // Add event log
+  addEventLog: (message: string, source: string = 'UI') => {
+    const now = new Date();
+    const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+
+    set((state) => {
+      const formattedMessage = `${timestamp} [${source}] ${message}`;
+      const maxEventLogs = 10;
+      const newLogs = [
+        formattedMessage,
+        ...state.eventLogs.slice(0, maxEventLogs - 1),
+      ];
+      return { eventLogs: newLogs };
+    });
+  },
+
+  // Clear event logs
+  clearEventLogs: () => {
+    set({ eventLogs: [] });
+    get().addEventLog('Logs cleared', 'UI');
+  },
+}));
+
+// Set up event listeners for game events
+if (typeof window !== 'undefined') {
+  // WebSocket connection status
+  window.addEventListener('ws_connected', () => {
+    useGameStore.setState({ socketConnected: true });
+    useGameStore.getState().addEventLog('WebSocket connected', 'Connection');
+  });
+
+  window.addEventListener('ws_connection_closed', () => {
+    useGameStore.setState({ socketConnected: false });
+    useGameStore.getState().addEventLog('WebSocket disconnected', 'Connection');
+  });
+
+  window.addEventListener('ws_connection_error', () => {
+    useGameStore.setState({
+      socketConnected: false,
+      error: 'WebSocket connection error',
+    });
+    useGameStore.getState().addEventLog('WebSocket error', 'Connection');
+  });
+
+  // Game state update event
+  window.addEventListener('game_state_update', (event: CustomEventInit) => {
+    try {
+      const { gameState, message, waitingForNextRound } = event.detail || {};
+      console.log('[game/store] Game state update received:', gameState);
+
+      if (gameState) {
+        const state = useGameStore.getState();
+
+        // Update game state data
+        useGameStore.setState({ gameState });
+
+        // Extract player tower heights and goal heights
+        if (gameState.towerHeights && gameState.goalHeights) {
+          // Get player IDs from the towerHeights object
+          const playerIds = Object.keys(gameState.towerHeights);
+
+          if (playerIds.length >= 1) {
+            useGameStore.setState({
+              player1TowerHeight: gameState.towerHeights[playerIds[0]] || 0,
+              player1GoalHeight: gameState.goalHeights[playerIds[0]] || 5,
+            });
+          }
+
+          if (playerIds.length >= 2) {
+            useGameStore.setState({
+              player2TowerHeight: gameState.towerHeights[playerIds[1]] || 0,
+              player2GoalHeight: gameState.goalHeights[playerIds[1]] || 5,
+            });
+          }
+        }
+
+        // Update round data
+        if (gameState.roundNumber) {
+          useGameStore.setState({
+            roundData: {
+              ...state.roundData,
+              roundNumber: gameState.roundNumber,
+            },
+          });
+        }
+
+        // Update shield status if provided
+        if (gameState.playerShields) {
+          const playerIds = Object.keys(gameState.playerShields);
+          if (playerIds.length >= 1) {
+            useGameStore.setState({
+              player1ShieldActive:
+                gameState.playerShields[playerIds[0]] || false,
+            });
+          }
+          if (playerIds.length >= 2) {
+            useGameStore.setState({
+              player2ShieldActive:
+                gameState.playerShields[playerIds[1]] || false,
+            });
+          }
+        }
+
+        // Log the state update
+        state.addEventLog(
+          `Game state updated: Round ${gameState.roundNumber}`,
+          'Server'
+        );
+
+        // If there's a message, add it to the logs
+        if (message) {
+          state.addEventLog(message, 'Server');
+        }
+
+        // If waiting for next round, set the pendingRoundNumber
+        if (waitingForNextRound) {
+          useGameStore.setState({
+            pendingRoundNumber: gameState.roundNumber,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('[game/store] Error processing game state update:', error);
+    }
+  });
+
+  // Round start event
+  window.addEventListener('round_start', (event: CustomEventInit) => {
+    try {
+      const { roundNumber, gameState } = event.detail || {};
+      console.log('[game/store] Round start event received:', event.detail);
+
+      const state = useGameStore.getState();
+
+      // Update round data
+      useGameStore.setState({
+        roundData: {
+          roundNumber: roundNumber || 1,
+          timeRemaining: 30, // Reset timer
+          isTransitioning: false,
+        },
+        pendingRoundNumber: null, // Clear pending round since we're starting it
+      });
+
+      // If game state is provided, update it
+      if (gameState) {
+        useGameStore.setState({ gameState });
+
+        // Extract player tower heights and goal heights
+        if (gameState.towerHeights && gameState.goalHeights) {
+          const playerIds = Object.keys(gameState.towerHeights);
+
+          if (playerIds.length >= 1) {
+            useGameStore.setState({
+              player1TowerHeight: gameState.towerHeights[playerIds[0]] || 0,
+              player1GoalHeight: gameState.goalHeights[playerIds[0]] || 5,
+            });
+          }
+
+          if (playerIds.length >= 2) {
+            useGameStore.setState({
+              player2TowerHeight: gameState.towerHeights[playerIds[1]] || 0,
+              player2GoalHeight: gameState.goalHeights[playerIds[1]] || 5,
+            });
+          }
+        }
+      }
+
+      // Reset card played state
+      useGameStore.setState({
+        player1CardPlayed: '',
+        player2CardPlayed: '',
+      });
+
+      state.addEventLog(`Round ${roundNumber} started`, 'Server');
+    } catch (error) {
+      console.error('[game/store] Error processing round start event:', error);
+    }
+  });
+
+  // Gesture event
+  window.addEventListener('gesture_event', (event: CustomEventInit) => {
+    try {
+      const { playerId, gesture, cardId } = event.detail || {};
+      console.log('[game/store] Gesture event received:', event.detail);
+
+      const state = useGameStore.getState();
+
+      // Update the player's card played state
+      const isPlayer1 =
+        Object.keys(state.gameState?.towerHeights || {})[0] === playerId;
+
+      if (isPlayer1) {
+        useGameStore.setState({ player1CardPlayed: gesture });
+      } else {
+        useGameStore.setState({ player2CardPlayed: gesture });
+      }
+
+      // Add the move to animations
+      const newMove: PlayerMove = {
+        playerId,
+        gesture,
+        cardId,
+      };
+
+      useGameStore.setState({
+        moveAnimations: [...state.moveAnimations, newMove],
+        animationState: {
+          ...state.animationState,
+          isAnimating: true,
+        },
+      });
+
+      state.addEventLog(`Player ${playerId} played ${gesture}`, 'Gesture');
+    } catch (error) {
+      console.error('[game/store] Error processing gesture event:', error);
+    }
+  });
+
+  // Round end event
+  window.addEventListener('round_end', (event: CustomEventInit) => {
+    try {
+      const { roundNumber, gameState, winnerId, shouldContinue } =
+        event.detail || {};
+      console.log('[game/store] Round end event received:', event.detail);
+
+      const state = useGameStore.getState();
+
+      // Update game state
+      if (gameState) {
+        useGameStore.setState({ gameState });
+
+        // Extract player tower heights and goal heights
+        if (gameState.towerHeights && gameState.goalHeights) {
+          const playerIds = Object.keys(gameState.towerHeights);
+
+          if (playerIds.length >= 1) {
+            useGameStore.setState({
+              player1TowerHeight: gameState.towerHeights[playerIds[0]] || 0,
+              player1GoalHeight: gameState.goalHeights[playerIds[0]] || 5,
+            });
+          }
+
+          if (playerIds.length >= 2) {
+            useGameStore.setState({
+              player2TowerHeight: gameState.towerHeights[playerIds[1]] || 0,
+              player2GoalHeight: gameState.goalHeights[playerIds[1]] || 5,
+            });
+          }
+        }
+      }
+
+      // Set round transition state
+      useGameStore.setState({
+        roundData: {
+          ...state.roundData,
+          isTransitioning: true,
+        },
+      });
+
+      // Update winner if provided
+      if (winnerId) {
+        useGameStore.setState({
+          winner: winnerId,
+          isGameEnded: !shouldContinue,
+          roundEndMessage: `Round ${roundNumber} complete. ${
+            winnerId === Object.keys(state.gameState?.towerHeights || {})[0]
+              ? state.player1Name
+              : state.player2Name
+          } wins!`,
+        });
+      } else {
+        useGameStore.setState({
+          roundEndMessage: `Round ${roundNumber} complete. No winner yet.`,
+        });
+      }
+
+      // If game should continue, prepare for next round
+      if (shouldContinue) {
+        // Set pending round number for next round
+        useGameStore.setState({
+          pendingRoundNumber: (roundNumber || 1) + 1,
+        });
+
+        // Immediately signal readiness for next round
+        setTimeout(() => {
+          const nextRound = (roundNumber || 1) + 1;
+          state.readyForNextRound(nextRound);
+        }, 1000);
+      }
+
+      state.addEventLog(
+        `Round ${roundNumber} ended${winnerId ? ` - Winner: ${winnerId}` : ''}`,
+        'Server'
+      );
+    } catch (error) {
+      console.error('[game/store] Error processing round end event:', error);
+    }
+  });
+
+  // Game ended event
+  window.addEventListener('game_ended', (event: CustomEventInit) => {
+    try {
+      const { winnerId } = event.detail || {};
+      console.log('[game/store] Game ended event received:', event.detail);
+
+      const state = useGameStore.getState();
+
+      // Update game state
+      useGameStore.setState({
+        gameStatus: 'ended',
+        isGameEnded: true,
+        winner: winnerId,
+        roundEndMessage: winnerId
+          ? `Game over! ${
+              winnerId === Object.keys(state.gameState?.towerHeights || {})[0]
+                ? state.player1Name
+                : state.player2Name
+            } wins!`
+          : 'Game over!',
+      });
+
+      state.addEventLog(`Game ended - Winner: ${winnerId || 'None'}`, 'Server');
+    } catch (error) {
+      console.error('[game/store] Error processing game ended event:', error);
+    }
+  });
+
+  // Game starting event
+  window.addEventListener('game_starting', (event: CustomEventInit) => {
+    try {
+      const { countdown } = event.detail || {};
+      console.log('[game/store] Game starting event received:', event.detail);
+
+      const state = useGameStore.getState();
+
+      // Update game state to starting
+      useGameStore.setState({
+        gameStatus: 'playing',
+      });
+
+      state.addEventLog(
+        `Game starting${countdown ? ` - Countdown: ${countdown}` : ''}`,
+        'Server'
+      );
+    } catch (error) {
+      console.error(
+        '[game/store] Error processing game starting event:',
+        error
+      );
+    }
+  });
+}

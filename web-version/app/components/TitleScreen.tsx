@@ -1,13 +1,12 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import { useRoomStore } from "../lib/room/store";
-import { CreateRoomForm } from "./CreateRoomForm";
-import { ViewRoomForm } from "./ViewRoomForm";
-import { RoomList } from "./RoomList";
-import { useRouter } from "next/navigation";
-import { initializeSocket } from "../lib/websocket";
+import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { useRoomStore } from '../lib/room/store';
+import { CreateRoomForm } from './CreateRoomForm';
+import { ViewRoomForm } from './ViewRoomForm';
+import { RoomList } from './RoomList';
+import { useRouter } from 'next/navigation';
 
 interface TitleScreenProps {
   onStart?: () => void;
@@ -17,56 +16,39 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
   const router = useRouter();
   const {
     createRoom,
-    joinRoom,
     currentRoom,
     error,
     fetchRooms,
     availableRooms,
     loading,
+    initialize,
   } = useRoomStore();
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showJoinForm, setShowJoinForm] = useState(false);
 
-  // Initialize WebSocket and fetch rooms
+  // Initialize room store and periodically refresh rooms
   useEffect(() => {
-    // Initialize socket if not already done
-    console.log("Initializing WebSocket connection from TitleScreen...");
-    initializeSocket();
+    console.log('TitleScreen mounted - initializing room store');
+    // Initialize the room store which will set up the WebSocket and fetch rooms
+    initialize();
 
-    // Fetch rooms when component mounts
-    console.log("Fetching available rooms...");
-    fetchRooms();
-
-    // Add event listeners for room updates
-    const handleRoomUpdated = (event: any) => {
-      console.log("Room updated event received:", event.detail);
-      // Refresh room list when a room is updated
+    // Set up a refresh interval to periodically fetch rooms
+    const refreshInterval = setInterval(() => {
+      console.log('Refreshing room list...');
       fetchRooms();
-    };
-
-    const handleRoomList = (event: any) => {
-      console.log("Room list event received:", event.detail);
-      // Update rooms state directly from the event payload
-      if (event.detail && event.detail.rooms) {
-        useRoomStore.setState({ availableRooms: event.detail.rooms });
-      }
-    };
-
-    window.addEventListener("room_updated", handleRoomUpdated);
-    window.addEventListener("room_list", handleRoomList);
+    }, 10000); // Refresh every 10 seconds
 
     return () => {
-      console.log("Cleaning up TitleScreen");
-      window.removeEventListener("room_updated", handleRoomUpdated);
-      window.removeEventListener("room_list", handleRoomList);
+      console.log('Cleaning up TitleScreen');
+      clearInterval(refreshInterval);
     };
-  }, [fetchRooms]);
+  }, [initialize, fetchRooms]);
 
   // Check if we're in a room and navigate
   useEffect(() => {
     if (currentRoom) {
-      console.log("Navigating to room:", currentRoom.id);
+      console.log('Navigating to room:', currentRoom.id);
       // Navigate to the room page
       router.push(`/rooms/${currentRoom.id}`);
     }
@@ -79,7 +61,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
       y: 0,
       opacity: 1,
       transition: {
-        type: "spring",
+        type: 'spring',
         stiffness: 120,
         damping: 10,
         delay: 0.2,
@@ -93,9 +75,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
       y: [0, -20, 0],
       transition: {
         duration: 3,
-        ease: "easeInOut",
+        ease: 'easeInOut',
         repeat: Infinity,
-        repeatType: "reverse" as const,
+        repeatType: 'reverse' as const,
       },
     },
   };
@@ -125,7 +107,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
       opacity: 1,
       y: 0,
       transition: {
-        type: "spring",
+        type: 'spring',
         stiffness: 100,
         damping: 10,
         delay: custom * 0.1,
@@ -135,134 +117,135 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
 
   // Room management handlers
   const handleCreateRoom = () => {
-    console.log("Opening create room form");
+    console.log('Opening create room form');
     setShowCreateForm(true);
     setShowJoinForm(false);
   };
 
   const handleCreateRoomSubmit = async (roomName: string) => {
-    console.log("Attempting to create room:", { roomName });
+    console.log('Attempting to create room:', { roomName });
     try {
       // No player name needed - we're creating an empty room
       await createRoom({ name: roomName });
-      console.log("Room creation request sent");
+      console.log('Room creation request sent');
       setShowCreateForm(false);
     } catch (err) {
-      console.error("Failed to create room:", err);
+      console.error('Failed to create room:', err);
     }
   };
 
   const handleJoinRoomClick = () => {
-    console.log("Opening join room form");
+    console.log('Opening join room form');
     setShowJoinForm(true);
     setShowCreateForm(false);
   };
 
   const handleJoinRoomSubmit = async (joinRoomId: string) => {
     if (!joinRoomId) {
-      console.error("No room ID provided");
+      console.error('No room ID provided');
       return;
     }
 
-    console.log("Attempting to view room:", { joinRoomId });
+    console.log('Attempting to view room:', { joinRoomId });
     try {
-      // Store room ID in localStorage and navigate
-      localStorage.setItem("currentRoomId", joinRoomId);
-      localStorage.setItem("currentPlayerId", "viewer-" + crypto.randomUUID());
-      localStorage.setItem("currentPlayerName", "Web Viewer");
+      // Join the room as a web viewer using the store function
+      await useRoomStore.getState().joinRoom({
+        roomId: joinRoomId,
+        playerName: 'Web Viewer',
+        playerType: 'webviewer',
+      });
 
-      // Navigate to the room
-      router.push(`/rooms/${joinRoomId}`);
+      // The navigation will happen automatically via the useEffect that watches currentRoom
     } catch (err) {
-      console.error("Failed to view room:", err);
+      console.error('Failed to view room:', err);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center overflow-hidden relative">
+    <div className='min-h-screen w-full flex flex-col items-center justify-center overflow-hidden relative'>
       {/* Floating room list */}
       <RoomList rooms={availableRooms} loading={loading} />
 
       <motion.div
-        className="relative flex flex-col items-center justify-center gap-8 p-8 max-w-4xl w-full"
+        className='relative flex flex-col items-center justify-center gap-8 p-8 max-w-4xl w-full'
         variants={containerVariants}
-        initial="initial"
-        animate="animate"
-        exit="exit"
+        initial='initial'
+        animate='animate'
+        exit='exit'
       >
         {/* Game title */}
         <motion.h1
-          className="game-title text-5xl sm:text-6xl md:text-7xl font-bold text-center text-white drop-shadow-[0_0_15px_rgba(124,58,237,0.5)]"
+          className='game-title text-5xl sm:text-6xl md:text-7xl font-bold text-center text-white drop-shadow-[0_0_15px_rgba(124,58,237,0.5)]'
           variants={titleVariants}
         >
           <motion.span
-            className="block"
+            className='block'
             variants={floatingVariants}
-            animate="animate"
+            animate='animate'
           >
             Gesture Tower
           </motion.span>
         </motion.h1>
         <>
           {/* Animated tower graphic */}
-          <div className="flex items-end justify-center mt-4 mb-8 h-64 relative">
+          <div className='flex items-end justify-center mt-4 mb-8 h-64 relative'>
             {/* Left player tower */}
-            <div className="flex flex-col-reverse items-center mr-12">
+            <div className='flex flex-col-reverse items-center mr-12'>
               {[...Array(5)].map((_, i) => (
                 <motion.div
                   key={`left-${i}`}
-                  className="w-20 h-12 bg-gradient-to-r from-primary-dark to-primary rounded-md mb-1"
+                  className='w-20 h-12 bg-gradient-to-r from-primary-dark to-primary rounded-md mb-1'
                   custom={i}
                   variants={blockVariants}
-                  initial="initial"
-                  animate="animate"
-                  style={{ marginLeft: i % 2 === 0 ? "-10px" : "10px" }}
+                  initial='initial'
+                  animate='animate'
+                  style={{ marginLeft: i % 2 === 0 ? '-10px' : '10px' }}
                 />
               ))}
             </div>
 
             {/* Goal marker */}
             <motion.div
-              className="absolute top-0 w-16 h-16 bg-accent rounded-full flex items-center justify-center text-sm"
+              className='absolute top-0 w-16 h-16 bg-accent rounded-full flex items-center justify-center text-sm'
               animate={{
                 y: [-10, 10],
               }}
               transition={{
                 duration: 2,
                 repeat: Infinity,
-                repeatType: "reverse",
+                repeatType: 'reverse',
               }}
             >
-              <span className="text-background font-bold">GOAL</span>
+              <span className='text-background font-bold'>GOAL</span>
             </motion.div>
 
             {/* Right player tower */}
-            <div className="flex flex-col-reverse items-center ml-12">
+            <div className='flex flex-col-reverse items-center ml-12'>
               {[...Array(4)].map((_, i) => (
                 <motion.div
                   key={`right-${i}`}
-                  className="w-20 h-12 bg-gradient-to-r from-secondary-dark to-secondary rounded-md mb-1"
+                  className='w-20 h-12 bg-gradient-to-r from-secondary-dark to-secondary rounded-md mb-1'
                   custom={i}
                   variants={blockVariants}
-                  initial="initial"
-                  animate="animate"
-                  style={{ marginLeft: i % 2 === 0 ? "10px" : "-10px" }}
+                  initial='initial'
+                  animate='animate'
+                  style={{ marginLeft: i % 2 === 0 ? '10px' : '-10px' }}
                 />
               ))}
             </div>
           </div>
 
           {/* Game room buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 mt-6">
+          <div className='flex flex-col sm:flex-row gap-4 mt-6'>
             <button
-              className="bg-secondary hover:bg-secondary-dark text-white font-bold py-3 px-6 rounded-lg shadow-lg"
+              className='bg-secondary hover:bg-secondary-dark text-white font-bold py-3 px-6 rounded-lg shadow-lg'
               onClick={handleCreateRoom}
             >
               Create Room
             </button>
 
             <button
-              className="bg-accent hover:bg-accent-dark text-white font-bold py-3 px-6 rounded-lg shadow-lg"
+              className='bg-accent hover:bg-accent-dark text-white font-bold py-3 px-6 rounded-lg shadow-lg'
               onClick={handleJoinRoomClick}
             >
               View Room
@@ -287,7 +270,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
         )}
 
         {error && (
-          <div className="bg-danger/20 text-danger p-3 rounded-md mt-4 max-w-md">
+          <div className='bg-danger/20 text-danger p-3 rounded-md mt-4 max-w-md'>
             {error}
           </div>
         )}
