@@ -3,25 +3,23 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useRoomStore } from "../../lib/room/store";
-import {
-  initializeSocket,
-  getSocketStatus,
-  sendWebSocketMessage,
-  signalNextRoundReady,
-} from "../../lib/websocket";
-import { getSavedRoomInfo } from "../../components/room/RoomHelpers";
 
 // Import game components
 import GameBackground from "../../components/game/GameBackground";
 import CenterDivider from "../../components/game/CenterDivider";
-import GestureTowerTitle from "../../components/game/GestureTowerTitle";
-import Player from "../../components/game/Player";
 import RoomInfo from "../../components/game/RoomInfo";
 import BackButton from "../../components/game/BackButton";
-import Shield from "../../components/game/Shield";
 import TowerBlocks from "../../components/game/TowerBlocks";
-import RulesScroll from "../../components/game/RulesScroll";
 import RulesButton from "../../components/game/RulesButton";
+import GameAnimation from "../../components/game/GameAnimation";
+import GameLoader from "../../components/game/GameLoader";
+import EventLogger from "../../components/game/EventLogger";
+import RoundDisplay from "../../components/game/RoundDisplay";
+import PlayerGestureDisplay from "../../components/game/PlayerGestureDisplay";
+import GameEventHandler from "../../components/game/GameEventHandler";
+import RoundTransitionHandler from "../../components/game/RoundTransitionHandler";
+import GameInitializer from "../../components/game/GameInitializer";
+import Player from "../../components/game/Player";
 
 // Game states
 type GameStateType = "starting" | "playing";
@@ -103,46 +101,6 @@ export default function GamePage() {
     addEventLog("Logs cleared", "UI");
   };
 
-  // Initialize WebSocket connection
-  useEffect(() => {
-    const socket = initializeSocket();
-    console.log("WebSocket initializing in game page");
-
-    // Check if socket is already connected
-    if (getSocketStatus() === "connected") {
-      setSocketConnected(true);
-      addEventLog("WebSocket connected", "WebSocket");
-    } else {
-      // Set up event listener for socket connection
-      const handleSocketConnected = () => {
-        console.log("WebSocket connected in game page");
-        setSocketConnected(true);
-        addEventLog("WebSocket connected", "WebSocket");
-      };
-
-      window.addEventListener("ws_connected", handleSocketConnected);
-
-      return () => {
-        window.removeEventListener("ws_connected", handleSocketConnected);
-      };
-    }
-  }, []);
-
-  // Verify we have proper room data
-  useEffect(() => {
-    // If we're connected but have no room data, try to get it from localStorage
-    if (socketConnected && !currentRoom) {
-      const savedInfo = getSavedRoomInfo();
-
-      if (!savedInfo.roomId || savedInfo.roomId !== roomId) {
-        // No valid saved info, redirect to home
-        console.log("No valid room info found, redirecting to home");
-        router.push("/");
-        return;
-      }
-    }
-  }, [socketConnected, currentRoom, roomId, router]);
-
   // Set player names when room data is available
   useEffect(() => {
     if (currentRoom && currentRoom.players.length > 0) {
@@ -162,657 +120,12 @@ export default function GamePage() {
     }
   }, [currentRoom]);
 
-  // Sequential animation steps for gameplay
-  useEffect(() => {
-    if (gameState === "starting") {
-      if (textAnimationComplete && !rulesAnimationComplete) {
-        // Text animation is complete, rules scroll is showing
-        // Rules will now stay visible until dismissed with the X button
-      } else if (textAnimationComplete && rulesAnimationComplete) {
-        // User has dismissed the rules, now show players and move to playing state
-        setAnimationComplete(true);
-        setGameState("playing");
-
-        // Signal to the server that we're ready to start the game
-        if (roomId && socketConnected) {
-          console.log("Sending game_ready signal to server");
-          addEventLog("Sent: game_ready", "WebSocket");
-
-          // Use the existing WebSocket connection through the helper function
-          sendWebSocketMessage({
-            event: "game_ready",
-            payload: { roomId },
-          });
-        }
-      }
-    }
-  }, [
-    gameState,
-    textAnimationComplete,
-    rulesAnimationComplete,
-    roomId,
-    socketConnected,
-  ]);
-
-  // Update useEffect to handle round transitions and signal readiness
-  useEffect(() => {
-    // Only process if we have a pending round and are not already transitioning
-    if (
-      pendingRoundNumber !== null &&
-      !isRoundTransitioning &&
-      roomId &&
-      socketConnected
-    ) {
-      // Set transitioning state
-      setIsRoundTransitioning(true);
-
-      console.log(
-        `[page.tsx] Starting transition animation for round ${pendingRoundNumber}`
-      );
-      addEventLog(
-        `Starting transition to round ${pendingRoundNumber}`,
-        "Animation"
-      );
-
-      // Wait for animations to complete, then signal ready
-      setTimeout(() => {
-        console.log(
-          `[page.tsx] Animation complete, signaling ready for round ${pendingRoundNumber}`
-        );
-        addEventLog(
-          `Animations complete, ready for round ${pendingRoundNumber}`,
-          "Animation"
-        );
-
-        // Signal to server we're ready for the next round
-        signalNextRoundReady(roomId, pendingRoundNumber);
-
-        // Reset states
-        setPendingRoundNumber(null);
-        setIsRoundTransitioning(false);
-      }, 3000); // Animation duration - adjust as needed
-    }
-  }, [pendingRoundNumber, isRoundTransitioning, roomId, socketConnected]);
-
-  // Add event listeners for tower game events
-  useEffect(() => {
-    if (socketConnected) {
-      // Round start event handler
-      const handleRoundStart = (event: CustomEvent) => {
-        const data = event.detail;
-        if (data.roomId === roomId) {
-          // Update round number
-          setCurrentRound(data.roundNumber || 1);
-          setRoundTimeRemaining(Math.floor(data.remainingTime / 1000) || 30);
-
-          // Log the event with basic info
-          addEventLog(
-            `Received: round_start (${data.roundNumber})`,
-            "GameState"
-          );
-
-          // Log card information if available
-          if (data.gameState && data.gameState.playerCards) {
-            // Count cards by type
-            const cardCounts: { [key: string]: number } = {};
-            let totalCards = 0;
-
-            Object.entries(data.gameState.playerCards).forEach(
-              ([playerId, cards]) => {
-                if (Array.isArray(cards)) {
-                  totalCards += cards.length;
-                  cards.forEach((card: any) => {
-                    if (card.type) {
-                      cardCounts[card.type] = (cardCounts[card.type] || 0) + 1;
-                    }
-                  });
-                }
-              }
-            );
-
-            if (totalCards > 0) {
-              const cardInfo = Object.entries(cardCounts)
-                .map(([type, count]) => `${type}:${count}`)
-                .join(", ");
-              addEventLog(
-                `Cards received: ${totalCards} (${cardInfo})`,
-                "GameState"
-              );
-            }
-          }
-
-          // Start countdown timer
-          if (roundTimer) clearInterval(roundTimer);
-          const timer = setInterval(() => {
-            setRoundTimeRemaining((prev) => {
-              if (prev <= 1) {
-                clearInterval(timer);
-                return 0;
-              }
-              return prev - 1;
-            });
-          }, 1000);
-
-          setRoundTimer(timer);
-
-          console.log(
-            `Round ${data.roundNumber} started, ${
-              data.remainingTime / 1000 || 30
-            }s remaining`
-          );
-
-          // Update tower goal heights from server data if available
-          if (data.gameState && data.gameState.goalHeights) {
-            // Get player IDs from the room data
-            const beagleBoardPlayers =
-              currentRoom?.players.filter(
-                (p) => p.playerType === "beagleboard"
-              ) || [];
-
-            console.log(
-              "Received goal heights from server:",
-              data.gameState.goalHeights
-            );
-
-            if (beagleBoardPlayers.length >= 2) {
-              const player1Id = beagleBoardPlayers[0].id;
-              const player2Id = beagleBoardPlayers[1].id;
-
-              // Update goal heights from server data
-              if (data.gameState.goalHeights[player1Id]) {
-                setPlayer1GoalHeight(data.gameState.goalHeights[player1Id]);
-                console.log(
-                  `Set Player 1 (${player1Name}) goal height to ${data.gameState.goalHeights[player1Id]}`
-                );
-              }
-
-              if (data.gameState.goalHeights[player2Id]) {
-                setPlayer2GoalHeight(data.gameState.goalHeights[player2Id]);
-                console.log(
-                  `Set Player 2 (${player2Name}) goal height to ${data.gameState.goalHeights[player2Id]}`
-                );
-              }
-            } else if (beagleBoardPlayers.length === 1) {
-              // Handle single player mode
-              const player1Id = beagleBoardPlayers[0].id;
-              const virtualOpponentId = "virtual_opponent";
-
-              if (data.gameState.goalHeights[player1Id]) {
-                setPlayer1GoalHeight(data.gameState.goalHeights[player1Id]);
-                console.log(
-                  `Set Player 1 (${player1Name}) goal height to ${data.gameState.goalHeights[player1Id]}`
-                );
-              }
-
-              if (data.gameState.goalHeights[virtualOpponentId]) {
-                setPlayer2GoalHeight(
-                  data.gameState.goalHeights[virtualOpponentId]
-                );
-                console.log(
-                  `Set Virtual Opponent goal height to ${data.gameState.goalHeights[virtualOpponentId]}`
-                );
-              }
-            }
-          }
-        }
-      };
-
-      // Round end event handler
-      const handleRoundEnd = (event: CustomEvent) => {
-        const data = event.detail;
-        if (data.roomId === roomId) {
-          console.log(`[page.tsx] Round ${data.roundNumber} ended`);
-
-          // Log the event
-          addEventLog(`Received: round_end (${data.roundNumber})`, "GameState");
-
-          // Clear the round timer
-          if (roundTimer) {
-            clearInterval(roundTimer);
-            setRoundTimer(null);
-          }
-
-          // Update game state
-          if (data.gameState) {
-            const gameState = data.gameState;
-
-            // Get player IDs from the room data
-            const beagleBoardPlayers =
-              currentRoom?.players.filter(
-                (p) => p.playerType === "beagleboard"
-              ) || [];
-
-            // Update tower heights
-            if (gameState.towerHeights) {
-              if (beagleBoardPlayers.length >= 2) {
-                const player1Id = beagleBoardPlayers[0].id;
-                const player2Id = beagleBoardPlayers[1].id;
-
-                setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
-                setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
-                console.log(
-                  `[page.tsx] End of round tower heights - Player 1: ${
-                    gameState.towerHeights[player1Id] || 0
-                  }, Player 2: ${gameState.towerHeights[player2Id] || 0}`
-                );
-              } else if (beagleBoardPlayers.length === 1) {
-                // Handle single player mode
-                const player1Id = beagleBoardPlayers[0].id;
-                const virtualOpponentId = "virtual_opponent";
-
-                setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
-                setPlayer2TowerHeight(
-                  gameState.towerHeights[virtualOpponentId] || 0
-                );
-                console.log(
-                  `[page.tsx] End of round tower heights - Player 1: ${
-                    gameState.towerHeights[player1Id] || 0
-                  }, Virtual Opponent: ${
-                    gameState.towerHeights[virtualOpponentId] || 0
-                  }`
-                );
-              }
-            }
-
-            // Update goal heights if provided
-            if (gameState.goalHeights) {
-              if (beagleBoardPlayers.length >= 2) {
-                const player1Id = beagleBoardPlayers[0].id;
-                const player2Id = beagleBoardPlayers[1].id;
-
-                if (gameState.goalHeights[player1Id]) {
-                  setPlayer1GoalHeight(gameState.goalHeights[player1Id]);
-                }
-
-                if (gameState.goalHeights[player2Id]) {
-                  setPlayer2GoalHeight(gameState.goalHeights[player2Id]);
-                }
-              } else if (beagleBoardPlayers.length === 1) {
-                const player1Id = beagleBoardPlayers[0].id;
-                const virtualOpponentId = "virtual_opponent";
-
-                if (gameState.goalHeights[player1Id]) {
-                  setPlayer1GoalHeight(gameState.goalHeights[player1Id]);
-                }
-
-                if (gameState.goalHeights[virtualOpponentId]) {
-                  setPlayer2GoalHeight(
-                    gameState.goalHeights[virtualOpponentId]
-                  );
-                }
-              }
-            }
-          }
-
-          // Start animation sequence for round end
-          setIsAnimating(true);
-
-          // Display round end message
-          setRoundEndMessage(`Round ${data.roundNumber} Complete`);
-
-          // After basic animations finish, check if we should transition to next round
-          setTimeout(() => {
-            setRoundEndMessage("");
-            setIsAnimating(false);
-
-            // If the game should continue to the next round
-            if (data.shouldContinue) {
-              const nextRoundNumber = data.roundNumber + 1;
-              console.log(
-                `[page.tsx] Preparing transition to round ${nextRoundNumber}`
-              );
-
-              // Set the pending round number to trigger the transition effect
-              setPendingRoundNumber(nextRoundNumber);
-            }
-          }, 3000);
-        }
-      };
-
-      // Game state update handler - for getting the latest game state changes
-      const handleGameStateUpdate = (event: CustomEvent) => {
-        const data = event.detail;
-        if (data.roomId === roomId && data.gameState) {
-          // Log the event
-          addEventLog(`Received: game_state_update`, "GameState");
-
-          const gameState = data.gameState;
-
-          // Update the round number if available
-          if (gameState.roundNumber) {
-            setCurrentRound(gameState.roundNumber);
-          }
-
-          // Get player IDs from the room data
-          const beagleBoardPlayers =
-            currentRoom?.players.filter(
-              (p) => p.playerType === "beagleboard"
-            ) || [];
-
-          // Update tower heights
-          if (gameState.towerHeights && beagleBoardPlayers.length >= 2) {
-            const player1Id = beagleBoardPlayers[0].id;
-            const player2Id = beagleBoardPlayers[1].id;
-
-            setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
-            setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
-
-            // Log tower height updates
-            addEventLog(
-              `Tower heights: ${player1Name}=${
-                gameState.towerHeights[player1Id] || 0
-              }, ${player2Name}=${gameState.towerHeights[player2Id] || 0}`,
-              "GameState"
-            );
-          } else if (
-            gameState.towerHeights &&
-            beagleBoardPlayers.length === 1
-          ) {
-            // Handle single player mode
-            const player1Id = beagleBoardPlayers[0].id;
-            const virtualOpponentId = "virtual_opponent";
-
-            setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
-            setPlayer2TowerHeight(
-              gameState.towerHeights[virtualOpponentId] || 0
-            );
-
-            // Log tower height updates for single player
-            addEventLog(
-              `Tower heights: ${player1Name}=${
-                gameState.towerHeights[player1Id] || 0
-              }, AI=${gameState.towerHeights[virtualOpponentId] || 0}`,
-              "GameState"
-            );
-          }
-
-          // Update goal heights if they are included
-          if (gameState.goalHeights) {
-            if (beagleBoardPlayers.length >= 2) {
-              const player1Id = beagleBoardPlayers[0].id;
-              const player2Id = beagleBoardPlayers[1].id;
-
-              if (gameState.goalHeights[player1Id]) {
-                setPlayer1GoalHeight(gameState.goalHeights[player1Id]);
-                console.log(
-                  `Updated Player 1 goal height to ${gameState.goalHeights[player1Id]}`
-                );
-              }
-
-              if (gameState.goalHeights[player2Id]) {
-                setPlayer2GoalHeight(gameState.goalHeights[player2Id]);
-                console.log(
-                  `Updated Player 2 goal height to ${gameState.goalHeights[player2Id]}`
-                );
-              }
-            } else if (beagleBoardPlayers.length === 1) {
-              const player1Id = beagleBoardPlayers[0].id;
-              const virtualOpponentId = "virtual_opponent";
-
-              if (gameState.goalHeights[player1Id]) {
-                setPlayer1GoalHeight(gameState.goalHeights[player1Id]);
-              }
-
-              if (gameState.goalHeights[virtualOpponentId]) {
-                setPlayer2GoalHeight(gameState.goalHeights[virtualOpponentId]);
-              }
-            }
-          }
-        }
-      };
-
-      // Game ended event handler
-      const handleGameEnded = (event: CustomEvent) => {
-        const data = event.detail;
-        if (data.roomId === roomId) {
-          setGameEnded(true);
-          setWinner(data.winnerId);
-
-          // Log the event
-          addEventLog(`Received: game_ended`, "GameState");
-
-          // Clear any existing timer
-          if (roundTimer) clearInterval(roundTimer);
-
-          // Update final game state
-          if (data.gameState) {
-            const gameState = data.gameState;
-
-            // Get player IDs from the room data
-            const beagleBoardPlayers =
-              currentRoom?.players.filter(
-                (p) => p.playerType === "beagleboard"
-              ) || [];
-
-            // Update tower heights
-            if (gameState.towerHeights && beagleBoardPlayers.length >= 2) {
-              const player1Id = beagleBoardPlayers[0].id;
-              const player2Id = beagleBoardPlayers[1].id;
-
-              setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
-              setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
-            }
-          }
-        }
-      };
-
-      // Gesture event handler to update UI
-      const handleGestureEvent = (event: CustomEvent) => {
-        const data = event.detail;
-        // Update UI based on the gesture and log the event
-        addEventLog(
-          `Received: gesture_event (${data.gesture})`,
-          "GestureDetector"
-        );
-
-        // Add to animations queue to track pending animations
-        setMoveAnimations((prev) => [
-          ...prev,
-          {
-            playerId: data.playerId,
-            gesture: data.gesture,
-          },
-        ]);
-
-        // Log additional details about the gesture
-        if (data.confidence) {
-          addEventLog(
-            `Gesture confidence: ${(data.confidence * 100).toFixed(1)}%`,
-            "GestureDetector"
-          );
-        }
-
-        if (data.cardId) {
-          addEventLog(`Card ID: ${data.cardId}`, "GestureDetector");
-        }
-
-        console.log(
-          "[page.tsx] Gesture received:",
-          data.gesture,
-          "from player:",
-          data.playerId,
-          "with confidence:",
-          data.confidence
-        );
-
-        // Get player names from the room data
-        const beagleBoardPlayers =
-          currentRoom?.players.filter((p) => p.playerType === "beagleboard") ||
-          [];
-
-        // Show card played message
-        if (beagleBoardPlayers.length >= 2) {
-          const player1Id = beagleBoardPlayers[0].id;
-          const player2Id = beagleBoardPlayers[1].id;
-
-          const playerName =
-            data.playerId === player1Id
-              ? player1Name
-              : data.playerId === player2Id
-              ? player2Name
-              : "Unknown player";
-
-          const message = `${playerName} played ${data.gesture}${
-            data.cardId ? " card" : ""
-          }!`;
-
-          console.log(`[page.tsx] GESTURE UI UPDATE: ${message}`);
-
-          if (data.playerId === player1Id) {
-            setPlayer1CardPlayed(message);
-
-            // Update game state based on gesture
-            if (data.gesture === "attack") {
-              // Show attack visual
-              console.log("[page.tsx] Player 1 performed attack");
-            } else if (data.gesture === "defend") {
-              // Activate shield
-              setPlayer1ShieldActive(true);
-              console.log("[page.tsx] Player 1 activated shield");
-            } else if (data.gesture === "build") {
-              // Add block
-              addPlayer1Block();
-              console.log("[page.tsx] Player 1 added block");
-            }
-          } else if (data.playerId === player2Id) {
-            setPlayer2CardPlayed(message);
-
-            // Update game state based on gesture
-            if (data.gesture === "attack") {
-              // Show attack visual
-              console.log("[page.tsx] Player 2 performed attack");
-            } else if (data.gesture === "defend") {
-              // Activate shield
-              setPlayer2ShieldActive(true);
-              console.log("[page.tsx] Player 2 activated shield");
-            } else if (data.gesture === "build") {
-              // Add block
-              addPlayer2Block();
-              console.log("[page.tsx] Player 2 added block");
-            }
-          }
-
-          // Clear any existing timer
-          if (cardPlayedTimer) clearTimeout(cardPlayedTimer);
-
-          // Set timer to clear the message after 5 seconds
-          const timer = setTimeout(() => {
-            setPlayer1CardPlayed("");
-            setPlayer2CardPlayed("");
-
-            // Reset shield visuals after time expires
-            if (data.gesture === "defend") {
-              if (data.playerId === player1Id) {
-                setPlayer1ShieldActive(false);
-              } else if (data.playerId === player2Id) {
-                setPlayer2ShieldActive(false);
-              }
-            }
-
-            // Remove this animation from the queue
-            setMoveAnimations((prev) =>
-              prev.filter(
-                (anim) =>
-                  !(
-                    anim.playerId === data.playerId &&
-                    anim.gesture === data.gesture
-                  )
-              )
-            );
-          }, 5000);
-
-          setCardPlayedTimer(timer);
-
-          // Play an appropriate sound for the gesture
-          try {
-            const audio = new Audio(`/sounds/${data.gesture}.mp3`);
-            audio
-              .play()
-              .catch((e) =>
-                console.error("[page.tsx] Error playing sound:", e)
-              );
-          } catch (e) {
-            console.warn("[page.tsx] Could not play gesture sound", e);
-          }
-        }
-      };
-
-      // Add an event handler for game_starting
-      const handleGameStarting = (event: CustomEvent) => {
-        addEventLog(`Received: game_starting`, "GameState");
-      };
-
-      // Add event listeners
-      window.addEventListener("round_start", handleRoundStart as EventListener);
-      window.addEventListener("round_end", handleRoundEnd as EventListener);
-      window.addEventListener("game_ended", handleGameEnded as EventListener);
-      window.addEventListener(
-        "gesture_event",
-        handleGestureEvent as EventListener
-      );
-      window.addEventListener(
-        "game_state_update",
-        handleGameStateUpdate as EventListener
-      );
-      window.addEventListener(
-        "game_starting",
-        handleGameStarting as EventListener
-      );
-
-      // Cleanup on unmount
-      return () => {
-        window.removeEventListener(
-          "round_start",
-          handleRoundStart as EventListener
-        );
-        window.removeEventListener(
-          "round_end",
-          handleRoundEnd as EventListener
-        );
-        window.removeEventListener(
-          "game_ended",
-          handleGameEnded as EventListener
-        );
-        window.removeEventListener(
-          "gesture_event",
-          handleGestureEvent as EventListener
-        );
-        window.removeEventListener(
-          "game_state_update",
-          handleGameStateUpdate as EventListener
-        );
-        window.removeEventListener(
-          "game_starting",
-          handleGameStarting as EventListener
-        );
-
-        if (roundTimer) clearInterval(roundTimer);
-      };
-    }
-  }, [
-    socketConnected,
-    roomId,
-    currentRoom,
-    roundTimer,
-    player1Name,
-    player2Name,
-  ]);
-
   // Clean up timer on unmount
   useEffect(() => {
     return () => {
       if (roundTimer) clearInterval(roundTimer);
     };
   }, [roundTimer]);
-
-  // Shield toggle handlers
-  const togglePlayer1Shield = () => {
-    setPlayer1ShieldActive((prev) => !prev);
-  };
-
-  const togglePlayer2Shield = () => {
-    setPlayer2ShieldActive((prev) => !prev);
-  };
 
   // Tower block handlers
   const addPlayer1Block = () => {
@@ -838,37 +151,20 @@ export default function GamePage() {
     return player ? player.name : playerId;
   };
 
-  // Determine the round display for the UI
-  const getRoundDisplay = (): string => {
-    if (currentRoom?.status !== "playing") {
-      return "Initializing game...";
-    }
-
-    return `Round ${currentRound} (${roundTimeRemaining}s)`;
-  };
-
   // Game ending display
   const getGameEndedDisplay = (): string => {
     if (!winner) return "Game Ended";
     return `${getPlayerNameById(winner)} Wins!`;
   };
 
-  // Loading states
-  if (!socketConnected) {
+  // If socket is not connected or room data is not loaded, show loader
+  if (!socketConnected || !currentRoom) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
-        <p className="text-white/70">Connecting to server...</p>
-      </div>
-    );
-  }
-
-  if (!currentRoom) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
-        <p className="text-white/70">Loading game data...</p>
-      </div>
+      <GameLoader
+        isConnecting={!socketConnected}
+        isLoading={socketConnected && !currentRoom}
+        connectionErrorMessage={error || undefined}
+      />
     );
   }
 
@@ -880,20 +176,74 @@ export default function GamePage() {
         {/* Background */}
         <GameBackground />
 
-        {/* Title Animation */}
-        <GestureTowerTitle
-          isVisible={gameState === "starting" && !textAnimationComplete}
-          onAnimationComplete={() => setTextAnimationComplete(true)}
+        {/* Game Event Handler - Silent component for managing events */}
+        <GameEventHandler
+          roomId={roomId}
+          socketConnected={socketConnected}
+          currentRoom={currentRoom}
+          addEventLog={addEventLog}
+          setCurrentRound={setCurrentRound}
+          setRoundTimeRemaining={setRoundTimeRemaining}
+          setRoundTimer={setRoundTimer}
+          roundTimer={roundTimer}
+          setPlayer1TowerHeight={setPlayer1TowerHeight}
+          setPlayer2TowerHeight={setPlayer2TowerHeight}
+          setPlayer1GoalHeight={setPlayer1GoalHeight}
+          setPlayer2GoalHeight={setPlayer2GoalHeight}
+          setRoundEndMessage={setRoundEndMessage}
+          setGameEnded={setGameEnded}
+          setWinner={setWinner}
+          setPlayer1CardPlayed={setPlayer1CardPlayed}
+          setPlayer2CardPlayed={setPlayer2CardPlayed}
+          setCardPlayedTimer={setCardPlayedTimer}
+          cardPlayedTimer={cardPlayedTimer}
+          setPlayer1ShieldActive={setPlayer1ShieldActive}
+          setPlayer2ShieldActive={setPlayer2ShieldActive}
+          addPlayer1Block={addPlayer1Block}
+          addPlayer2Block={addPlayer2Block}
+          player1Name={player1Name}
+          player2Name={player2Name}
+          setIsAnimating={setIsAnimating}
+          setMoveAnimations={setMoveAnimations}
+          setPendingRoundNumber={setPendingRoundNumber}
         />
 
-        {/* Rules Scroll - appears after title fades out */}
-        <RulesScroll
-          isVisible={
+        {/* Round Transition Handler - Silent component for managing round transitions */}
+        <RoundTransitionHandler
+          pendingRoundNumber={pendingRoundNumber}
+          isRoundTransitioning={isRoundTransitioning}
+          roomId={roomId}
+          socketConnected={socketConnected}
+          setIsRoundTransitioning={setIsRoundTransitioning}
+          setPendingRoundNumber={setPendingRoundNumber}
+          addEventLog={addEventLog}
+        />
+
+        {/* Game Initializer - Silent component for game initialization */}
+        <GameInitializer
+          roomId={roomId}
+          setSocketConnected={setSocketConnected}
+          gameState={gameState}
+          textAnimationComplete={textAnimationComplete}
+          rulesAnimationComplete={rulesAnimationComplete}
+          animationComplete={animationComplete}
+          setAnimationComplete={setAnimationComplete}
+          setGameState={setGameState}
+          addEventLog={addEventLog}
+        />
+
+        {/* Game Animation Component for Title and Rules */}
+        <GameAnimation
+          showTitleAnimation={
+            gameState === "starting" && !textAnimationComplete
+          }
+          showRulesAnimation={
             gameState === "starting" &&
             textAnimationComplete &&
             !rulesAnimationComplete
           }
-          onAnimationComplete={() => setRulesAnimationComplete(true)}
+          onTitleAnimationComplete={() => setTextAnimationComplete(true)}
+          onRulesAnimationComplete={() => setRulesAnimationComplete(true)}
         />
 
         {/* Center Divider */}
@@ -902,57 +252,17 @@ export default function GamePage() {
         {/* Game state display */}
         {gameState === "playing" && (
           <>
-            {/* Turn indicator - now shows round instead */}
-            <div className="absolute top-4 left-0 right-0 text-center">
-              <div className="bg-gray-800/80 text-white px-4 py-2 rounded-md inline-block">
-                {gameEnded ? getGameEndedDisplay() : getRoundDisplay()}
-              </div>
-            </div>
+            {/* Round information display */}
+            <RoundDisplay
+              gameEnded={gameEnded}
+              currentRound={currentRound}
+              roundTimeRemaining={roundTimeRemaining}
+              winnerName={winner ? getPlayerNameById(winner) : ""}
+              roundEndMessage={roundEndMessage}
+            />
 
-            {/* Event Log Display */}
-            <div className="absolute top-16 left-0 right-0 text-center">
-              <div className="bg-gray-900/70 text-white px-4 py-2 rounded-md inline-block max-w-[600px] w-full mx-auto">
-                <div className="text-sm font-mono text-left max-h-[180px] overflow-y-auto">
-                  <div className="text-xs text-gray-400 mb-1 border-b border-gray-700 pb-1 flex justify-between items-center">
-                    <span>Debug Logs</span>
-                    <button
-                      onClick={clearEventLogs}
-                      className="text-xs text-gray-400 hover:text-white"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  {eventLogs.map((log, index) => {
-                    // Extract source from log if possible
-                    const sourceMatch = log.match(/\[(.*?)\]/);
-                    const source = sourceMatch ? sourceMatch[1] : "UI";
-
-                    // Determine color based on source
-                    let textColor = "text-white";
-                    if (source === "GameState") textColor = "text-green-400";
-                    if (source === "GestureDetector")
-                      textColor = "text-blue-400";
-                    if (source === "WebSocket") textColor = "text-purple-400";
-
-                    return (
-                      <div
-                        key={index}
-                        className={`whitespace-nowrap ${textColor} text-xs`}
-                      >
-                        {log}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Round end message - shown temporarily when a round ends */}
-            {roundEndMessage && (
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/70 text-white px-6 py-4 rounded-lg text-xl font-bold animate-pulse z-50">
-                {roundEndMessage}
-              </div>
-            )}
+            {/* Debug event logs */}
+            <EventLogger eventLogs={eventLogs} onClearLogs={clearEventLogs} />
 
             {/* Rules button - top left corner */}
             <RulesButton />
@@ -984,26 +294,13 @@ export default function GamePage() {
               }
             />
 
-            {/* Card played messages */}
-            {player1CardPlayed && (
-              <div className="absolute bottom-20 left-[25%] transform -translate-x-1/2 bg-blue-600/80 text-white px-3 py-1 rounded-md z-20">
-                {player1CardPlayed}
-              </div>
-            )}
-            {player2CardPlayed && (
-              <div className="absolute bottom-20 right-[25%] transform translate-x-1/2 bg-red-600/80 text-white px-3 py-1 rounded-md z-20">
-                {player2CardPlayed}
-              </div>
-            )}
-
-            {/* Display shields if active */}
-            <Shield
-              playerId="player1"
-              isVisible={player1ShieldActive && gameState === "playing"}
-            />
-            <Shield
-              playerId="player2"
-              isVisible={player2ShieldActive && gameState === "playing"}
+            {/* Player gesture displays and shields */}
+            <PlayerGestureDisplay
+              player1CardPlayed={player1CardPlayed}
+              player2CardPlayed={player2CardPlayed}
+              player1ShieldActive={player1ShieldActive}
+              player2ShieldActive={player2ShieldActive}
+              gameState={gameState}
             />
           </>
         )}

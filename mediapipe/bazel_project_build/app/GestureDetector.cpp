@@ -260,7 +260,23 @@ void GestureDetector::confirmGesture(const std::string& actionType) {
     
     // Fallback to the room manager if sending via event sender failed
     if (!sent && roomManager) {
-        std::string gestureData = "{\"gesture\":\"" + actionType + "\",\"confidence\":0.95}";
-        roomManager->sendGestureData(gestureData);
+        // Create an event sender if it doesn't exist
+        if (!eventSender && roomManager->getClient()) {
+            eventSender = new GestureEventSender(roomManager->getClient());
+        }
+        
+        // Try again with the newly created event sender
+        if (eventSender) {
+            eventSender->sendGestureEvent(
+                roomManager->getCurrentRoomId(),
+                roomManager->getDeviceId(),
+                actionType,
+                0.95f
+            );
+            // Ensure message processing
+            if (roomManager->getClient()) {
+                roomManager->getClient()->ensureMessageProcessing();
+            }
+        }
     }
 } 

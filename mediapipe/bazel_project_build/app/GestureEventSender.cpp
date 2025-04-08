@@ -43,7 +43,9 @@ bool GestureEventSender::sendGestureEvent(
     std::string eventString = eventJson.dump();
     
     // Send via WebSocket
-    return client->sendMessage(eventString);
+    bool result = client->sendMessage(eventString);
+    client->ensureMessageProcessing();
+    return result;
 }
 
 void GestureEventSender::setClient(WebSocketClient* newClient) {

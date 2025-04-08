@@ -87,9 +87,6 @@ private:
     
     // Display the available rooms
     void displayRoomList();
-    
-    // Send message with loading state tracking
-    bool sendMessageWithTracking(const std::string& message, const std::string& requestType);
 
     // Display methods - update LCD with current game state and cards
 
@@ -135,9 +132,6 @@ public:
 
     // Set player name
     void setPlayerName(const std::string& name) { playerName = name; }
-
-    // Send gesture data
-    bool sendGestureData(const std::string& gestureData);
     
     // Send gesture event - convenience method to call gestureEventSender
     bool sendGestureEvent(const std::string& roomId, const std::string& playerId, 

@@ -590,27 +590,6 @@ void RoomManager::resetLoadingState() {
     currentRequestType = "";
 }
 
-bool RoomManager::sendMessageWithTracking(const std::string& message, const std::string& requestType) {
-    if (!client) {
-        return false;
-    }
-    
-    // Check if we're already waiting for a response
-    if (isWaitingForResponse) {
-        // Instead of waiting for a timeout, allow new requests to proceed
-        // and simply update the tracking information
-        resetLoadingState();
-    }
-    
-    // Set loading state
-    isWaitingForResponse = true;
-    currentRequestType = requestType;
-    lastRequestTime = std::chrono::steady_clock::now();
-    
-    // Send the message
-    return client->sendMessage(message);
-}
-
 // Getters implementation
 const std::vector<Room> RoomManager::getAvailableRooms() const {
     std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(roomsMutex));
@@ -645,7 +624,11 @@ bool RoomManager::joinRoom(const std::string& roomId) {
     
     std::string jsonMessage = message.dump();
     
-    return sendMessageWithTracking(jsonMessage, "join_room");
+    // Send message directly with immediate processing
+    bool result = client->sendMessage(jsonMessage);
+    client->ensureMessageProcessing();
+    
+    return result;
 }
 
 bool RoomManager::leaveRoom() {
@@ -665,7 +648,11 @@ bool RoomManager::leaveRoom() {
     
     connected = false; // Optimistically mark as disconnected
     
-    return sendMessageWithTracking(message.dump(), "leave_room");
+    // Send message directly with immediate processing
+    bool result = client->sendMessage(message.dump());
+    client->ensureMessageProcessing();
+    
+    return result;
 }
 
 void RoomManager::setReady(bool isReady) {
@@ -688,38 +675,7 @@ void RoomManager::setReady(bool isReady) {
     
     // Send the message - no tracking needed as we'll receive room_updated
     client->sendMessage(message.dump());
-}
-
-bool RoomManager::sendGestureData(const std::string& gestureData) {
-    if (!client || !client->isConnected() || !connected) {
-        return false;
-    }
-    
-    // Create JSON message using modern format
-    json payload = json::object();
-    payload["playerId"] = deviceId;
-    payload["roomId"] = currentRoomId;
-    
-    // Parse the gesture data as JSON and add it to the payload
-    try {
-        json gestureJson = json::parse(gestureData);
-        payload["gesture"] = gestureJson["gesture"];
-        payload["confidence"] = gestureJson["confidence"];
-        
-        // Include cardId if it exists in the gesture data
-        if (gestureJson.contains("cardId") && !gestureJson["cardId"].empty()) {
-            payload["cardId"] = gestureJson["cardId"];
-        }
-    } catch (const json::parse_error& e) {
-        // If parsing fails, try to include the raw data
-        payload["gestureData"] = gestureData;
-    }
-    
-    json message = json::object();
-    message["event"] = "gesture_event";
-    message["payload"] = payload;
-    
-    return client->sendMessage(message.dump());
+    client->ensureMessageProcessing();
 }
 
 bool RoomManager::sendGestureEvent(const std::string& roomId, const std::string& playerId, 
@@ -735,5 +691,12 @@ bool RoomManager::sendGestureEvent(const std::string& roomId, const std::string&
     }
     
     // Forward the gesture event to the gesture event sender
-    return gestureEventSender->sendGestureEvent(roomId, playerId, gesture, confidence, cardId);
+    bool result = gestureEventSender->sendGestureEvent(roomId, playerId, gesture, confidence, cardId);
+    
+    // Ensure message processing
+    if (client) {
+        client->ensureMessageProcessing();
+    }
+    
+    return result;
 } 

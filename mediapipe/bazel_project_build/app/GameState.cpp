@@ -119,14 +119,13 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
     }
     
     // Always set the timer first to ensure we have a proper countdown
-    // Always use fixed 30-second timer regardless of what server sends
     currentTurnTimeRemaining = 30; // Fixed 30 seconds per round
     lastTimerUpdate = std::chrono::steady_clock::now();
     timerActive = true;
     
     // Handle cards if they're included in round_start payload (new format)
     bool foundCards = false;
-    
+    std::cout << "roundStartPayload: " << roundStartPayload.dump() << std::endl;
     if (roundStartPayload.contains("playerCards") && roundStartPayload["playerCards"].is_object()) {
         // Look for our device ID in the payload
         std::string ourDeviceId = deviceId;
@@ -289,6 +288,7 @@ void GameState::sendRoundEndEvent() {
     std::string messageStr = message.dump();
     
     bool sendResult = roomManager->client->sendMessage(messageStr);
+    roomManager->client->ensureMessageProcessing();
     
     // Update display to show "Waiting for next round" message
     if (displayManager) {
