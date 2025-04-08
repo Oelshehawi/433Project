@@ -6,9 +6,9 @@ import {
   ExtendedWebSocket,
   ServerEventType,
   GestureEventPayload,
-} from "./types";
-import { rooms, webClientNextRoundReadyRooms } from "./roomManager";
-import { sendToRoom } from "./messaging";
+} from './types';
+import { rooms, webClientNextRoundReadyRooms } from './roomManager';
+import { sendToRoom } from './messaging';
 
 // Constants for game configuration
 const MIN_GOAL_HEIGHT = 5;
@@ -38,14 +38,14 @@ export function initializeGameState(roomId: string): boolean {
   const room = rooms.get(roomId)!;
 
   // Only initialize if game is starting
-  if (room.status !== "playing") {
+  if (room.status !== 'playing') {
     console.error(`Room ${roomId} is not in playing state`);
     return false;
   }
 
   // Get only beagleboard players
   const beagleBoardPlayers = room.players.filter(
-    (player) => player.playerType === "beagleboard"
+    (player) => player.playerType === 'beagleboard'
   );
 
   // Check if we have enough players based on MIN_REQUIRED_PLAYERS constant
@@ -104,7 +104,7 @@ export function initializeGameState(roomId: string): boolean {
 
   // In TEST MODE, set up virtual opponent
   if (useTestMode) {
-    const virtualOpponentId = "virtual_opponent";
+    const virtualOpponentId = 'virtual_opponent';
     gameState.towerHeights.set(virtualOpponentId, 0);
     const opponentGoalHeight = Math.floor(
       Math.random() * (MAX_GOAL_HEIGHT - MIN_GOAL_HEIGHT + 1) + MIN_GOAL_HEIGHT
@@ -132,10 +132,10 @@ export function initializeGameState(roomId: string): boolean {
     roundStartTime: gameState.roundStartTime,
   };
 
-  sendToRoom(roomId, "game_state_update", {
+  sendToRoom(roomId, 'game_state_update', {
     roomId,
     gameState: gameStateForSending,
-    message: "Game initialized, waiting for web client ready signal",
+    message: 'Game initialized, waiting for web client ready signal',
   });
 
   // Don't start the first round automatically
@@ -174,7 +174,7 @@ export function startRound(roomId: string): boolean {
 
   // Get all players (both real and virtual)
   const beagleBoardPlayers = room.players.filter(
-    (player) => player.playerType === "beagleboard"
+    (player) => player.playerType === 'beagleboard'
   );
 
   // Initialize all real players as not having moved
@@ -185,14 +185,18 @@ export function startRound(roomId: string): boolean {
     room.gameState!.playerMoves.set(player.id, false);
   });
 
+  // Check if we're in test mode
+  const useTestMode =
+    beagleBoardPlayers.length === 1 && MIN_REQUIRED_PLAYERS === 1;
+
   // Reset virtual opponent if in test mode
-  if (beagleBoardPlayers.length === 1 && MIN_REQUIRED_PLAYERS === 1) {
+  if (useTestMode) {
     console.log(
       `Resetting move status for virtual_opponent to false for round ${
         room.gameState!.roundNumber
       }`
     );
-    room.gameState!.playerMoves.set("virtual_opponent", false);
+    room.gameState!.playerMoves.set('virtual_opponent', false);
   }
 
   console.log(`Room has ${beagleBoardPlayers.length} BeagleBoard players`);
@@ -264,8 +268,53 @@ export function startRound(roomId: string): boolean {
 
   // Send round start event to all players with cards included for each player
   console.log(`Calling sendToRoom(${roomId}, "round_start", payload) now...`);
-  sendToRoom(roomId, "round_start", payload);
+  sendToRoom(roomId, 'round_start', payload);
   console.log(`Sent round_start with included cards for room ${roomId}`);
+
+  // In TEST MODE, automatically generate a move for the virtual opponent after a delay
+  if (useTestMode) {
+    console.log(`TEST MODE: Scheduling virtual opponent move in 5-10 seconds`);
+
+    // Random delay between 5-10 seconds
+    const delay = Math.floor(Math.random() * 5000) + 5000;
+
+    setTimeout(() => {
+      if (rooms.has(roomId)) {
+        const currentRoom = rooms.get(roomId)!;
+
+        // Make sure the room still exists and is in the same round
+        if (
+          currentRoom &&
+          currentRoom.gameState &&
+          currentRoom.gameState.roundNumber === room.gameState!.roundNumber
+        ) {
+          console.log(
+            `TEST MODE: Virtual opponent making a move in room ${roomId}, round ${currentRoom.gameState.roundNumber}`
+          );
+
+          // Generate a random move for the virtual opponent
+          const actions: GameActionType[] = ['attack', 'defend', 'build'];
+          const randomAction =
+            actions[Math.floor(Math.random() * actions.length)];
+          const randomConfidence = Math.random() * 0.5 + 0.5; // 0.5-1.0
+
+          // Process the virtual opponent's action
+          processAction(
+            roomId,
+            'virtual_opponent',
+            randomAction,
+            randomConfidence
+          );
+
+          console.log(
+            `TEST MODE: Virtual opponent chose action: ${randomAction} with confidence ${randomConfidence.toFixed(
+              2
+            )}`
+          );
+        }
+      }
+    }, delay);
+  }
 
   // We no longer need to send separate beagle_board_command events for cards
   // as they're now included in the round_start event
@@ -299,11 +348,11 @@ export function endRound(roomId: string): boolean {
 
   // Send round end event to all clients
   const beagleBoardPlayers = room.players.filter(
-    (player) => player.playerType === "beagleboard"
+    (player) => player.playerType === 'beagleboard'
   );
 
   const roundEndEvent = {
-    event: "round_end" as ServerEventType,
+    event: 'round_end' as ServerEventType,
     payload: {
       roomId,
       roundNumber: room.gameState.roundNumber,
@@ -351,7 +400,7 @@ export function endRound(roomId: string): boolean {
       );
 
       // Send a notification that server is waiting for web client
-      sendToRoom(roomId, "game_state_update" as ServerEventType, {
+      sendToRoom(roomId, 'game_state_update' as ServerEventType, {
         roomId,
         gameState: {
           towerHeights: Object.fromEntries(room.gameState.towerHeights),
@@ -418,7 +467,7 @@ export function checkWinCondition(roomId: string): {
 
   // Get real players (not virtual opponent)
   const beagleBoardPlayers = room.players.filter(
-    (player) => player.playerType === "beagleboard"
+    (player) => player.playerType === 'beagleboard'
   );
 
   // TESTING MODE: Handle virtual opponent for single player mode
@@ -429,9 +478,9 @@ export function checkWinCondition(roomId: string): {
     const realPlayerGoalHeight =
       room.gameState.goalHeights.get(realPlayer.id) || 0;
     const virtualOpponentTowerHeight =
-      room.gameState.towerHeights.get("virtual_opponent") || 0;
+      room.gameState.towerHeights.get('virtual_opponent') || 0;
     const virtualOpponentGoalHeight =
-      room.gameState.goalHeights.get("virtual_opponent") || 0;
+      room.gameState.goalHeights.get('virtual_opponent') || 0;
 
     console.log(
       `TESTING MODE: Player ${realPlayer.name} - Tower: ${realPlayerTowerHeight}/${realPlayerGoalHeight}`
@@ -453,7 +502,7 @@ export function checkWinCondition(roomId: string): {
       console.log(
         `TESTING MODE: Virtual opponent won by reaching goal height!`
       );
-      return { winningPlayerId: "virtual_opponent", shouldContinue: true };
+      return { winningPlayerId: 'virtual_opponent', shouldContinue: true };
     }
 
     return { winningPlayerId: null, shouldContinue: true };
@@ -481,14 +530,62 @@ export function endGame(roomId: string, winnerId: string): boolean {
   }
 
   // Set game status to completed
-  room.status = "completed";
+  room.status = 'completed';
+
+  // Get winner's name
+  let winnerName = 'Unknown Player';
+  const winner = room.players.find((player) => player.id === winnerId);
+  if (winner) {
+    winnerName = winner.name;
+  } else if (winnerId === 'virtual_opponent') {
+    winnerName = 'Virtual Opponent';
+  }
+
+  console.log(
+    `[gameManager.ts] Game ended in room ${roomId}. Winner: ${winnerName} (${winnerId})`
+  );
+
+  // Convert game state Maps to objects for sending
+  const gameStateForSending = {
+    towerHeights: Object.fromEntries(room.gameState.towerHeights),
+    goalHeights: Object.fromEntries(room.gameState.goalHeights),
+    roundNumber: room.gameState.roundNumber,
+  };
 
   // Send game_ended event to all players
-  sendToRoom(roomId, "game_ended", {
+  sendToRoom(roomId, 'game_ended', {
     roomId,
     winnerId,
-    gameState: room.gameState,
+    winnerName,
+    gameState: gameStateForSending,
   });
+
+  // After 30 seconds, reset the room to waiting state for a new game
+  setTimeout(() => {
+    if (rooms.has(roomId)) {
+      const currentRoom = rooms.get(roomId)!;
+
+      console.log(`[gameManager.ts] Resetting room ${roomId} to waiting state`);
+
+      // Reset all player ready states
+      currentRoom.players.forEach((player) => {
+        player.isReady = false;
+      });
+
+      // Clear game state
+      currentRoom.gameState = undefined;
+      currentRoom.playerCards = undefined;
+
+      // Set status back to waiting
+      currentRoom.status = 'waiting';
+
+      // Update room in the map
+      rooms.set(roomId, currentRoom);
+
+      // Notify all clients about the room reset
+      sendToRoom(roomId, 'room_updated', { room: currentRoom });
+    }
+  }, 30000); // 30 seconds
 
   return true;
 }
@@ -560,7 +657,7 @@ export function processAction(
 
   // Get the expected number of gestures based on players in the room
   const beagleBoardPlayers = room.players.filter(
-    (player) => player.playerType === "beagleboard"
+    (player) => player.playerType === 'beagleboard'
   );
 
   // In test mode with 1 player, we expect 2 gestures (real player + virtual opponent)
@@ -583,7 +680,7 @@ export function processAction(
     roomId,
   };
 
-  sendToRoom(roomId, "gesture_event" as ServerEventType, gestureEvent);
+  sendToRoom(roomId, 'gesture_event' as ServerEventType, gestureEvent);
 
   // If we've received all expected gestures, process them all at once
   if (roundGestures.length >= expectedGestures) {
@@ -615,18 +712,18 @@ export function processAction(
 
     // In single player test mode, mark the virtual opponent as having moved too
     if (useTestMode) {
-      room.gameState.playerMoves.set("virtual_opponent", true);
+      room.gameState.playerMoves.set('virtual_opponent', true);
     }
 
     // Send updated game state to clients
-    sendToRoom(roomId, "game_state_update" as ServerEventType, {
+    sendToRoom(roomId, 'game_state_update' as ServerEventType, {
       roomId,
       gameState: {
         towerHeights: Object.fromEntries(room.gameState.towerHeights),
         goalHeights: Object.fromEntries(room.gameState.goalHeights),
         roundNumber: room.gameState.roundNumber,
       },
-      message: "All players have submitted their gestures",
+      message: 'All players have submitted their gestures',
     });
 
     // Check if all players have moved
@@ -678,7 +775,7 @@ function applyGestureEffect(
 
   // Get all players
   const beagleBoardPlayers = room.players.filter(
-    (player) => player.playerType === "beagleboard"
+    (player) => player.playerType === 'beagleboard'
   );
 
   // Determine if we're in single player test mode
@@ -695,9 +792,9 @@ function applyGestureEffect(
   } else if (useTestMode) {
     // In test mode, use virtual opponent or the real player
     targetPlayerId =
-      playerId === "virtual_opponent"
+      playerId === 'virtual_opponent'
         ? beagleBoardPlayers[0].id
-        : "virtual_opponent";
+        : 'virtual_opponent';
   }
 
   if (!targetPlayerId) {
@@ -709,7 +806,7 @@ function applyGestureEffect(
 
   // Apply the action based on type
   switch (action) {
-    case "attack":
+    case 'attack':
       // If target has a shield, attack is blocked
       if (room.gameState.playerShields.get(targetPlayerId)) {
         console.log(
@@ -729,13 +826,13 @@ function applyGestureEffect(
       }
       break;
 
-    case "defend":
+    case 'defend':
       // Activate shield for the player
       room.gameState.playerShields.set(playerId, true);
       console.log(`[gameManager.ts] Shield activated for player ${playerId}`);
       break;
 
-    case "build":
+    case 'build':
       // Increase tower height by 1
       const currentHeight = room.gameState.towerHeights.get(playerId) || 0;
       const newHeight = currentHeight + 1;

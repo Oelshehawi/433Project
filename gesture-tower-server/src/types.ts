@@ -1,39 +1,40 @@
-import WebSocket from "ws";
-import net from "net";
+import WebSocket from 'ws';
+import net from 'net';
 
 // Client message types
 export type ClientEventType =
-  | "create_room"
-  | "join_room"
-  | "leave_room"
-  | "room_list"
-  | "player_ready"
-  | "game_started"
-  | "gesture_event"
-  | "beagleboard_command"
-  | "get_room"
-  | "round_end_ack"
-  | "next_round_ready"
-  | "game_ready";
+  | 'create_room'
+  | 'join_room'
+  | 'leave_room'
+  | 'room_list'
+  | 'player_ready'
+  | 'game_started'
+  | 'gesture_event'
+  | 'beagleboard_command'
+  | 'get_room'
+  | 'get_game_state'
+  | 'round_end_ack'
+  | 'next_round_ready'
+  | 'game_ready';
 
 // Server message types
 export type ServerEventType =
-  | "room_updated"
-  | "room_list"
-  | "room_data"
-  | "player_ready"
-  | "game_started"
-  | "game_starting"
-  | "game_ended"
-  | "error"
-  | "gesture_event"
-  | "turn_start"
-  | "turn_end"
-  | "round_start"
-  | "round_end"
-  | "game_state_update"
-  | "beagle_board_command"
-  | "move_status";
+  | 'room_updated'
+  | 'room_list'
+  | 'room_data'
+  | 'player_ready'
+  | 'game_started'
+  | 'game_starting'
+  | 'game_ended'
+  | 'error'
+  | 'gesture_event'
+  | 'turn_start'
+  | 'turn_end'
+  | 'round_start'
+  | 'round_end'
+  | 'game_state_update'
+  | 'beagle_board_command'
+  | 'move_status';
 
 // WebSocket client extended with custom properties
 export interface ExtendedWebSocket extends WebSocket {
@@ -53,7 +54,7 @@ export interface Player {
   name: string;
   isReady: boolean;
   connected: boolean;
-  playerType: "beagleboard" | "webviewer";
+  playerType: 'beagleboard' | 'webviewer';
 }
 
 // Room definition
@@ -63,7 +64,7 @@ export interface Room {
   createdAt: number;
   hostId: string;
   players: Player[];
-  status: "waiting" | "playing" | "ended" | "completed";
+  status: 'waiting' | 'playing' | 'ended' | 'completed';
   maxPlayers: number;
   playerCards?: Map<string, PlayerCards>; // Map player IDs to their cards
   gameState?: GameState; // Game state for tower building game
@@ -76,28 +77,28 @@ export interface RoomListItem {
   name: string;
   playerCount: number;
   maxPlayers: number;
-  status: Room["status"];
+  status: Room['status'];
 }
 
 // Gesture types
 export type GestureType =
-  | "rightHandRaise"
-  | "tPose"
-  | "handsAboveHead"
-  | "diagonalArms"
-  | "handWave"
-  | "armsCrossed"
-  | "pushMotion"
-  | "punchMotion"
-  | "karateChop"
-  | "circularArm"
-  | "clapHands"
-  | "squatMotion"
-  | "weatherShield"
-  | "spinAround"
-  | "Thumbs Up"
-  | "Thumbs Down"
-  | "Wave";
+  | 'rightHandRaise'
+  | 'tPose'
+  | 'handsAboveHead'
+  | 'diagonalArms'
+  | 'handWave'
+  | 'armsCrossed'
+  | 'pushMotion'
+  | 'punchMotion'
+  | 'karateChop'
+  | 'circularArm'
+  | 'clapHands'
+  | 'squatMotion'
+  | 'weatherShield'
+  | 'spinAround'
+  | 'Thumbs Up'
+  | 'Thumbs Down'
+  | 'Wave';
 
 // WebSocket message format
 export interface WebSocketMessage {
@@ -134,7 +135,7 @@ export interface GameStartedPayload {
 }
 
 // Game action types for gesture recognition
-export type GameActionType = "attack" | "defend" | "build";
+export type GameActionType = 'attack' | 'defend' | 'build';
 
 // Game state for tower building game
 export interface GameState {
@@ -227,7 +228,7 @@ export interface GameEndedPayload {
 
 // Add a new payload type for move status responses
 export interface MoveStatusPayload {
-  status: "accepted" | "rejected";
+  status: 'accepted' | 'rejected';
   reason?: string;
   roundNumber: number;
 }
