@@ -5,7 +5,7 @@ import cors from "cors";
 import { WebSocketMessage } from "./types";
 import { initializeWebSocketServer } from "./webSocketManager";
 import { beagleBoards } from "./messaging";
-import { rooms, getRoomList } from "./roomManager";
+import { rooms } from "./roomManager";
 
 // Initialize Express app
 const app = express();

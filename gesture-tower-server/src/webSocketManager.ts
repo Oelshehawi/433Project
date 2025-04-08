@@ -2,11 +2,9 @@ import WebSocket from "ws";
 import {
   ExtendedWebSocket,
   WebSocketMessage,
-  ServerEventType,
   GameActionType,
   Room,
   Player,
-  BeagleBoard,
 } from "./types";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -693,9 +691,33 @@ function handleGestureData(
   gestureData: string
 ) {
   try {
-    // Parse the gesture data
-    const gestureJson =
-      typeof gestureData === "object" ? gestureData : JSON.parse(gestureData);
+    console.log(`Raw gesture data received: ${gestureData}`);
+
+    // Parse the gesture data - handle potential JSON parsing issues
+    let gestureJson;
+    try {
+      // Try to parse as JSON
+      gestureJson = JSON.parse(gestureData);
+      console.log("Successfully parsed gesture data as JSON:", gestureJson);
+    } catch (parseError) {
+      // If it's not valid JSON, try to extract gesture information
+      console.warn(`Error parsing gesture data as JSON: ${parseError}`);
+      console.warn(`Raw gesture data: ${gestureData}`);
+
+      // Try to extract the gesture type from the string
+      if (gestureData.includes("defend")) {
+        gestureJson = { gesture: "defend", confidence: 0.95 };
+      } else if (gestureData.includes("attack")) {
+        gestureJson = { gesture: "attack", confidence: 0.95 };
+      } else if (gestureData.includes("build")) {
+        gestureJson = { gesture: "build", confidence: 0.95 };
+      } else {
+        // Default to unknown if we can't determine the gesture
+        gestureJson = { gesture: "unknown", confidence: 0.5 };
+      }
+
+      console.log("Fallback parsed gesture:", gestureJson);
+    }
 
     // Ensure a room exists with this ID
     if (!rooms.has(roomId)) {
@@ -744,7 +766,9 @@ function handleGestureData(
       cardId = gestureJson.cardId;
     }
 
-    console.log(`Parsed gesture: ${gestureType} from device ${deviceId}`);
+    console.log(
+      `Parsed gesture: ${gestureType} from device ${deviceId} for player ${player.name}`
+    );
 
     // If the room has player cards, find a matching card to use
     if (room.playerCards && room.playerCards.has(player.id) && !cardId) {
@@ -770,6 +794,8 @@ function handleGestureData(
       confidence: gestureJson.confidence || 1.0,
       cardId,
     };
+
+    console.log(`Broadcasting gesture event to room ${roomId}:`, payload);
 
     // Send the gesture event to all clients in the room
     sendToRoom(roomId, "gesture_event", payload);
@@ -820,7 +846,7 @@ function handleGestureData(
         // Add the new card to the player's hand
         playerCards.cards.push(newCard);
         console.log(
-          `Player ${player.id} drew new card ${newCard.name} (${newCard.id})`
+          `Player ${player.id} drew new card ${newCard.name} (${newCard.id}) - sending updated cards to player`
         );
 
         // Send the updated cards to the player
@@ -842,7 +868,12 @@ function handleGestureData(
       `Processed gesture ${gestureType} from device ${deviceId} in room ${roomId}`
     );
   } catch (error) {
-    console.error("Error handling gesture data:", error);
+    console.error(
+      "Error handling gesture data:",
+      error,
+      "Raw data:",
+      gestureData
+    );
   }
 }
 
@@ -884,21 +915,51 @@ function parseGestureMessage(
   message: string
 ): { deviceId: string; roomId: string; gestureData: string } | null {
   try {
-    if (!message.startsWith("GESTURE|")) {
-      return null;
+    // Handle legacy format
+    if (message.startsWith("GESTURE|")) {
+      const parts = message.split("|");
+      if (parts.length < 3) {
+        console.error("Invalid legacy gesture message format:", message);
+        return null;
+      }
+
+      const deviceIdPart = parts[1].split(":");
+      const deviceId = deviceIdPart[1];
+
+      const roomIdPart = parts[2].split(":");
+      const roomId = roomIdPart[1];
+
+      // Extract the gesture data (everything after the third pipe)
+      const gestureData = parts.slice(3).join("|");
+
+      console.log(
+        `Parsed legacy gesture message: deviceId=${deviceId}, roomId=${roomId}, gestureData=${gestureData}`
+      );
+      return { deviceId, roomId, gestureData };
     }
 
-    const parts = message.split("|");
-    const deviceIdPart = parts[1].split(":");
-    const deviceId = deviceIdPart[1];
+    // Try to parse as JSON (this would be a fallback, but we're shifting to JSON format)
+    try {
+      const jsonMessage = JSON.parse(message);
+      if (jsonMessage.event === "gesture_event" && jsonMessage.payload) {
+        const { roomId, playerId } = jsonMessage.payload;
+        if (roomId && playerId) {
+          // Extract gesture data
+          const { gesture, confidence } = jsonMessage.payload;
+          const gestureData = JSON.stringify({ gesture, confidence });
 
-    const roomIdPart = parts[2].split(":");
-    const roomId = roomIdPart[1];
+          console.log(
+            `Parsed JSON gesture message: playerId=${playerId}, roomId=${roomId}, gesture=${gesture}`
+          );
+          return { deviceId: playerId, roomId, gestureData };
+        }
+      }
+    } catch (jsonError) {
+      console.error("Error parsing gesture message as JSON:", jsonError);
+    }
 
-    // Extract the gesture data (everything after the third pipe)
-    const gestureData = parts.slice(3).join("|");
-
-    return { deviceId, roomId, gestureData };
+    console.error("Unrecognized gesture message format:", message);
+    return null;
   } catch (error) {
     console.error("Error parsing gesture message:", error);
     return null;

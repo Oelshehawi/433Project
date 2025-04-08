@@ -12,7 +12,6 @@ import {
   GestureEventPayload,
   GameActionType,
   BeagleBoard,
-  WebSocketMessage,
 } from "./types";
 import {
   broadcastToAll,

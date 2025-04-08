@@ -391,6 +391,13 @@ void GestureDetector::detectionLoop() {
                         char* autoStopMsg[] = {"Gesture confirmed", "Waiting for next round"};
                         lcd_place_message(autoStopMsg, 2, lcd_center);
                         std::this_thread::sleep_for(std::chrono::seconds(2));
+                        
+                        // After confirming a gesture, restore the game state display
+                        if (roomManager->isGameActive()) {
+                            std::cout << "Restoring game state display..." << std::endl;
+                            roomManager->updateCardAndGameDisplay();
+                        }
+                        
                         running = false;
                         break;
                     } else {

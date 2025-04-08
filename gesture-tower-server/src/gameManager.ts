@@ -100,7 +100,15 @@ export function startRound(roomId: string): boolean {
     room.gameState!.playerMoves.set(playerId, false);
   });
 
-  // Send round start event to all players
+  // Get BeagleBoard players
+  const beagleBoardPlayers = room.players.filter(
+    (player) => player.playerType === "beagleboard"
+  );
+
+  console.log(`Starting round ${room.gameState.roundNumber} in room ${roomId}`);
+  console.log(`Round time: ${ROUND_DURATION_MS / 1000} seconds`);
+
+  // Send round start event to all players - no current turn, as both players act simultaneously
   sendToRoom(roomId, "round_start", {
     roomId,
     roundNumber: room.gameState.roundNumber,
@@ -146,6 +154,9 @@ export function startRound(roomId: string): boolean {
       // Only end the round if enough time has passed
       if (elapsedTime >= ROUND_DURATION_MS) {
         // End round automatically if time is up
+        console.log(
+          `Round ${room.gameState.roundNumber} time expired in room ${roomId}`
+        );
         endRound(roomId);
       }
     }
@@ -316,6 +327,7 @@ export function processAction(
 
   // Mark this player's move as complete
   room.gameState.playerMoves.set(playerId, true);
+  console.log(`Player ${playerId} submitted action: ${action}`);
 
   // Get the opponent's player ID
   const beagleBoardPlayers = room.players.filter(
@@ -421,6 +433,10 @@ export function processAction(
 
   // If all players have made their moves, end the round early
   if (allMovesMade) {
+    console.log(
+      `All players have submitted gestures in room ${roomId}, ending round`
+    );
+
     endRound(roomId);
   }
 
