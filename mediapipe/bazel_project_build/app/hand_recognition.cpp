@@ -41,7 +41,11 @@ bool initial = true;
 #define RING_HIGH 15
 #define PINKY_HIGH 19
 #define THUMB_HIGH 3
-
+#define INDEX_LOW 5
+#define MIDDLE_LOW 10
+#define RING_LOW 14
+#define PINKY_LOW 18
+#define THUMB_LOW 2
 #define THUMB_Y_THRESHOLD 0.5
 
 
@@ -62,16 +66,17 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
     
     /*
     for (int i = 0; i < landmark_list.landmark_size(); ++i) {
-        if (i == 4|| i == 3|| i == 2|| i == 1){
+        //if (i == 4|| i == 3|| i == 2|| i == 1){
             const mediapipe::NormalizedLandmark& landmark = landmark_list.landmark(i);
             float x = landmark.x();
             float y = landmark.y();
             float z = landmark.z();
             std::cout << "Landmark " << i << ": x=" << x << ", y=" << y << ", z=" << z << std::endl;
-        }
+        //}
         
     }
         */
+        
 
     const mediapipe::NormalizedLandmark& index_tip = landmark_list.landmark(INDEX_TIP);
     const mediapipe::NormalizedLandmark& index_bot = landmark_list.landmark(INDEX_BOT);
@@ -88,14 +93,68 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
     const mediapipe::NormalizedLandmark& ring_high = landmark_list.landmark(RING_HIGH);
     const mediapipe::NormalizedLandmark& pinky_high = landmark_list.landmark(PINKY_HIGH);
     const mediapipe::NormalizedLandmark& thumb_high = landmark_list.landmark(THUMB_HIGH);
+    const mediapipe::NormalizedLandmark& index_low = landmark_list.landmark(INDEX_LOW);
+    const mediapipe::NormalizedLandmark& middle_low = landmark_list.landmark(MIDDLE_LOW);
+    const mediapipe::NormalizedLandmark& ring_low = landmark_list.landmark(RING_LOW);
+    const mediapipe::NormalizedLandmark& pinky_low = landmark_list.landmark(PINKY_LOW);
+    const mediapipe::NormalizedLandmark& thumb_low = landmark_list.landmark(THUMB_LOW);
     bool is_left_hand = false;
     if (pinky_tip.x() > index_tip.x()){
         is_left_hand = false;
-        std::cout << "Is right hand" << std::endl;
+        //std::cout << "Is right hand" << std::endl;
     }else{
         is_left_hand = true;
-        std::cout << "Is left hand" << std::endl;
+        //std::cout << "Is left hand" << std::endl;
     }
+    int index_agreements = 0;
+    for (int i = INDEX_TIP; i >= INDEX_BOT; i--){
+        for (int j = i-1; j >= INDEX_BOT ; j--){
+            if (landmark_list.landmark(i).y() > landmark_list.landmark(j).y()){
+                index_agreements++;
+            }
+        }
+    }
+    if (index_agreements < 2){
+        ret->index_held_up = true;
+        ret->num_fingers_held_up++;
+    }
+    int middle_agreements = 0;
+    for (int i = MIDDLE_TIP; i >= MIDDLE_BOT; i--){
+        for (int j = i-1; j >= MIDDLE_BOT ; j--){
+            if (landmark_list.landmark(i).y() > landmark_list.landmark(j).y()){
+                middle_agreements++;
+            }
+        }
+    }
+    if (middle_agreements < 2){
+        ret->middle_held_up = true;
+        ret->num_fingers_held_up++;
+    }
+    int ring_agreements = 0;
+    for (int i = RING_TIP; i >= RING_BOT; i--){
+        for (int j = i-1; j >= RING_BOT ; j--){
+            if (landmark_list.landmark(i).y() > landmark_list.landmark(j).y()){
+                ring_agreements++;
+            }
+        }
+    }
+    if (ring_agreements < 2){
+        ret->ring_held_up = true;
+        ret->num_fingers_held_up++;
+    }
+    int pinky_agreements = 0;
+    for (int i = PINKY_TIP; i >= PINKY_BOT; i--){
+        for (int j = i-1; j >= PINKY_BOT ; j--){
+            if (landmark_list.landmark(i).y() > landmark_list.landmark(j).y()){
+                pinky_agreements++;
+            }
+        }
+    }
+    if (pinky_agreements < 2){
+        ret->pinky_held_up = true;
+        ret->num_fingers_held_up++;
+    }
+    /*
     if (index_bot.y() > index_tip.y() || index_bot.y() > index_high.y()){
         ret->index_held_up = true;
         ret->num_fingers_held_up++;
@@ -112,18 +171,19 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
         ret->pinky_held_up = true;
         ret->num_fingers_held_up++;
     }
+    */
     /*
     if (thumb_tip.y() < THUMB_Y_THRESHOLD){
         ret->thumb_raised = true;
         ret->num_fingers_held_up++;
     }*/
    if (is_left_hand){
-    if (thumb_high.x() < thumb_tip.x() || THUMB_Y_THRESHOLD > thumb_tip.y()){
+    if (thumb_high.x() < thumb_tip.x() || thumb_low.x() < thumb_tip.x()){
         ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
     }
    }else{
-    if (thumb_high.x() > thumb_tip.x() || THUMB_Y_THRESHOLD > thumb_tip.y()){
+    if (thumb_high.x() > thumb_tip.x() || thumb_low.x() > thumb_tip.x()){
         ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
     }
