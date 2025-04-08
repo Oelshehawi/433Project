@@ -26,7 +26,6 @@ import {
   beagleBoards,
   broadcastToAll,
   sendToRoom,
-  sendToClient,
 } from "./messaging";
 import { initializeGameState, processAction } from "./gameManager";
 import { initializeCardsForRoom } from "./cardManager";

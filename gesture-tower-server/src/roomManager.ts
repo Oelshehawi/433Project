@@ -459,6 +459,9 @@ export const handleGameStart = (
               );
 
               if (playerClient) {
+                console.log(
+                  `Sending initial cards to player ${player.name} (${player.id})`
+                );
                 sendToClient(playerClient, "beagle_board_command", {
                   command: "CARDS",
                   cards: playerCards.cards,

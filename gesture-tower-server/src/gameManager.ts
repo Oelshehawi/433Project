@@ -1,4 +1,10 @@
-import { GameState, Room, Player, GameActionType } from "./types";
+import {
+  GameState,
+  Room,
+  Player,
+  GameActionType,
+  ExtendedWebSocket,
+} from "./types";
 import { rooms } from "./roomManager";
 import { sendToRoom } from "./messaging";
 
@@ -119,6 +125,31 @@ export function startRound(roomId: string): boolean {
     roundNumber: room.gameState.roundNumber,
     remainingTime: ROUND_DURATION_MS,
   });
+
+  // Send each BeagleBoard player their current cards at the start of each round
+  if (room.playerCards) {
+    // For each player, send their cards in a targeted beagle_board_command to the room
+    const beagleBoardPlayers = room.players.filter(
+      (player) => player.playerType === "beagleboard"
+    );
+
+    for (const player of beagleBoardPlayers) {
+      const playerCards = room.playerCards.get(player.id);
+
+      if (playerCards) {
+        console.log(
+          `Sending cards for round ${room.gameState.roundNumber} to player ${player.name} (${player.id})`
+        );
+
+        // Send a targeted beagle_board_command event
+        sendToRoom(roomId, "beagle_board_command", {
+          targetPlayerId: player.id,
+          command: "CARDS",
+          cards: playerCards.cards,
+        });
+      }
+    }
+  }
 
   // Set up timer to end round automatically after ROUND_DURATION_MS
   setTimeout(() => {

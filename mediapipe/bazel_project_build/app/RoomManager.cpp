@@ -235,6 +235,25 @@ void RoomManager::handleMessage(const std::string& message) {
                 std::string command = j["payload"]["command"];
                 std::cout << "Received server command: " << command << std::endl;
                 
+                // Handle CARDS command - display cards on LCD
+                if (command == "CARDS" && j["payload"].contains("cards")) {
+                    std::cout << "Received cards from server" << std::endl;
+                    
+                    // Parse the cards
+                    std::vector<Card> cards;
+                    for (const auto& cardJson : j["payload"]["cards"]) {
+                        Card card;
+                        card.id = cardJson.contains("id") ? cardJson["id"].get<std::string>() : "";
+                        card.type = cardJson.contains("type") ? cardJson["type"].get<std::string>() : "";
+                        card.name = cardJson.contains("name") ? cardJson["name"].get<std::string>() : "";
+                        card.description = cardJson.contains("description") ? cardJson["description"].get<std::string>() : "";
+                        cards.push_back(card);
+                    }
+                    
+                    // Display cards on LCD
+                    displayCardsOnLCD(cards);
+                }
+                
                 // Log the details
                 if (j["payload"].contains("details")) {
                     std::cout << "Command details: " << j["payload"]["details"].dump() << std::endl;

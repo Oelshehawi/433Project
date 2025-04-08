@@ -423,20 +423,37 @@ void displayCardsOnLCD(const std::vector<Card>& cards) {
         return;
     }
     
+    // Clear the LCD first
+    lcd_clear_screen();
+    
+    // Create a combined display showing all cards
+    char line1[32];
+    char line2[32];
+    char line3[32];
+    
+    // Count card types
+    int attackCount = 0;
+    int defendCount = 0;
+    int buildCount = 0;
+    
     for (const auto& card : cards) {
-        char nameLine[32];
-        char typeLine[32];
-        
-        // Format the card information
-        snprintf(nameLine, sizeof(nameLine), "Card: %s", card.name.c_str());
-        snprintf(typeLine, sizeof(typeLine), "Type: %s", card.type.c_str());
-        
-        char* cardMsg[] = {nameLine, typeLine};
-        lcd_place_message(cardMsg, 2, lcd_center);
-        
-        // Display each card for 1.5 seconds
-        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+        if (card.type == "attack") attackCount++;
+        else if (card.type == "defend") defendCount++;
+        else if (card.type == "build") buildCount++;
     }
+    
+    // Format the header line
+    snprintf(line1, sizeof(line1), "Your Cards (%zu)", cards.size());
+    
+    // Format the card type counts
+    snprintf(line2, sizeof(line2), "ATK:%d DEF:%d BLD:%d", attackCount, defendCount, buildCount);
+    
+    // Info line
+    snprintf(line3, sizeof(line3), "Run 'start' to play");
+    
+    // Display the summary
+    char* cardMsg[] = {line1, line2, line3};
+    lcd_place_message(cardMsg, 3, lcd_center);
 }
 
 // Training section
