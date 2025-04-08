@@ -1,4 +1,5 @@
 #include "GestureEventSender.h"
+#include "GameState.h"
 #include <iostream>
 
 GestureEventSender::GestureEventSender(RoomManager* roomManager, const std::string& deviceId, const std::string& roomId)
@@ -19,8 +20,21 @@ bool GestureEventSender::sendGesture(const std::string& gestureType, float confi
         return false;
     }
     
+    // If cardId is not provided, try to find a matching card from the game state
+    std::string effectiveCardId = cardId;
+    if (effectiveCardId.empty() && roomManager->gameState) {
+        const auto& cards = roomManager->gameState->getCards();
+        for (const auto& card : cards) {
+            if (card.type == gestureType) {
+                effectiveCardId = card.id;
+                std::cout << "[GestureEventSender.cpp] Found matching " << gestureType << " card with ID: " << effectiveCardId << std::endl;
+                break;
+            }
+        }
+    }
+    
     // Create the gesture payload
-    json payload = createGesturePayload(gestureType, confidence, cardId);
+    json payload = createGesturePayload(gestureType, confidence, effectiveCardId);
     
     // Convert to string and send
     std::string jsonStr = payload.dump();

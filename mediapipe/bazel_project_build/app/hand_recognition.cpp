@@ -175,11 +175,20 @@ absl::Status hand_analyze_image(cv::Mat image, handPosition* hand_pos){
 
     mediapipe::Packet detection_packet;
     
+    // Static counter to limit log messages for missing landmarks
+    static int noLandmarksCounter = 0;
+    
     if (!poller.QueueSize()) {
-        std::cout << "No new landmarks available. Skipping...\n" << std::endl;
+        // Only log every 30 frames (about once per second at 30fps)
+        if (noLandmarksCounter++ % 30 == 0) {
+            std::cout << "No new landmarks available. Skipping..." << std::endl;
+        }
         hand_pos->hand_visible = false;
         return absl::OkStatus();
     }
+    
+    // Reset counter when we have landmarks
+    noLandmarksCounter = 0;
     
     //std::cout << "Queue size: " << poller.QueueSize() << std::endl;
     if (!poller.Next(&detection_packet)) {
@@ -187,7 +196,7 @@ absl::Status hand_analyze_image(cv::Mat image, handPosition* hand_pos){
       hand_pos->hand_visible = false;
       return absl::OkStatus();
     } 
-
+    
     auto &output_landmarks = detection_packet.Get<std::vector<::mediapipe::NormalizedLandmarkList>>();
     
     if (output_landmarks.empty()) {

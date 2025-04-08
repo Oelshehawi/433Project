@@ -656,10 +656,41 @@ export const handleGestureEvent = (
       `Gesture event: ${gesture} from player ${playerId} (conf: ${confidence})`
     );
 
+    // Get the current round number from the game state
+    const currentRound = room.gameState?.roundNumber || 0;
+
+    // Log current game state info for debugging
+    console.log(`Current game state - Round: ${currentRound}`);
+    console.log(
+      `Player move status for ${playerId}: ${room.gameState?.playerMoves.get(
+        playerId
+      )}`
+    );
+
+    // Debug: Print all player move statuses
+    if (room.gameState?.playerMoves) {
+      console.log(`All player move statuses for round ${currentRound}:`);
+      room.gameState.playerMoves.forEach((hasMoved, pid) => {
+        console.log(
+          `  - Player ${pid}: ${hasMoved ? "has moved" : "has not moved"}`
+        );
+      });
+    }
+
     // Check if the player has already moved this round
     if (room.gameState && room.gameState.playerMoves.get(playerId)) {
       // Player has already moved this round
-      console.log(`Player ${playerId} has already moved this round`);
+      console.log(
+        `Player ${playerId} has already moved this round (${currentRound})`
+      );
+
+      // Send a message back to this specific client indicating their move wasn't processed
+      sendToClient(client, "move_status", {
+        status: "rejected",
+        reason: "already_moved",
+        roundNumber: currentRound,
+      });
+
       return;
     }
 
@@ -680,6 +711,9 @@ export const handleGestureEvent = (
 
         // Mark this player's move as complete
         room.gameState.playerMoves.set(playerId, true);
+        console.log(
+          `Marked player ${playerId} as having moved in round ${currentRound}`
+        );
 
         // Check if all players have moved after this action
         let allPlayersMoved = true;
@@ -692,7 +726,7 @@ export const handleGestureEvent = (
         // If all players have moved, end the round automatically
         if (allPlayersMoved) {
           console.log(
-            `All players have submitted gestures in room ${roomId}, ending round`
+            `All players have submitted gestures in room ${roomId}, ending round ${currentRound}`
           );
           endRound(roomId);
         }
@@ -754,6 +788,7 @@ export const handleGestureEvent = (
       gesture,
       confidence,
       cardId,
+      roundNumber: currentRound, // Include the round number in the broadcast
     });
   } catch (error) {
     console.error("Error handling gesture event:", error);

@@ -4,6 +4,7 @@
 #include "DisplayManager.h"
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <sstream>
 
 // For convenience
 using json = nlohmann::json;
@@ -74,6 +75,11 @@ void MessageHandler::handleMessage(const std::string& message) {
             else if (eventType == "gesture_event") {
                 if (j.contains("payload")) {
                     handleGestureEvent(j["payload"]);
+                }
+            }
+            else if (eventType == "move_status") {
+                if (j.contains("payload")) {
+                    handleMoveStatus(j["payload"]);
                 }
             }
             else {
@@ -357,6 +363,34 @@ void MessageHandler::handlePlayerReady(const json& payload) {
             std::cout << "Your ready status is now: " << (isReady ? "Ready" : "Not ready") << std::endl;
         } else {
             std::cout << "Another player's ready status changed" << std::endl;
+        }
+    }
+}
+
+// Handle move status response from server (new handler)
+void MessageHandler::handleMoveStatus(const json& payload) {
+    if (payload.contains("status") && payload.contains("roundNumber")) {
+        std::string status = payload["status"];
+        int roundNumber = payload["roundNumber"];
+        
+        if (status == "rejected") {
+            std::string reason = payload.contains("reason") ? payload["reason"].get<std::string>() : "unknown";
+            std::cout << "[MessageHandler.cpp] Move was rejected by server. Round: " << roundNumber 
+                      << ", Reason: " << reason << std::endl;
+            
+            if (reason == "already_moved") {
+                // If the move was rejected because player already moved, 
+                // we should update the UI to reflect that
+                if (roomManager && roomManager->displayManager) {
+                    roomManager->displayManager->displayMessage(
+                        "Move already sent", 
+                        "for round " + std::to_string(roundNumber)
+                    );
+                }
+            }
+        }
+        else if (status == "accepted") {
+            std::cout << "[MessageHandler.cpp] Move was accepted for round " << roundNumber << std::endl;
         }
     }
 }

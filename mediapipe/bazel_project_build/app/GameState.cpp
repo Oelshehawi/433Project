@@ -20,13 +20,30 @@ void GameState::startTimerThread() {
               << (timerThreadRunning ? "true" : "false") << ", timerActive=" 
               << (timerActive ? "true" : "false") << std::endl;
     
-    std::lock_guard<std::mutex> lock(timerMutex);
+    // Check if timer thread is marked as running but not joinable
+    {
+        std::lock_guard<std::mutex> checkLock(timerMutex);
+        if (timerThreadRunning && !timerThread.joinable()) {
+            std::cout << "[GameState.cpp] Timer thread marked as running but not joinable - resetting flags" << std::endl;
+            timerThreadRunning = false;
+            timerActive = false;
+        }
+    }
     
-    // Stop any existing timer thread
-    if (timerThreadRunning) {
+    // Stop any existing timer thread - do this outside the lock to avoid deadlock
+    bool needToStop = false;
+    {
+        std::lock_guard<std::mutex> checkLock(timerMutex);
+        needToStop = timerThreadRunning;
+    }
+    
+    if (needToStop) {
         std::cout << "[GameState.cpp] Stopping existing timer thread before starting new one" << std::endl;
         stopTimerThread();
     }
+    
+    // Now set up the new timer thread
+    std::lock_guard<std::mutex> lock(timerMutex);
     
     // Ensure both flags are set properly
     timerThreadRunning = true;
@@ -36,6 +53,11 @@ void GameState::startTimerThread() {
     std::cout << "[GameState.cpp] Creating new timer thread, state: timerThreadRunning=" 
               << (timerThreadRunning ? "true" : "false") << ", timerActive=" 
               << (timerActive ? "true" : "false") << std::endl;
+    
+    // Detach any previous thread if it's still joinable
+    if (timerThread.joinable()) {
+        timerThread.join();
+    }
     
     timerThread = std::thread(&GameState::updateTimer, this);
     std::cout << "[GameState.cpp] Timer thread created successfully" << std::endl;
@@ -107,6 +129,14 @@ void GameState::updateTimer() {
                 break;
             }
         }
+    }
+    
+    // IMPORTANT: Reset the flags when the thread exits
+    {
+        std::lock_guard<std::mutex> lock(timerMutex);
+        timerThreadRunning = false;
+        timerActive = false;
+        std::cout << "[GameState.cpp] Timer thread exiting naturally, resetting flags: timerThreadRunning=false, timerActive=false" << std::endl;
     }
     
     std::cout << "[GameState.cpp] Timer thread ended after " << debugCounter << " iterations. Thread state: timerThreadRunning=" 
@@ -349,6 +379,14 @@ void GameState::autoPlayCard() {
             
             // Wait a moment before returning to card display
             std::this_thread::sleep_for(std::chrono::seconds(2));
+            
+            // Force update with no console output (we'll add a special flag for this)
+            std::cout << "[GameState.cpp] Auto-play complete. If gesture detection is running, it should be stopped." << std::endl;
+            std::cout << "[GameState.cpp] Updating display back to cards and game info without console output." << std::endl;
+            
+            // Instead of calling updateCardAndGameDisplay directly, let's give the server a moment to respond
+            // with any state changes before updating the display
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
             displayManager->updateCardAndGameDisplay();
         }
     }

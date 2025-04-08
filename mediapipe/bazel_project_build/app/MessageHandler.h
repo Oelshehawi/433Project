@@ -39,4 +39,5 @@ public:
     void handleGameStateUpdate(const json& payload);
     void handleBeagleBoardCommand(const json& payload);
     void handleGestureEvent(const json& payload);
+    void handleMoveStatus(const json& payload);
 }; 

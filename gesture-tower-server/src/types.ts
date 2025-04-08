@@ -29,7 +29,8 @@ export type ServerEventType =
   | "round_start"
   | "round_end"
   | "game_state_update"
-  | "beagle_board_command";
+  | "beagle_board_command"
+  | "move_status";
 
 // WebSocket client extended with custom properties
 export interface ExtendedWebSocket extends WebSocket {
@@ -217,4 +218,11 @@ export interface GameEndedPayload {
   roomId: string;
   winnerId: string;
   gameState: GameState;
+}
+
+// Add a new payload type for move status responses
+export interface MoveStatusPayload {
+  status: "accepted" | "rejected";
+  reason?: string;
+  roundNumber: number;
 }

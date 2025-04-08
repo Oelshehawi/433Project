@@ -16,6 +16,7 @@ class WebSocketReceiver;
 class MessageHandler;
 class GameState;
 class DisplayManager;
+class GestureDetector;
 
 // For convenience
 using json = nlohmann::json;
@@ -92,6 +93,8 @@ private:
     // Display methods - update LCD with current game state and cards
 
 public:
+    GestureDetector* gestureDetector; // Made public for direct access
+
     RoomManager(WebSocketClient* client);
     ~RoomManager();
 
@@ -115,6 +118,7 @@ public:
     // Setters for component connections
     void setGameState(GameState* gs) { gameState = gs; }
     void setDisplayManager(DisplayManager* dm) { displayManager = dm; }
+    void setGestureDetector(GestureDetector* detector) { gestureDetector = detector; }
 
     // Getters
     const std::vector<Room> getAvailableRooms() const;
@@ -136,4 +140,5 @@ public:
     friend class MessageHandler;
     friend class GameState;
     friend class DisplayManager;
+    friend class GestureEventSender;
 }; 

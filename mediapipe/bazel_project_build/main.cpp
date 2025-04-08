@@ -120,6 +120,9 @@ int main(int argc, char* argv[]) {
         std::cout << "Initializing gesture detector..." << std::endl;
         GestureDetector* detector = new GestureDetector(roomManager);
         
+        // Connect gesture detector to room manager for auto-play
+        roomManager->setGestureDetector(detector);
+        
         // Test camera access
         std::cout << "Testing camera access..." << std::endl;
         if (!detector->testCameraAccess()) {

@@ -49,9 +49,9 @@ std::string RoomManager::generateDeviceId() {
 
 RoomManager::RoomManager(WebSocketClient* client)
     : client(client), receiver(nullptr), 
-      messageHandler(nullptr), gameState(nullptr), displayManager(nullptr),
+      messageHandler(nullptr), gameState(nullptr), displayManager(nullptr), gestureDetector(nullptr),
       connected(false), ready(false), 
-      isWaitingForResponse(false), currentRequestType(""), lastRoomStatus(""), lastPlayerCount(0) {
+      isWaitingForResponse(false), currentRequestType(""), lastRoomStatus(""), lastPlayerCount(0), gameInProgress(false) {
     
     // Properly seed global random number generator for any legacy code that might use it
     std::srand(static_cast<unsigned int>(std::time(nullptr)));
@@ -801,6 +801,14 @@ bool RoomManager::sendGestureData(const std::string& gestureData) {
         json gestureJson = json::parse(gestureData);
         payload["gesture"] = gestureJson["gesture"];
         payload["confidence"] = gestureJson["confidence"];
+        
+        // Include cardId if it exists in the gesture data
+        if (gestureJson.contains("cardId") && !gestureJson["cardId"].empty()) {
+            payload["cardId"] = gestureJson["cardId"];
+            std::cout << "Sending gesture event with card ID: " << gestureJson["cardId"].get<std::string>() << std::endl;
+        } else {
+            std::cout << "Sending gesture event without card ID" << std::endl;
+        }
     } catch (const json::parse_error& e) {
         // If parsing fails, try to include the raw data
         std::cerr << "Error parsing gesture data: " << e.what() << std::endl;

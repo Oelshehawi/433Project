@@ -136,15 +136,32 @@ export function startRound(roomId: string): boolean {
   // Set round start time
   room.gameState.roundStartTime = Date.now();
 
-  // Reset player moves for the new round
-  room.gameState.playerMoves.forEach((_, playerId) => {
-    room.gameState!.playerMoves.set(playerId, false);
-  });
+  // ENHANCED RESET: Completely reinitialize the playerMoves Map to ensure a clean state
+  // First, create a new empty Map
+  room.gameState.playerMoves = new Map();
 
-  // Get BeagleBoard players
+  // Get all players (both real and virtual)
   const beagleBoardPlayers = room.players.filter(
     (player) => player.playerType === "beagleboard"
   );
+
+  // Initialize all real players as not having moved
+  beagleBoardPlayers.forEach((player) => {
+    console.log(
+      `Resetting move status for player ${player.id} to false for round ${room?.gameState?.roundNumber}`
+    );
+    room.gameState!.playerMoves.set(player.id, false);
+  });
+
+  // Reset virtual opponent if in test mode
+  if (beagleBoardPlayers.length === 1 && MIN_REQUIRED_PLAYERS === 1) {
+    console.log(
+      `Resetting move status for virtual_opponent to false for round ${
+        room.gameState!.roundNumber
+      }`
+    );
+    room.gameState!.playerMoves.set("virtual_opponent", false);
+  }
 
   console.log(`Room has ${beagleBoardPlayers.length} BeagleBoard players`);
   beagleBoardPlayers.forEach((player) => {

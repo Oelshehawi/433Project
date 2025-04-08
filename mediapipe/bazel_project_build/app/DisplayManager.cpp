@@ -62,9 +62,19 @@ void DisplayManager::updateCardAndGameDisplay() {
     lcd_place_message(cardMsg, 3, lcd_center);
     // std::cout << "[DisplayManager.cpp] LCD update complete" << std::endl;
     
-    // Also log to console - only log major changes to avoid excessive output
+    // Also log to console - but limit output to reduce spam
     static int lastTimeRemaining = -1;
-    if (timeRemaining % 5 == 0 || timeRemaining <= 3 || lastTimeRemaining != timeRemaining) {
+    static int lastRoundNumber = -1;
+    
+    // Only log in these cases:
+    // 1. Round number changed (new round)
+    // 2. Time is a multiple of 5 seconds (0, 5, 10, 15, etc.)
+    // 3. Time is in final 3 seconds countdown
+    // 4. First display after initialization (lastTimeRemaining == -1)
+    bool shouldLog = lastRoundNumber != roundNumber ||             // Round changed
+                    lastTimeRemaining == -1;                      // First display
+                    
+    if (shouldLog) {
         std::cout << "\n************************************" << std::endl;
         std::cout << "*       GAME STATE UPDATE        *" << std::endl;
         std::cout << "************************************" << std::endl;
@@ -73,7 +83,10 @@ void DisplayManager::updateCardAndGameDisplay() {
         std::cout << "* CARDS: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
         std::cout << "************************************\n" << std::endl;
     }
+    
+    // Update the stored values
     lastTimeRemaining = timeRemaining;
+    lastRoundNumber = roundNumber;
     
     // std::cout << "[DisplayManager.cpp] ====== DISPLAY UPDATE COMPLETE ======\n" << std::endl;
 }
