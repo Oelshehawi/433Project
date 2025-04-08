@@ -13,8 +13,10 @@ DisplayManager::~DisplayManager() {
 }
 
 void DisplayManager::updateCardAndGameDisplay() {
+    std::cout << "\n[DisplayManager.cpp] ====== UPDATING DISPLAY ======" << std::endl;
+    
     if (!gameState) {
-        std::cerr << "[DisplayManager.cpp] Error: GameState not set for DisplayManager" << std::endl;
+        std::cerr << "[DisplayManager.cpp] ERROR: GameState not set for DisplayManager" << std::endl;
         return;
     }
     
@@ -26,6 +28,13 @@ void DisplayManager::updateCardAndGameDisplay() {
     
     // Get the current timer value
     int timeRemaining = gameState->getCurrentTurnTimeRemaining();
+    int roundNumber = gameState->getCurrentRoundNumber();
+    
+    // Debug info about what we're displaying
+    std::cout << "[DisplayManager.cpp] Display update called with:" << std::endl;
+    std::cout << "[DisplayManager.cpp] Round: " << roundNumber << std::endl;
+    std::cout << "[DisplayManager.cpp] Time remaining: " << timeRemaining << " seconds" << std::endl;
+    std::cout << "[DisplayManager.cpp] Cards: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
     
     // Create game info display
     char line1[32];
@@ -33,7 +42,7 @@ void DisplayManager::updateCardAndGameDisplay() {
     char line3[32];
     
     // Format the header line with round info
-    snprintf(line1, sizeof(line1), "=ROUND %d=", gameState->getCurrentRoundNumber());
+    snprintf(line1, sizeof(line1), "=ROUND %d=", roundNumber);
     
     // Format the card type counts
     snprintf(line2, sizeof(line2), "ATK:%d DEF:%d BLD:%d", attackCount, defendCount, buildCount);
@@ -41,21 +50,27 @@ void DisplayManager::updateCardAndGameDisplay() {
     // Format countdown timer (both players move simultaneously)
     snprintf(line3, sizeof(line3), "TIME: %d sec", timeRemaining);
     
-    // Debug print the timer value before displaying
-    std::cout << "[DisplayManager.cpp] Updating display with timer: " << timeRemaining << " seconds" << std::endl;
+    // Debug output before displaying
+    std::cout << "[DisplayManager.cpp] LCD Line 1: " << line1 << std::endl;
+    std::cout << "[DisplayManager.cpp] LCD Line 2: " << line2 << std::endl;
+    std::cout << "[DisplayManager.cpp] LCD Line 3: " << line3 << std::endl;
     
-    // Display the summary
+    // Display the summary on LCD
+    std::cout << "[DisplayManager.cpp] Sending to LCD via lcd_place_message..." << std::endl;
     char* cardMsg[] = {line1, line2, line3};
     lcd_place_message(cardMsg, 3, lcd_center);
+    std::cout << "[DisplayManager.cpp] LCD update complete" << std::endl;
     
     // Also log to console
     std::cout << "\n************************************" << std::endl;
     std::cout << "*       GAME STATE UPDATE        *" << std::endl;
     std::cout << "************************************" << std::endl;
-    std::cout << "* ROUND: " << gameState->getCurrentRoundNumber() << std::endl;
+    std::cout << "* ROUND: " << roundNumber << std::endl;
     std::cout << "* TIME:  " << timeRemaining << "s" << std::endl;
     std::cout << "* CARDS: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
     std::cout << "************************************\n" << std::endl;
+    
+    std::cout << "[DisplayManager.cpp] ====== DISPLAY UPDATE COMPLETE ======\n" << std::endl;
 }
 
 void DisplayManager::displayRoundStart(int roundNumber, int timeRemaining) {

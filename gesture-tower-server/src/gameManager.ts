@@ -125,6 +125,10 @@ export function startRound(roomId: string): boolean {
     return false;
   }
 
+  console.log(
+    `\n=========== STARTING ROUND ${room.gameState.roundNumber} IN ROOM ${roomId} ===========`
+  );
+
   // Set round start time
   room.gameState.roundStartTime = Date.now();
 
@@ -138,35 +142,75 @@ export function startRound(roomId: string): boolean {
     (player) => player.playerType === "beagleboard"
   );
 
-  console.log(`Starting round ${room.gameState.roundNumber} in room ${roomId}`);
+  console.log(`Room has ${beagleBoardPlayers.length} BeagleBoard players`);
+  beagleBoardPlayers.forEach((player) => {
+    console.log(
+      `  - Player: ${player.name} (${player.id}), Ready: ${player.isReady}`
+    );
+  });
+
   console.log(`Client will manage 30-second round timer`);
 
   // Prepare card data for each player to include in the round_start event
   const playerCards: { [playerId: string]: any } = {};
 
   if (room.playerCards) {
+    console.log(
+      `Preparing cards for ${room.playerCards.size} players from playerCards map`
+    );
+
     beagleBoardPlayers.forEach((player) => {
       const cards = room.playerCards?.get(player.id);
       if (cards) {
         playerCards[player.id] = cards.cards;
         console.log(
-          `Prepared cards for player ${player.name} (${player.id}) to include in round_start`
+          `Prepared ${cards.cards.length} cards for player ${player.name} (${player.id}) to include in round_start`
+        );
+
+        // Log the first card for debugging
+        if (cards.cards.length > 0) {
+          console.log(
+            `  First card type: ${cards.cards[0].type}, id: ${cards.cards[0].id}`
+          );
+        }
+      } else {
+        console.log(
+          `WARNING: No cards found for player ${player.name} (${player.id})`
         );
       }
     });
+  } else {
+    console.error(
+      `ERROR: room.playerCards is not initialized for room ${roomId}!`
+    );
   }
 
-  // Send round start event to all players with cards included for each player
-  sendToRoom(roomId, "round_start", {
+  // Debug: Log the payload we're about to send
+  const payload = {
     roomId,
     roundNumber: room.gameState.roundNumber,
-    playerCards: playerCards, // Include cards in the round_start event
-  });
+    playerCards: playerCards,
+  };
 
+  console.log(
+    `Creating round_start payload with size ~${
+      JSON.stringify(payload).length
+    } bytes`
+  );
+  console.log(
+    `Payload contains cards for ${Object.keys(playerCards).length} players`
+  );
+
+  // Send round start event to all players with cards included for each player
+  console.log(`Calling sendToRoom(${roomId}, "round_start", payload) now...`);
+  sendToRoom(roomId, "round_start", payload);
   console.log(`Sent round_start with included cards for room ${roomId}`);
 
   // We no longer need to send separate beagle_board_command events for cards
   // as they're now included in the round_start event
+  console.log(
+    `=========== ROUND ${room.gameState.roundNumber} STARTED ===========\n`
+  );
 
   return true;
 }

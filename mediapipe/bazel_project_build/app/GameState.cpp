@@ -86,28 +86,64 @@ void GameState::stopTimerThread() {
 }
 
 void GameState::updateTimerFromEvent(const json& roundStartPayload) {
-    std::cout << "[GameState.cpp] Round start event received with payload: " << roundStartPayload.dump() << std::endl;
+    std::cout << "\n[GameState.cpp] ====== ROUND START EVENT PROCESSING START ======" << std::endl;
+    std::cout << "[GameState.cpp] Round start payload size: " << roundStartPayload.dump().size() << " bytes" << std::endl;
+    std::cout << "[GameState.cpp] Round start payload received: " << roundStartPayload.dump(2).substr(0, 500) << std::endl;
+    if (roundStartPayload.dump().size() > 500) {
+        std::cout << "... (truncated)" << std::endl;
+    }
 
     // Update round number
     if (roundStartPayload.contains("roundNumber")) {
-        currentRoundNumber = roundStartPayload["roundNumber"];
+        int newRoundNumber = roundStartPayload["roundNumber"];
+        std::cout << "[GameState.cpp] Updating round number from " << currentRoundNumber << " to " << newRoundNumber << std::endl;
+        currentRoundNumber = newRoundNumber;
+    } else {
+        std::cout << "[GameState.cpp] WARNING: Round start payload does not contain roundNumber!" << std::endl;
     }
     
     // Handle cards if they're included in round_start payload (new format)
+    bool foundCards = false;
+    
     if (roundStartPayload.contains("playerCards") && roundStartPayload["playerCards"].is_object()) {
+        std::string ourDeviceId = roomManager ? roomManager->getDeviceId() : "unknown";
+        std::cout << "[GameState.cpp] Looking for our cards with device ID: " << ourDeviceId << std::endl;
+        
+        // List all available player IDs in the payload
+        std::cout << "[GameState.cpp] Available player IDs in playerCards: ";
+        for (auto& [playerId, cards] : roundStartPayload["playerCards"].items()) {
+            std::cout << "'" << playerId << "' ";
+        }
+        std::cout << std::endl;
+        
         // Find cards for our player ID
         const auto& playerCards = roundStartPayload["playerCards"];
-        if (playerCards.contains(roomManager->getDeviceId())) {
+        if (playerCards.contains(ourDeviceId)) {
             // Found cards for this player
-            const auto& cards = playerCards[roomManager->getDeviceId()];
+            const auto& cards = playerCards[ourDeviceId];
             
             // Create a cards payload to process
             json cardsPayload;
             cardsPayload["cards"] = cards;
             
-            std::cout << "[GameState.cpp] Found cards in round_start event, processing them now" << std::endl;
+            std::cout << "[GameState.cpp] Found " << cards.size() << " cards in round_start event, processing them now" << std::endl;
+            std::cout << "[GameState.cpp] First card preview: " << (cards.size() > 0 ? cards[0].dump() : "No cards") << std::endl;
             processCards(cardsPayload);
+            foundCards = true;
+        } else {
+            std::cout << "[GameState.cpp] WARNING: Our device ID '" << ourDeviceId << "' not found in playerCards data!" << std::endl;
+            std::cout << "[GameState.cpp] Available player IDs: ";
+            for (auto& [playerId, cards] : playerCards.items()) {
+                std::cout << "'" << playerId << "' ";
+            }
+            std::cout << std::endl;
         }
+    } else {
+        std::cout << "[GameState.cpp] Round start payload does not contain playerCards data (old format)" << std::endl;
+    }
+    
+    if (!foundCards) {
+        std::cout << "[GameState.cpp] WARNING: No cards found in round_start event!" << std::endl;
     }
     
     // Check if the timer is already active (cards were received before round_start)
@@ -117,7 +153,10 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
         
         // Force an immediate display update to refresh with current state
         if (displayManager) {
+            std::cout << "[GameState.cpp] Forcing display update with current timer value" << std::endl;
             displayManager->updateCardAndGameDisplay();
+        } else {
+            std::cerr << "[GameState.cpp] ERROR: Display manager is NULL when trying to update display" << std::endl;
         }
         return;
     }
@@ -131,13 +170,17 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
     
     // Force an immediate display update to show the new timer
     if (displayManager) {
+        std::cout << "[GameState.cpp] Calling displayManager->updateCardAndGameDisplay() to show new round" << std::endl;
         displayManager->updateCardAndGameDisplay();
+        std::cout << "[GameState.cpp] Display update completed" << std::endl;
     } else {
-        std::cerr << "[GameState.cpp] Display manager is NULL when initializing timer" << std::endl;
+        std::cerr << "[GameState.cpp] ERROR: Display manager is NULL when initializing timer" << std::endl;
     }
     
     // Start the timer thread
+    std::cout << "[GameState.cpp] Starting timer thread for round " << currentRoundNumber << std::endl;
     startTimerThread();
+    std::cout << "[GameState.cpp] ====== ROUND START PROCESSING COMPLETE ======\n" << std::endl;
 }
 
 void GameState::processCards(const json& cardsPayload) {

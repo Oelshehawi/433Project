@@ -562,7 +562,26 @@ void WebSocketClient::wakeServiceThread() {
 
 void WebSocketClient::onMessageReceived(const std::string& message) {
     // Log all incoming messages to debug server communication
-    std::cout << "RAW WEBSOCKET MESSAGE: " << message << std::endl;
+    std::cout << "RAW WEBSOCKET MESSAGE: " << message.substr(0, 100);
+    if (message.length() > 100) {
+        std::cout << "... (" << message.length() << " bytes total)";
+    }
+    std::cout << std::endl;
+    
+    // Special check for round_start messages
+    if (message.find("\"event\":\"round_start\"") != std::string::npos) {
+        std::cout << "\n[WebSocketClient.cpp] *** DETECTED round_start EVENT in onMessageReceived! ***" << std::endl;
+        std::cout << "[WebSocketClient.cpp] Message size: " << message.length() << " bytes" << std::endl;
+        
+        // Log the first part of the payload to help with debugging
+        size_t payloadStart = message.find("\"payload\"");
+        if (payloadStart != std::string::npos) {
+            std::string payloadPreview = message.substr(payloadStart, 200);
+            std::cout << "[WebSocketClient.cpp] Payload preview: " << payloadPreview << "..." << std::endl;
+        }
+        
+        std::cout << "[WebSocketClient.cpp] *** END OF round_start EVENT DEBUG ***\n" << std::endl;
+    }
     
     // Pass to message handlers
     if (messageCallback) {
@@ -614,15 +633,47 @@ int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason,
                 const char *data = static_cast<const char*>(in);
                 std::string message(data, len);
                 
+                // Add debugging to track message fragments, especially for round_start events
+                std::cout << "[WebSocketClient.cpp] Received fragment, size: " << len << " bytes, first 40 chars: " 
+                          << message.substr(0, std::min(size_t(40), message.length()));
+                if (message.length() > 40) std::cout << "...";
+                std::cout << std::endl;
+                
+                // Special detection for round_start events in fragments
+                if (message.find("\"event\":\"round_start\"") != std::string::npos) {
+                    std::cout << "\n[WebSocketClient.cpp] !!! ROUND_START EVENT DETECTED IN FRAGMENT !!!\n" << std::endl;
+                }
+                
                 // Check if message is complete (final fragment)
                 bool isFinal = lws_is_final_fragment(wsi);
+                std::cout << "[WebSocketClient.cpp] Is final fragment: " << (isFinal ? "true" : "false") << std::endl;
+                
                 clientData->receivedData.append(message);
                 
+                // Log accumulated data size
+                std::cout << "[WebSocketClient.cpp] Accumulated data size: " << clientData->receivedData.length() << " bytes" << std::endl;
+                
                 if (isFinal) {
+                    // Special check for round_start in complete message
+                    if (clientData->receivedData.find("\"event\":\"round_start\"") != std::string::npos) {
+                        std::cout << "\n[WebSocketClient.cpp] *** COMPLETE ROUND_START EVENT ASSEMBLED, length: " 
+                                  << clientData->receivedData.length() << " bytes ***\n" << std::endl;
+                        
+                        // Print payload size to check if it's being truncated
+                        size_t payloadPos = clientData->receivedData.find("\"payload\"");
+                        if (payloadPos != std::string::npos) {
+                            std::cout << "[WebSocketClient.cpp] Payload position: " << payloadPos 
+                                      << ", remaining bytes: " << clientData->receivedData.length() - payloadPos << std::endl;
+                        }
+                    }
+                    
                     // Process the complete message
                     if (client->messageCallback) {
+                        std::cout << "[WebSocketClient.cpp] Calling message callback with complete message" << std::endl;
                         // Call user's message handler
                         client->messageCallback(clientData->receivedData);
+                    } else {
+                        std::cerr << "[WebSocketClient.cpp] WARNING: No message callback set!" << std::endl;
                     }
                     
                     clientData->receivedData.clear();

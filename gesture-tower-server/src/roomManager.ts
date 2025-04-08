@@ -141,6 +141,50 @@ export const handleJoinRoom = (
       } as ErrorPayload);
     }
 
+    // Debug BeagleBoard client registration
+    const isBeagleBoard =
+      playerId.startsWith("bb_") ||
+      (!playerId.startsWith("admin-") && !playerId.startsWith("viewer-"));
+
+    if (isBeagleBoard) {
+      console.log(`\n=========== BEAGLEBOARD JOIN REQUEST ===========`);
+      console.log(`BeagleBoard client joining room: ${roomId}`);
+      console.log(`Player ID: ${playerId}`);
+      console.log(`Current client.id: ${client.id}`);
+      console.log(`Current readyState: ${client.readyState}`);
+
+      // Check if client is already in beagleBoards map
+      const existingBB = Array.from(beagleBoards.values()).find(
+        (bb) => bb.deviceId === playerId
+      );
+      if (existingBB) {
+        console.log(
+          `WARNING: Client already exists in beagleBoards with deviceId ${playerId}!`
+        );
+      } else {
+        console.log(`Client is not yet in beagleBoards map`);
+      }
+
+      // Check clients map as well
+      let foundInClients = false;
+      clients.forEach((c, id) => {
+        if (c.playerId === playerId) {
+          foundInClients = true;
+          console.log(
+            `Client already exists in clients map with client.id ${id}`
+          );
+        }
+      });
+
+      if (!foundInClients) {
+        console.log(
+          `Client not found in clients map with playerId ${playerId}`
+        );
+      }
+
+      console.log(`============================================\n`);
+    }
+
     // Store the room ID and player ID in the client object
     client.roomId = roomId;
     client.playerId = playerId;
@@ -174,17 +218,35 @@ export const handleJoinRoom = (
 
     // Add player to room - identify BeagleBoard players by ID format
     // BeagleBoard device IDs typically start with "bb_" or similar prefix
-    const isBeagleBoard =
-      playerId.startsWith("bb_") ||
-      (!playerId.startsWith("admin-") && !playerId.startsWith("viewer-"));
-
+    // Use our previously declared isBeagleBoard variable
+    const playerType = isBeagleBoard ? "beagleboard" : "webviewer";
     const newPlayer: Player = {
       id: playerId,
       name: playerName,
       isReady: false,
       connected: true,
-      playerType: isBeagleBoard ? "beagleboard" : "webviewer",
+      playerType: playerType,
     };
+
+    // Set the playerType on the client too
+    client.playerType = playerType;
+
+    // Log for BeagleBoard clients
+    if (isBeagleBoard) {
+      console.log(`Set BeagleBoard client.playerType = "${playerType}"`);
+      console.log(`Set BeagleBoard client.roomId = "${roomId}"`);
+
+      // Add to the beagleBoards map
+      const beagleBoard: BeagleBoard = {
+        deviceId: playerId,
+        roomId: roomId,
+        client: client,
+      };
+
+      beagleBoards.set(client.id, beagleBoard);
+      console.log(`Added client to beagleBoards map with key ${client.id}`);
+      console.log(`BeagleBoard map now has ${beagleBoards.size} entries`);
+    }
 
     room.players.push(newPlayer);
 
