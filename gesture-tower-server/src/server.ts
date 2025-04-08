@@ -144,9 +144,4 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// Start the server
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  console.log(`==> Your service is live 🎉`);
-});
+// Note: server is started in main.ts, not here
