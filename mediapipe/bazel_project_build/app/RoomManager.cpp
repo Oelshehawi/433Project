@@ -436,21 +436,36 @@ bool RoomManager::createRoom(const std::string& roomName) {
         return false;
     }
     
-    // Create room JSON object
+    if (playerName.empty()) {
+        std::cerr << "Cannot create room: Player name is not set" << std::endl;
+        return false;
+    }
+    
+    // Generate a random room ID
+    std::string roomId = "room_" + std::to_string(std::rand() % 10000);
+    
+    // Create payload for room creation
     json room = json::object();
+    room["id"] = roomId;
     room["name"] = roomName;
-    room["maxPlayers"] = 2;
+    room["maxPlayers"] = 4;
+    room["status"] = "waiting";
+    room["hostId"] = deviceId;
     
     // Create players array with the creator
     json players = json::array();
     json player = json::object();
     player["id"] = deviceId;
-    player["name"] = playerName.empty() ? "BeagleBoard" : playerName;
-    player["playerType"] = "beagleboard"; // Important for the server to know this is a BeagleBoard client
-    player["ready"] = false;
+    player["name"] = playerName;
+    player["playerType"] = "beagleboard";
+    player["isReady"] = false;
+    player["connected"] = true;
     players.push_back(player);
     
     room["players"] = players;
+    
+    // Set current room ID for tracking
+    currentRoomId = roomId;
     
     // Create payload
     json payload = json::object();
@@ -462,6 +477,8 @@ bool RoomManager::createRoom(const std::string& roomName) {
     message["payload"] = payload;
     
     std::string jsonMessage = message.dump();
+    
+    std::cout << "Sending create room request: " << jsonMessage << std::endl;
     
     // Set request tracking 
     isWaitingForResponse = true;
@@ -526,22 +543,19 @@ bool RoomManager::joinRoom(const std::string& roomId) {
     // Set current room ID for tracking purposes
     currentRoomId = roomId;
     
-    // Create JSON message
-    json player = json::object();
-    player["id"] = deviceId;
-    player["name"] = playerName;
-    player["playerType"] = "beagleboard"; // Important for the server to know this is a BeagleBoard client
-    player["ready"] = false;
-    
+    // Create JSON message with fixed payload format
     json payload = json::object();
     payload["roomId"] = roomId;
-    payload["player"] = player;
+    payload["playerId"] = deviceId;
+    payload["playerName"] = playerName;
     
     json message = json::object();
     message["event"] = "join_room";
     message["payload"] = payload;
     
     std::string jsonMessage = message.dump();
+    
+    std::cout << "Sending join request: " << jsonMessage << std::endl;
     
     return sendMessageWithTracking(jsonMessage, "join_room");
 }

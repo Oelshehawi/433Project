@@ -27,6 +27,18 @@ const char *GESTURES[] = {
     "Wave"
 };
 
+// Function to get current time in milliseconds
+static long long getTimeInMs(void)
+{
+    struct timespec spec;
+    clock_gettime(CLOCK_REALTIME, &spec);
+    long long seconds = spec.tv_sec;
+    long long nanoSeconds = spec.tv_nsec;
+    long long milliSeconds = seconds * 1000
+            + nanoSeconds / 1000000;
+    return milliSeconds;
+}
+
 // Function to detect landmarks 
 std::vector<cv::Point> detect_hand_landmarks(cv::Mat frame) {
     std::vector<cv::Point> landmarks;
@@ -173,8 +185,11 @@ void GestureDetector::runTestingMode() {
         }
         
         // Check for button press to exit
-        if (rotary_press_statemachine_wasButtonPressed()) {
+        int currentValue = rotary_press_statemachine_getValue();
+        static int previousValue = currentValue;
+        if (currentValue != previousValue) {
             std::cout << "Button pressed, exiting camera test" << std::endl;
+            previousValue = currentValue;
             break;
         }
         
@@ -398,17 +413,6 @@ void GestureDetector::detectionLoop() {
     
     // Cleanup
     camera.closeCamera();
-}
-
-static long long getTimeInMs(void)
-{
-    struct timespec spec;
-    clock_gettime(CLOCK_REALTIME, &spec);
-    long long seconds = spec.tv_sec;
-    long long nanoSeconds = spec.tv_nsec;
-    long long milliSeconds = seconds * 1000
-            + nanoSeconds / 1000000;
-    return milliSeconds;
 }
 
 // Display a list of cards on the LCD

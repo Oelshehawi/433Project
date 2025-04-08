@@ -137,12 +137,15 @@ function handleMessage(client: ExtendedWebSocket, message: WebSocketMessage) {
   const { event, payload } = message;
 
   console.log(`Received event: ${event}`);
+  console.log(`Payload for ${event}:`, JSON.stringify(payload));
 
   switch (event) {
     case "create_room":
+      console.log("Processing create_room event");
       handleCreateRoom(client, payload);
       break;
     case "join_room":
+      console.log("Processing join_room event");
       handleJoinRoom(client, payload);
       break;
     case "leave_room":

@@ -42,10 +42,15 @@ export const handleCreateRoom = (
   payload: CreateRoomPayload
 ) => {
   try {
+    console.log(
+      "handleCreateRoom called with payload:",
+      JSON.stringify(payload)
+    );
     const { room } = payload;
 
     // Validate data
     if (!room) {
+      console.error("Missing room data in create_room payload");
       return sendToClient(client, "error", {
         error: "Missing required data",
       } as ErrorPayload);
@@ -53,6 +58,7 @@ export const handleCreateRoom = (
 
     // Validate room data
     if (!room || !room.id || !room.name) {
+      console.error("Invalid room data in create_room payload", room);
       return sendToClient(client, "error", {
         error: "Invalid room data",
       } as ErrorPayload);
@@ -109,10 +115,16 @@ export const handleJoinRoom = (
   payload: JoinRoomPayload
 ) => {
   try {
+    console.log("handleJoinRoom called with payload:", JSON.stringify(payload));
     const { roomId, playerId, playerName } = payload;
 
     // Validate data
     if (!roomId || !playerId || !playerName) {
+      console.error("Missing required data in join_room payload", {
+        roomId,
+        playerId,
+        playerName,
+      });
       return sendToClient(client, "error", {
         error: "Missing required data",
       } as ErrorPayload);
