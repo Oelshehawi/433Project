@@ -113,6 +113,10 @@ void GestureDetector::gestureLoop() {
     
     std::cout << "GestureDetector started" << std::endl;
     
+    // Display initial message
+    char* startMsg[] = {"Show a gesture", "to make your move"};
+    lcd_place_message(startMsg, 2, lcd_center);
+    
     while (running.load()) {
         if (roomManager == nullptr) {
             std::cerr << "Error: Room manager is not initialized." << std::endl;
@@ -144,23 +148,81 @@ void GestureDetector::gestureLoop() {
         }
         
         if (handPos.hand_visible) {
-            std::lock_guard<std::mutex> lock(handMutex);
-            currentHand = handPos;
+            {
+                std::lock_guard<std::mutex> lock(handMutex);
+                currentHand = handPos;
+            }
             
             std::string detectedMove, actionType;
             if (recognizeGesture(handPos, detectedMove, actionType)) {
                 // Log the recognized gesture
                 std::cout << "Recognized gesture: " << detectedMove << " (" << actionType << ")" << std::endl;
                 
-                // Use the event sender if available
-                if (eventSender) {
-                    eventSender->sendGesture(actionType, 0.95f);
+                // Display confirmation message
+                char confirmMessage[32];
+                snprintf(confirmMessage, sizeof(confirmMessage), "%s detected", detectedMove.c_str());
+                
+                // Display on LCD
+                char* msg[] = {confirmMessage, "Press to confirm"};
+                lcd_place_message(msg, 2, lcd_center);
+                
+                // Get initial rotary encoder value
+                int initialValue = rotary_press_statemachine_getValue();
+                long long confirmationStartTime = getTimeInMs();
+                bool gestureConfirmed = false;
+                
+                // Wait for confirmation or timeout (5 seconds)
+                const int CONFIRMATION_TIMEOUT_MS = 5000; // 5 seconds
+                
+                while (running.load() && (getTimeInMs() - confirmationStartTime < CONFIRMATION_TIMEOUT_MS)) {
+                    // Check if button was pressed
+                    int currentValue = rotary_press_statemachine_getValue();
+                    if (currentValue != initialValue) {
+                        gestureConfirmed = true;
+                        break;
+                    }
+                    
+                    // Small delay to prevent high CPU usage
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                }
+                
+                // If confirmed or timed out
+                if (gestureConfirmed) {
+                    // Display sending message
+                    char* sendingMsg[] = {"Sending gesture", "to server..."};
+                    lcd_place_message(sendingMsg, 2, lcd_center);
+                    
+                    // Send the gesture
+                    if (eventSender) {
+                        eventSender->sendGesture(actionType, 0.95f);
+                    } else {
+                        // Fallback to direct room manager call
+                        json gestureData = json::object();
+                        gestureData["gesture"] = actionType;
+                        gestureData["confidence"] = 0.95f;
+                        roomManager->sendGestureData(gestureData.dump());
+                    }
+                    
+                    // Display confirmation of sending
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                    char* sentMsg[] = {"Gesture sent", "Waiting for next round"};
+                    lcd_place_message(sentMsg, 2, lcd_center);
+                    
+                    // Stop gesture detection after successful confirmation
+                    std::cout << "Gesture confirmed and sent. Stopping detection." << std::endl;
+                    running.store(false);
+                    break;
                 } else {
-                    // Fallback to direct room manager call
-                    json gestureData = json::object();
-                    gestureData["gesture"] = actionType;
-                    gestureData["confidence"] = 0.95f;
-                    roomManager->sendGestureData(gestureData.dump());
+                    // Timed out without confirmation
+                    char* timeoutMsg[] = {"Confirmation", "timed out"};
+                    lcd_place_message(timeoutMsg, 2, lcd_center);
+                    
+                    // Short delay to show timeout message
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+                    
+                    // Reset to initial message
+                    char* resetMsg[] = {"Show a gesture", "to make your move"};
+                    lcd_place_message(resetMsg, 2, lcd_center);
                 }
             }
         }

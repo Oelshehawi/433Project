@@ -53,7 +53,7 @@ void GameState::updateTimer() {
                 // Disable the timer
                 timerActive = false;
                 
-                // Auto-play a card
+                // Auto-play a card - this will send the gesture to server
                 autoPlayCard();
                 
                 break;
@@ -84,16 +84,15 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
         currentRoundNumber = roundStartPayload["roundNumber"];
     }
     
-    if (roundStartPayload.contains("remainingTime")) {
-        currentTurnTimeRemaining = roundStartPayload["remainingTime"].get<int>() / 1000; // Convert ms to seconds
-        lastTimerUpdate = std::chrono::steady_clock::now();
-        timerActive = true;
-        
-        std::cout << "Round time: " << currentTurnTimeRemaining << " seconds" << std::endl;
-        
-        // Start the timer thread
-        startTimerThread();
-    }
+    // Always use fixed 30-second timer regardless of what server sends
+    currentTurnTimeRemaining = 30; // Fixed 30 seconds per round
+    lastTimerUpdate = std::chrono::steady_clock::now();
+    timerActive = true;
+    
+    std::cout << "New round started - setting timer to 30 seconds" << std::endl;
+    
+    // Start the timer thread
+    startTimerThread();
 }
 
 void GameState::processCards(const json& cardsPayload) {

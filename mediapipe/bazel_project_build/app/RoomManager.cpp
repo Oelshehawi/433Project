@@ -238,9 +238,24 @@ void RoomManager::handleMessage(const std::string& message) {
         else if (j.contains("event") && j["event"] == "round_start") {
             // Handle round start events
             if (j.contains("payload")) {
-                std::cout << "Round started" << std::endl;
+                std::cout << "----------------------------------------" << std::endl;
+                std::cout << "ROUND START EVENT RECEIVED" << std::endl;
                 
-                // Let GameState handle timer and round info
+                // Debug the exact data received
+                std::cout << "Round start payload: " << j["payload"].dump() << std::endl;
+                
+                // Extract round number - this is the important part
+                int roundNumber = 1;
+                
+                if (j["payload"].contains("roundNumber")) {
+                    roundNumber = j["payload"]["roundNumber"];
+                    std::cout << "Starting Round Number: " << roundNumber << std::endl;
+                }
+                
+                // Update currentRoundNumber directly
+                currentRoundNumber = roundNumber;
+                
+                // Let GameState handle timer (client-side only now)
                 if (gameState) {
                     gameState->updateTimerFromEvent(j["payload"]);
                     
@@ -252,17 +267,24 @@ void RoomManager::handleMessage(const std::string& message) {
                 else {
                     std::cerr << "Error: GameState not available for round start event" << std::endl;
                 }
+                
+                std::cout << "----------------------------------------" << std::endl;
             }
             resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "round_end") {
             // Handle round end events
             if (j.contains("payload")) {
-                std::cout << "Round ended" << std::endl;
+                std::cout << "----------------------------------------" << std::endl;
+                std::cout << "ROUND END EVENT RECEIVED" << std::endl;
+                
+                // Debug the exact data received
+                std::cout << "Round end payload: " << j["payload"].dump() << std::endl;
                 
                 int roundNumber = currentRoundNumber;
                 if (j["payload"].contains("roundNumber")) {
                     roundNumber = j["payload"]["roundNumber"];
+                    std::cout << "Completed Round Number: " << roundNumber << std::endl;
                 }
                 
                 // Check for round results
@@ -270,12 +292,21 @@ void RoomManager::handleMessage(const std::string& message) {
                 if (j["payload"].contains("roundWinner")) {
                     std::string winnerId = j["payload"]["roundWinner"];
                     isWinner = (winnerId == deviceId);
+                    std::cout << "Round winner: " << (isWinner ? "YOU" : winnerId) << std::endl;
                 }
                 
                 // Use DisplayManager to update the LCD with round result
                 if (displayManager) {
                     displayManager->displayRoundEnd(roundNumber, isWinner);
                 }
+                
+                // Stop any active timer since the round has ended
+                if (gameState) {
+                    gameState->stopTimerThread();
+                }
+                
+                std::cout << "Waiting for next round to begin..." << std::endl;
+                std::cout << "----------------------------------------" << std::endl;
             }
             resetLoadingState();
         }

@@ -11,7 +11,7 @@ import { sendToRoom } from "./messaging";
 // Constants for game configuration
 const MIN_GOAL_HEIGHT = 5;
 const MAX_GOAL_HEIGHT = 10;
-const ROUND_DURATION_MS = 30000; // 30 seconds
+// Removed ROUND_DURATION_MS as we'll let clients handle timing
 
 // Initialize game state for a room
 export function initializeGameState(roomId: string): boolean {
@@ -46,8 +46,8 @@ export function initializeGameState(roomId: string): boolean {
     towerHeights: new Map(),
     goalHeights: new Map(),
     roundNumber: 1,
-    roundStartTime: 0,
-    roundDuration: ROUND_DURATION_MS,
+    roundStartTime: Date.now(), // Keep track of when rounds start, but clients handle timing
+    roundDuration: 0, // Not used by server anymore
     playerShields: new Map(),
     playerMoves: new Map(),
   };
@@ -106,13 +106,13 @@ export function startRound(roomId: string): boolean {
   );
 
   console.log(`Starting round ${room.gameState.roundNumber} in room ${roomId}`);
-  console.log(`Round time: ${ROUND_DURATION_MS / 1000} seconds`);
+  console.log(`Client will manage 30-second round timer`);
 
-  // Send round start event to all players - no current turn, as both players act simultaneously
+  // Send round start event to all players - no remainingTime as clients handle timing
   sendToRoom(roomId, "round_start", {
     roomId,
     roundNumber: room.gameState.roundNumber,
-    remainingTime: ROUND_DURATION_MS,
+    // No remainingTime - clients handle timing themselves
   });
 
   // Send each BeagleBoard player their current cards at the start of each round
@@ -144,23 +144,8 @@ export function startRound(roomId: string): boolean {
     }
   }
 
-  // Set up timer to end round automatically after ROUND_DURATION_MS
-  setTimeout(() => {
-    // Check if the round is still active
-    if (rooms.has(roomId) && room.gameState?.roundStartTime) {
-      const currentTime = Date.now();
-      const elapsedTime = currentTime - room.gameState.roundStartTime;
-
-      // Only end the round if enough time has passed
-      if (elapsedTime >= ROUND_DURATION_MS) {
-        // End round automatically if time is up
-        console.log(
-          `Round ${room.gameState.roundNumber} time expired in room ${roomId}`
-        );
-        endRound(roomId);
-      }
-    }
-  }, ROUND_DURATION_MS + 100); // Add 100ms buffer
+  // No server-side timer - clients will handle timing and send gestures
+  // when their timer expires if the player hasn't made a move
 
   return true;
 }

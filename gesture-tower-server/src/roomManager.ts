@@ -12,6 +12,7 @@ import {
   GestureEventPayload,
   GameActionType,
   BeagleBoard,
+  GameState,
 } from "./types";
 import {
   broadcastToAll,
@@ -22,7 +23,7 @@ import {
 } from "./messaging";
 import { broadcastToAllClients } from "./server";
 import { initializeCardsForRoom } from "./cardManager";
-import { initializeGameState, processAction } from "./gameManager";
+import { initializeGameState, processAction, endRound } from "./gameManager";
 import { v4 as uuidv4 } from "uuid";
 
 // Store active rooms
@@ -655,6 +656,25 @@ export const handleGestureEvent = (
           console.error(
             `Failed to process action ${gesture} for player ${playerId}`
           );
+        }
+
+        // Mark this player's move as complete
+        room.gameState.playerMoves.set(playerId, true);
+
+        // Check if all players have moved after this action
+        let allPlayersMoved = true;
+        room.gameState.playerMoves.forEach((hasMoved) => {
+          if (!hasMoved) {
+            allPlayersMoved = false;
+          }
+        });
+
+        // If all players have moved, end the round automatically
+        if (allPlayersMoved) {
+          console.log(
+            `All players have submitted gestures in room ${roomId}, ending round`
+          );
+          endRound(roomId);
         }
       }
 
