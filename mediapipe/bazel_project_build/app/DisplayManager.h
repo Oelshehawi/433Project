@@ -1,0 +1,35 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include "GameState.h"
+
+// Forward declarations
+class GameState;
+struct Card;
+
+class DisplayManager {
+private:
+    GameState* gameState;
+
+public:
+    DisplayManager(GameState* gameState);
+    ~DisplayManager();
+
+    // Display methods
+    void updateCardAndGameDisplay();
+    void displayRoundStart(int roundNumber, int timeRemaining);
+    void displayRoundEnd(int roundNumber, bool isWinner);
+    void displayGameStarting();
+    void displayGameStarted();
+    void displayGameEnded(bool isWinner);
+    void displayRoomList(const std::vector<struct Room>& rooms);
+    void displayAutoPlay(const std::string& cardType);
+    void displayWaitingForResponse(const std::string& requestType);
+    void displayRoomConnection(const std::string& roomName, int playerCount, int maxPlayers);
+    void displayError(const std::string& errorMessage);
+    void displayMessage(const std::string& line1, const std::string& line2);
+    
+    // Set the GameState (needed to resolve circular reference)
+    void setGameState(GameState* gs) { gameState = gs; }
+}; 

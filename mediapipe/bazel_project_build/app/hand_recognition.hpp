@@ -1,23 +1,34 @@
-#ifndef _HAND_RECOGNITION_HPP_
-#define _HAND_RECOGNITION_HPP_
-#include "absl/flags/flag.h"
-#include "absl/flags/parse.h"
+#pragma once
+
+#include <opencv2/opencv.hpp>
+#include <opencv2/core/core.hpp>
 #include "absl/status/status.h"
-//#include "absl/log/absl_log.h"
-class handPosition{
-    public:
-        int num_fingers_held_up;
-        bool hand_visible;
-        bool thumb_raised;
-        bool index_raised;
-        bool middle_raised;
-        bool ring_raised;
-        bool pinky_raised;
-        handPosition(): num_fingers_held_up(0), hand_visible(false) , thumb_raised(false), index_raised(false), middle_raised(false), ring_raised(false), pinky_raised(false) {}
-        handPosition(int num_fingers, bool visible, bool thumb, bool index, bool middle, bool ring, bool pinky)
-        :num_fingers_held_up(num_fingers), hand_visible(visible), thumb_raised(thumb),index_raised(index),middle_raised(middle), ring_raised(ring), pinky_raised(pinky){}
-        bool compare(handPosition reference);
+
+class handPosition {
+public:
+    bool hand_visible = false;
+    int num_fingers_held_up = 0;
+    bool index_held_up = false;
+    bool middle_held_up = false;
+    bool ring_held_up = false;
+    bool pinky_held_up = false;
+    bool thumb_held_up = false;
     
+    // Default constructor for a hand with no fingers held up
+    handPosition() : hand_visible(false), num_fingers_held_up(0), 
+                     index_held_up(false), middle_held_up(false), 
+                     ring_held_up(false), pinky_held_up(false), 
+                     thumb_held_up(false) {}
+    
+    // Constructor for a hand with specific fingers held up
+    handPosition(int fingers, bool thumb, bool index, bool middle, bool ring, bool pinky, bool visible=true) : 
+                hand_visible(visible), num_fingers_held_up(fingers),
+                index_held_up(index), middle_held_up(middle),
+                ring_held_up(ring), pinky_held_up(pinky),
+                thumb_held_up(thumb) {}
+    
+    // Compare with another handPosition
+    bool compare(handPosition reference);
 };
+
 absl::Status hand_analyze_image(cv::Mat image, handPosition* hand_pos);
-#endif

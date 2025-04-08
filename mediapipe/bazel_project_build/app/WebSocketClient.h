@@ -44,9 +44,6 @@ public:
     // Ensure messages are processed quickly
     void ensureMessageProcessing();
     
-    // Process received messages
-    void onMessageReceived(const std::string& message);
-    
     // Allow the protocol callback to access private members
     friend int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason, 
                               void *user, void *in, size_t len);
@@ -90,6 +87,14 @@ private:
     // Helper methods
     std::string parseCommandPayload(const std::string& payload);
     std::string commandToEventName(const std::string& command);
+
+    // Internal message handler
+    void onMessageReceived(const std::string& message);
+
+    // Friends
+    friend int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason, 
+                    void *user, void *in, size_t len);
+    friend class WebSocketReceiver; // Allow WebSocketReceiver to access private members
 };
 
 #endif // WEBSOCKET_CLIENT_H 

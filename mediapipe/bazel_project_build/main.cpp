@@ -1,8 +1,11 @@
-#include "app/gesture.h"
 #include "app/RoomManager.h"
 #include "app/WebSocketClient.h"
 #include "app/WebSocketReceiver.h"
 #include "app/lcd_display.h"
+#include "app/GestureDetector.h"
+#include "app/GameState.h"
+#include "app/DisplayManager.h"
+#include "app/MessageHandler.h"
 #include "hal/rotary_press_statemachine.h"
 #include <iostream>
 #include <thread>
@@ -18,9 +21,9 @@
 void displayHelp() {
     std::cout << "Available commands:" << std::endl;
     std::cout << "  help                - Display this help message" << std::endl;
-    std::cout << "  setname <name>      - Set your player name" << std::endl;
+    std::cout << "  setname <n>      - Set your player name" << std::endl;
     std::cout << "  listrooms           - Fetch and display available rooms" << std::endl;
-    std::cout << "  createroom <name>   - Create a new room with the given name" << std::endl;
+    std::cout << "  createroom <n>   - Create a new room with the given name" << std::endl;
     std::cout << "  joinroom <room_id>  - Join a specific room" << std::endl;
     std::cout << "  leaveroom           - Leave the current room" << std::endl;
     std::cout << "  status              - Show current status" << std::endl;
@@ -81,9 +84,25 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         
-        // Create room manager with WebSocket client
+        // Create room manager with WebSocket client first
         std::cout << "Initializing Room Manager..." << std::endl;
         RoomManager* roomManager = new RoomManager(webSocketClient);
+        
+        // Create components in the correct order to handle dependencies
+        // First create GameState with null pointers, we'll set them later
+        GameState* gameState = new GameState(nullptr, nullptr, roomManager->getDeviceId());
+        
+        // Then create DisplayManager with gameState
+        DisplayManager* displayManager = new DisplayManager(gameState);
+        
+        // Now set up the connections between components
+        gameState->setRoomManager(roomManager);
+        gameState->setDisplayManager(displayManager);
+        roomManager->setGameState(gameState);
+        roomManager->setDisplayManager(displayManager);
+        
+        // Create message handler using the correct parameter order
+        MessageHandler* messageHandler = new MessageHandler(roomManager, gameState, webSocketClient);
         
         // Start the WebSocket receiver to listen for server responses
         std::cout << "Starting WebSocket receiver..." << std::endl;
@@ -99,13 +118,11 @@ int main(int argc, char* argv[]) {
         std::cout << "Successfully connected to server." << std::endl;
         
         std::cout << "Initializing gesture detector..." << std::endl;
-        GestureDetector detector;
-        // Set the room manager for the detector
-        detector.setRoomManager(roomManager);
+        GestureDetector* detector = new GestureDetector(roomManager);
         
         // Test camera access
         std::cout << "Testing camera access..." << std::endl;
-        if (!detector.testCameraAccess()) {
+        if (!detector->testCameraAccess()) {
             std::cerr << "WARNING: Could not access camera. Gesture detection will not work." << std::endl;
             std::cerr << "Please check camera permissions and connections." << std::endl;
         } else {
@@ -155,7 +172,7 @@ int main(int argc, char* argv[]) {
                 std::getline(iss >> std::ws, name);
                 
                 if (name.empty()) {
-                    std::cout << "Usage: setname <name>" << std::endl;
+                    std::cout << "Usage: setname <n>" << std::endl;
                 } else {
                     roomManager->setPlayerName(name);
                     std::cout << "Player name set to: " << name << std::endl;
@@ -172,7 +189,7 @@ int main(int argc, char* argv[]) {
                 if (roomId.empty()) {
                     std::cout << "Usage: joinroom <room_id>" << std::endl;
                 } else if (roomManager->getPlayerName().empty()) {
-                    std::cout << "Please set your player name first using 'setname <name>'" << std::endl;
+                    std::cout << "Please set your player name first using 'setname <n>'" << std::endl;
                 } else {
                     roomManager->joinRoom(roomId);
                     std::cout << "Sending join request for room: " << roomId << std::endl;
@@ -183,9 +200,9 @@ int main(int argc, char* argv[]) {
                 std::getline(iss >> std::ws, roomName);
                 
                 if (roomName.empty()) {
-                    std::cout << "Usage: createroom <name>" << std::endl;
+                    std::cout << "Usage: createroom <n>" << std::endl;
                 } else if (roomManager->getPlayerName().empty()) {
-                    std::cout << "Please set your player name first using 'setname <name>'" << std::endl;
+                    std::cout << "Please set your player name first using 'setname <n>'" << std::endl;
                 } else {
                     roomManager->createRoom(roomName);
                     std::cout << "Sending create room request for: " << roomName << std::endl;
@@ -230,7 +247,7 @@ int main(int argc, char* argv[]) {
                         std::cout << "Warning: Not connected to a room. Gestures will not be sent to a game." << std::endl;
                     }
                     
-                    detector.startDetection();
+                    detector->start();
                     detectionRunning = true;
                     std::cout << "Gesture detection started." << std::endl;
                 } else {
@@ -239,7 +256,7 @@ int main(int argc, char* argv[]) {
             }
             else if (command == "stop") {
                 if (detectionRunning) {
-                    detector.stopDetection();
+                    detector->stop();
                     detectionRunning = false;
                     std::cout << "Gesture detection stopped." << std::endl;
                 } else {
@@ -247,40 +264,53 @@ int main(int argc, char* argv[]) {
                 }
             }
             else if (command == "webcamtest") {
-                detector.runTestingMode();
+                detector->runTestingMode();
             }
             else if (command == "exit") {
                 if (detectionRunning) {
-                    detector.stopDetection();
+                    detector->stop();
                 }
-                
-                if (roomManager->isConnected()) {
-                    roomManager->leaveRoom();
-                }
-                
-                // Cleanup LCD before exit
-                lcd_cleanup();
-                
-                // Cleanup rotary encoder
-                rotary_press_statemachine_cleanup();
                 
                 std::cout << "Exiting application..." << std::endl;
                 break;
             }
-            else if (!command.empty()) {
-                std::cout << "Unknown command: " << command << ". Type 'help' for available commands." << std::endl;
+            else {
+                std::cout << "Unknown command: " << command << std::endl;
+                std::cout << "Type 'help' for a list of commands." << std::endl;
             }
         }
         
         // Clean up resources
-        delete roomManager;
-        delete webSocketClient;
+        if (detector) {
+            delete detector;
+        }
+        
+        if (roomManager) {
+            delete roomManager;
+        }
+        
+        if (gameState) {
+            delete gameState;
+        }
+        
+        if (displayManager) {
+            delete displayManager;
+        }
+        
+        if (messageHandler) {
+            delete messageHandler;
+        }
+        
+        if (webSocketClient) {
+            webSocketClient->disconnect();
+            delete webSocketClient;
+        }
+        
+        // Restore stderr
+        std::cerr.rdbuf(stderr_buf);
         
     } catch (const std::exception& e) {
-        std::cerr << "FATAL ERROR: Unhandled exception: " << e.what() << std::endl;
-        return 1;
-    } catch (...) {
-        std::cerr << "FATAL ERROR: Unknown exception occurred" << std::endl;
+        std::cout << "Error: " << e.what() << std::endl;
         return 1;
     }
     

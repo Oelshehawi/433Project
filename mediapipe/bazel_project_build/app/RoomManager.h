@@ -8,13 +8,17 @@
 #include <map>
 #include <mutex>
 #include <chrono>
-
-// For convenience
-using json = nlohmann::json;
+#include <thread>
 
 // Forward declarations
 class WebSocketClient;
 class WebSocketReceiver;
+class MessageHandler;
+class GameState;
+class DisplayManager;
+
+// For convenience
+using json = nlohmann::json;
 
 // Card definition for game
 struct Card {
@@ -24,6 +28,7 @@ struct Card {
     std::string description;
 };
 
+// Room structure
 struct Room {
     std::string id;
     std::string name;
@@ -36,6 +41,10 @@ class RoomManager {
 private:
     WebSocketClient* client;
     WebSocketReceiver* receiver;
+    MessageHandler* messageHandler;
+    GameState* gameState;
+    DisplayManager* displayManager;
+    
     std::string deviceId;
     std::string playerName;
     std::string currentRoomId;
@@ -103,6 +112,10 @@ public:
     bool isLoading() const { return isWaitingForResponse; }
     std::string getCurrentRequest() const { return currentRequestType; }
 
+    // Setters for component connections
+    void setGameState(GameState* gs) { gameState = gs; }
+    void setDisplayManager(DisplayManager* dm) { displayManager = dm; }
+
     // Getters
     const std::vector<Room> getAvailableRooms() const;
     const std::string& getDeviceId() const { return deviceId; }
@@ -111,13 +124,16 @@ public:
     bool isGameActive() const { return gameInProgress; }
     const std::string& getPlayerName() const { return playerName; }
     std::string getCurrentRoomId() const { return currentRoomId; }
+    WebSocketClient* getClient() { return client; }
 
     // Set player name
     void setPlayerName(const std::string& name) { playerName = name; }
 
     // Send gesture data
     bool sendGestureData(const std::string& gestureData);
-    
-    // Display methods - update LCD with current game state and cards
-    void updateCardAndGameDisplay();
+
+    // Friend classes that need access to private members
+    friend class MessageHandler;
+    friend class GameState;
+    friend class DisplayManager;
 }; 

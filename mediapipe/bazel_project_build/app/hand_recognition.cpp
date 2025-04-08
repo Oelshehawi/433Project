@@ -18,15 +18,11 @@
 constexpr char kInputStream[] = "input_video";
 constexpr char kOutputStream[] = "landmarks";
 constexpr char kWindowName[] = "MediaPipe";
-ABSL_FLAG(std::string, calculator_graph_config_file, "hand_tracking_custom.pbtxt",
-          "Name of file containing text format CalculatorGraphConfig proto.");
-ABSL_FLAG(std::string, input_video_path, "",
-          "Full path of video to load. "
-          "If not provided, attempt to use a webcam.");
-ABSL_FLAG(std::string, output_video_path, "output_tracking.mp4",
-          "Full path of where to save result (.mp4 only). "
-          "If not provided, show result in a window.");
 
+// Define constants for configuration
+static const char* const kCalculatorGraphConfigFile = "hand_tracking_custom.pbtxt";
+static const char* const kInputVideoPath = "";
+static const char* const kOutputVideoPath = "output_tracking.mp4";
 
 bool initial = true;
 #define INDEX_TIP 8
@@ -50,7 +46,11 @@ bool initial = true;
 
 
 bool handPosition::compare(handPosition reference){
-    if (this->index_raised == reference.index_raised && this->middle_raised == reference.middle_raised && this->ring_raised == reference.ring_raised && this->pinky_raised == reference.pinky_raised && this->thumb_raised == reference.thumb_raised){
+    if (this->index_held_up == reference.index_held_up && 
+        this->middle_held_up == reference.middle_held_up && 
+        this->ring_held_up == reference.ring_held_up && 
+        this->pinky_held_up == reference.pinky_held_up && 
+        this->thumb_held_up == reference.thumb_held_up){
         return true;
     }
     return false;
@@ -97,19 +97,19 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
         std::cout << "Is left hand" << std::endl;
     }
     if (index_bot.y() > index_tip.y() || index_bot.y() > index_high.y()){
-        ret->index_raised = true;
+        ret->index_held_up = true;
         ret->num_fingers_held_up++;
     }
     if (middle_bot.y() > middle_tip.y()|| middle_bot.y() > middle_high.y()){
-        ret->middle_raised = true;
+        ret->middle_held_up = true;
         ret->num_fingers_held_up++;
     }
     if (ring_bot.y() > ring_tip.y() || ring_bot.y() > ring_high.y()){
-        ret->ring_raised = true;
+        ret->ring_held_up = true;
         ret->num_fingers_held_up++;
     }
     if (pinky_bot.y() > pinky_tip.y() || pinky_bot.y() > pinky_high.y()){
-        ret->pinky_raised = true;
+        ret->pinky_held_up = true;
         ret->num_fingers_held_up++;
     }
     /*
@@ -119,12 +119,12 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
     }*/
    if (is_left_hand){
     if (thumb_high.x() < thumb_tip.x() || THUMB_Y_THRESHOLD > thumb_tip.y()){
-        ret->thumb_raised = true;
+        ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
     }
    }else{
     if (thumb_high.x() > thumb_tip.x() || THUMB_Y_THRESHOLD > thumb_tip.y()){
-        ret->thumb_raised = true;
+        ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
     }
    }
@@ -138,19 +138,21 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
 
 absl::Status hand_analyze_image(cv::Mat image, handPosition* hand_pos){
     std::string calculator_graph_config_contents;
-  MP_RETURN_IF_ERROR(mediapipe::file::GetContents(
-      absl::GetFlag(FLAGS_calculator_graph_config_file),
+    
+    // Use the fixed path directly instead of GetFlag
+    MP_RETURN_IF_ERROR(mediapipe::file::GetContents(
+      kCalculatorGraphConfigFile,
       &calculator_graph_config_contents));
 
-  mediapipe::CalculatorGraphConfig config =
+    mediapipe::CalculatorGraphConfig config =
       mediapipe::ParseTextProtoOrDie<mediapipe::CalculatorGraphConfig>(
           calculator_graph_config_contents);
           mediapipe::CalculatorGraph graph;
-  MP_RETURN_IF_ERROR(graph.Initialize(config));
+    MP_RETURN_IF_ERROR(graph.Initialize(config));
 
-  MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller,
-    graph.AddOutputStreamPoller(kOutputStream));
-  graph.StartRun({});
+    MP_ASSIGN_OR_RETURN(mediapipe::OutputStreamPoller poller,
+      graph.AddOutputStreamPoller(kOutputStream));
+    graph.StartRun({});
     cv::Mat camera_frame;
     cv::cvtColor(image, camera_frame, cv::COLOR_BGR2RGB);
 
