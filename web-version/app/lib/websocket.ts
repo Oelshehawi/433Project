@@ -4,20 +4,33 @@ let socketStatus: 'disconnected' | 'connecting' | 'connected' = 'disconnected';
 let pingInterval: NodeJS.Timeout | null = null; // Track ping interval
 let lastPongTime: number = 0; // Track last pong received
 let connectionTimeout: NodeJS.Timeout | null = null; // Connection timeout handler
+let isTransitioningPages: boolean = false; // Track if we're in a page transition
 
 // Initialize WebSocket connection
 export const initializeSocket = (
   url: string = 'wss://four33project.onrender.com'
 ): WebSocket | null => {
-  // Use existing socket if connected or connecting
-  if (
-    socket &&
-    (socket.readyState === WebSocket.OPEN ||
-      socket.readyState === WebSocket.CONNECTING)
-  ) {
+  console.log(
+    '[websocket.ts] Initializing WebSocket, current status:',
+    socketStatus
+  );
+
+  // If we have an existing healthy connection, use it
+  if (isSocketHealthy()) {
+    console.log('[websocket.ts] Using existing healthy socket connection');
+    // Dispatch connected event to ensure components update correctly after navigation
+    setTimeout(() => {
+      if (isSocketHealthy()) {
+        window.dispatchEvent(new CustomEvent('ws_connected'));
+      }
+    }, 50);
+    return socket;
+  }
+
+  // If we have a socket that is in CONNECTING state, wait for it
+  if (socket && socket.readyState === WebSocket.CONNECTING) {
     console.log(
-      '[websocket.ts] WebSocket already initialized and in state:',
-      socket.readyState === WebSocket.OPEN ? 'OPEN' : 'CONNECTING'
+      '[websocket.ts] Socket already connecting, waiting for completion'
     );
     return socket;
   }
@@ -25,12 +38,6 @@ export const initializeSocket = (
   // Set status to connecting
   socketStatus = 'connecting';
   console.log('[websocket.ts] Setting socket status to CONNECTING');
-
-  // Don't create multiple connections
-  if (socketStatus === 'connecting' && socket) {
-    console.log('[websocket.ts] WebSocket connection already in progress');
-    return socket;
-  }
 
   // Clear any existing timeout
   if (connectionTimeout) {
@@ -62,7 +69,7 @@ export const initializeSocket = (
   }, 10000);
 
   try {
-    console.log('[websocket.ts] Initializing WebSocket connection to', url);
+    console.log('[websocket.ts] Creating new WebSocket connection to', url);
 
     // Create WebSocket connection
     socket = new WebSocket(url);
@@ -79,6 +86,7 @@ export const initializeSocket = (
 
       socketStatus = 'connected';
       lastPongTime = Date.now(); // Initialize pong time
+      isTransitioningPages = false; // Reset transition flag
 
       // Start ping interval to keep connection alive
       startPingInterval();
@@ -93,7 +101,9 @@ export const initializeSocket = (
           '[websocket.ts] Found saved room info, requesting room data:',
           savedInfo.roomId
         );
-        sendMessage('get_room', { roomId: savedInfo.roomId });
+        sendMessage('get_room', { roomId: savedInfo.roomId }).catch((err) => {
+          console.error('[websocket.ts] Error requesting room data:', err);
+        });
       }
     };
 
@@ -378,11 +388,54 @@ export const signalNextRoundReady = (
   }
 };
 
-// Add a new function to check if the socket is truly healthy
+// Add a helper function to mark page transition
+export const markPageTransition = (): void => {
+  console.log('[websocket.ts] Marking page transition');
+  isTransitioningPages = true;
+
+  // Set a timeout to reset the flag in case the navigation event doesn't happen
+  setTimeout(() => {
+    isTransitioningPages = false;
+  }, 5000);
+};
+
+// Force connection status refresh (call this after navigation)
+export const refreshConnectionStatus = (): void => {
+  console.log('[websocket.ts] Refreshing connection status');
+
+  // If socket exists and is open, dispatch connected event
+  if (isSocketHealthy()) {
+    console.log(
+      '[websocket.ts] Socket is healthy, dispatching connected event'
+    );
+    window.dispatchEvent(new CustomEvent('ws_connected'));
+    return;
+  }
+
+  // If no socket or socket is closed/closing but we're marked as connected, fix the state
+  if (socketStatus === 'connected' && (!socket || socket.readyState > 1)) {
+    console.log('[websocket.ts] Fixing inconsistent socket state');
+    socketStatus = 'disconnected';
+    window.dispatchEvent(new CustomEvent('ws_connection_closed'));
+
+    // Try to reconnect
+    initializeSocket();
+  }
+};
+
+// Add a more comprehensive socket health check
 export const isSocketHealthy = (): boolean => {
-  return (
-    socket !== null &&
-    socket.readyState === WebSocket.OPEN &&
-    socketStatus === 'connected'
-  );
+  const isOpen = socket !== null && socket.readyState === WebSocket.OPEN;
+  const isStatusConnected = socketStatus === 'connected';
+
+  // Log detailed health status when it's inconsistent
+  if (isOpen !== isStatusConnected) {
+    console.warn('[websocket.ts] Socket health inconsistency:', {
+      socket: socket ? 'exists' : 'null',
+      readyState: socket ? socket.readyState : 'N/A',
+      socketStatus,
+    });
+  }
+
+  return isOpen && isStatusConnected;
 };

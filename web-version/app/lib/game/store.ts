@@ -5,6 +5,8 @@ import {
   sendMessage,
   getSocketStatus,
   signalNextRoundReady,
+  isSocketHealthy,
+  refreshConnectionStatus,
 } from '../websocket';
 
 // Function to create a GameStore
@@ -59,13 +61,60 @@ export const useGameStore = create<GameStore>((set, get) => ({
       console.log('[game/store] Initializing game store for room:', roomId);
       set({ loading: true, error: null, currentRoom: roomId });
 
-      // Initialize WebSocket if not already connected
-      initializeSocket();
+      // Check if socket is already connected and healthy
+      if (isSocketHealthy()) {
+        console.log(
+          '[game/store] Socket is already healthy, using existing connection'
+        );
+        set({ socketConnected: true });
+      } else {
+        console.log(
+          '[game/store] Socket is not healthy, initializing new connection'
+        );
+        // Initialize WebSocket if not already connected
+        initializeSocket();
 
-      // Wait for connection to be established
-      if (getSocketStatus() !== 'connected') {
-        console.log('[game/store] Waiting for WebSocket connection...');
-        // We'll let the event listeners handle the connection
+        // Wait for connection to be established with a timeout
+        if (getSocketStatus() !== 'connected') {
+          console.log('[game/store] Waiting for WebSocket connection...');
+          await new Promise<void>((resolve, reject) => {
+            const connectTimeout = setTimeout(() => {
+              reject(new Error('Connection timeout'));
+            }, 7000);
+
+            const handleConnected = () => {
+              clearTimeout(connectTimeout);
+              resolve();
+            };
+
+            const handleError = () => {
+              clearTimeout(connectTimeout);
+              reject(new Error('Connection error'));
+            };
+
+            window.addEventListener('ws_connected', handleConnected, {
+              once: true,
+            });
+            window.addEventListener('ws_connection_error', handleError, {
+              once: true,
+            });
+            window.addEventListener('ws_connection_failed', handleError, {
+              once: true,
+            });
+
+            // Force a refresh of connection status
+            refreshConnectionStatus();
+          });
+        }
+      }
+
+      // Fetch game state from server using the current room
+      try {
+        await sendMessage('get_game_state', { roomId });
+        console.log('[game/store] Game state requested for room:', roomId);
+      } catch (error) {
+        console.warn('[game/store] Failed to request game state:', error);
+        // Continue anyway, as we might receive updates via WebSocket events
       }
 
       // Initialize the game state

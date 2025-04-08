@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useRoomStore } from '../../lib/room/store';
 import { useGameStore } from '../../lib/game/store';
+import { refreshConnectionStatus, isSocketHealthy } from '../../lib/websocket';
 
 // Import game components
 import GameBackground from '../../components/game/GameBackground';
@@ -25,6 +26,8 @@ export default function GamePage() {
   const params = useParams();
   const roomId = params.id as string;
   const { currentRoom, error: roomError } = useRoomStore();
+  const [connectionRetries, setConnectionRetries] = useState(0);
+  const [forceLoader, setForceLoader] = useState(false);
 
   // Use the game store
   const {
@@ -54,13 +57,38 @@ export default function GamePage() {
     pendingRoundNumber,
   } = useGameStore();
 
+  // Immediately verify connection status when page loads
+  useEffect(() => {
+    console.log('[GamePage] Mounted, verifying connection state');
+
+    // Check if socket is already healthy
+    if (isSocketHealthy()) {
+      console.log('[GamePage] Socket is already healthy');
+      // Force the game store to acknowledge it
+      useGameStore.setState({ socketConnected: true });
+    } else {
+      console.log('[GamePage] Refreshing connection status');
+      // Refresh connection status to ensure events are properly dispatched
+      refreshConnectionStatus();
+
+      // Set a brief force loader to avoid flickering UI during connection recovery
+      setForceLoader(true);
+      setTimeout(() => {
+        setForceLoader(false);
+      }, 1000);
+    }
+  }, []);
+
   // Initialize game when component mounts
   useEffect(() => {
     if (roomId) {
       console.log('GamePage: Initializing game for room:', roomId);
-      initialize(roomId);
+      initialize(roomId).catch((error) => {
+        console.error('[GamePage] Error initializing game:', error);
+        setConnectionRetries((prev) => prev + 1);
+      });
     }
-  }, [roomId, initialize]);
+  }, [roomId, initialize, connectionRetries]);
 
   // Handle player name updates when room data is available
   useEffect(() => {
@@ -89,6 +117,21 @@ export default function GamePage() {
     }
   }, [pendingRoundNumber, roundData.isTransitioning, readyForNextRound]);
 
+  // Add automatic connection retry
+  useEffect(() => {
+    if (!socketConnected && connectionRetries < 3) {
+      const retryTimer = setTimeout(() => {
+        console.log(
+          `[GamePage] Connection retry attempt #${connectionRetries + 1}`
+        );
+        refreshConnectionStatus();
+        setConnectionRetries((prev) => prev + 1);
+      }, 1500 * (connectionRetries + 1)); // Increasing delay with each retry
+
+      return () => clearTimeout(retryTimer);
+    }
+  }, [socketConnected, connectionRetries]);
+
   // Helper function to get player name by ID
   const getPlayerNameById = (playerId: string): string => {
     if (!currentRoom) return playerId;
@@ -99,7 +142,7 @@ export default function GamePage() {
   // We will always render everything, but show/hide based on game state
   return (
     <>
-      {!socketConnected || !currentRoom ? (
+      {!socketConnected || !currentRoom || forceLoader ? (
         <GameLoader
           isConnecting={!socketConnected}
           isLoading={socketConnected && !currentRoom}
