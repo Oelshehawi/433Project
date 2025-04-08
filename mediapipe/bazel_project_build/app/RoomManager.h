@@ -1,5 +1,4 @@
-#ifndef ROOM_MANAGER_H
-#define ROOM_MANAGER_H
+#pragma once
 
 #include "WebSocketClient.h"
 #include "WebSocketReceiver.h"
@@ -13,6 +12,10 @@
 // For convenience
 using json = nlohmann::json;
 
+// Forward declarations
+class WebSocketClient;
+class WebSocketReceiver;
+
 // Card definition for game
 struct Card {
     std::string id;
@@ -24,8 +27,8 @@ struct Card {
 struct Room {
     std::string id;
     std::string name;
-    int playerCount;
-    int maxPlayers;
+    int playerCount = 0;
+    int maxPlayers = 0;
     std::string status;
 };
 
@@ -53,6 +56,12 @@ private:
     // Game status - minimal state tracking (just if game is active)
     bool gameInProgress;
     
+    // Game state tracking
+    int currentRoundNumber = 1;                // Current round number
+    std::string currentTurnPlayerId = "";      // ID of player whose turn it is
+    int currentTurnTimeRemaining = 0;          // Time remaining in current turn (seconds)
+    std::vector<Card> lastReceivedCards;       // Last received set of cards
+    
     // Generate a unique device ID
     std::string generateDeviceId();
     
@@ -70,6 +79,8 @@ private:
     
     // Send message with loading state tracking
     bool sendMessageWithTracking(const std::string& message, const std::string& requestType);
+
+    // Display methods - update LCD with current game state and cards
 
 public:
     RoomManager(WebSocketClient* client);
@@ -93,22 +104,20 @@ public:
     std::string getCurrentRequest() const { return currentRequestType; }
 
     // Getters
-    std::string getDeviceId() const { return deviceId; }
-    WebSocketClient* getClient() const { return client; }
-    std::string getPlayerName() const { return playerName; }
-    std::string getCurrentRoomId() const { return currentRoomId; }
+    const std::vector<Room> getAvailableRooms() const;
+    const std::string& getDeviceId() const { return deviceId; }
     bool isConnected() const { return connected; }
     bool isReady() const { return ready; }
-    const std::vector<Room> getAvailableRooms() const;
-    
-    // Minimal game state management
     bool isGameActive() const { return gameInProgress; }
+    const std::string& getPlayerName() const { return playerName; }
+    std::string getCurrentRoomId() const { return currentRoomId; }
 
     // Set player name
     void setPlayerName(const std::string& name) { playerName = name; }
 
     // Send gesture data
     bool sendGestureData(const std::string& gestureData);
-};
-
-#endif // ROOM_MANAGER_H 
+    
+    // Display methods - update LCD with current game state and cards
+    void updateCardAndGameDisplay();
+}; 

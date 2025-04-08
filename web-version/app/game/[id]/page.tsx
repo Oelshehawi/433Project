@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
 import { useRoomStore } from "../../lib/room/store";
 import { initializeSocket, getSocketStatus } from "../../lib/websocket";
 import { getSavedRoomInfo } from "../../components/room/RoomHelpers";
@@ -15,9 +14,7 @@ import Player from "../../components/game/Player";
 import RoomInfo from "../../components/game/RoomInfo";
 import BackButton from "../../components/game/BackButton";
 import Shield from "../../components/game/Shield";
-import ShieldButtons from "../../components/game/ShieldButtons";
 import TowerBlocks from "../../components/game/TowerBlocks";
-import TowerControls from "../../components/game/TowerControls";
 import RulesScroll from "../../components/game/RulesScroll";
 import RulesButton from "../../components/game/RulesButton";
 
@@ -50,9 +47,9 @@ export default function GamePage() {
   const [player2TowerHeight, setPlayer2TowerHeight] = useState(0);
   const [player1GoalHeight, setPlayer1GoalHeight] = useState(5);
   const [player2GoalHeight, setPlayer2GoalHeight] = useState(5);
-  const [currentTurn, setCurrentTurn] = useState<string>("");
-  const [turnTimeRemaining, setTurnTimeRemaining] = useState(30);
-  const [turnTimer, setTurnTimer] = useState<NodeJS.Timeout | null>(null);
+  const [currentRound, setCurrentRound] = useState<number>(1);
+  const [roundTimeRemaining, setRoundTimeRemaining] = useState(30);
+  const [roundTimer, setRoundTimer] = useState<NodeJS.Timeout | null>(null);
   const [gameEnded, setGameEnded] = useState(false);
   const [winner, setWinner] = useState<string>("");
 
@@ -137,17 +134,18 @@ export default function GamePage() {
   // Add event listeners for tower game events
   useEffect(() => {
     if (socketConnected) {
-      // Turn start event handler
-      const handleTurnStart = (event: CustomEvent) => {
+      // Round start event handler (replaces turn_start)
+      const handleRoundStart = (event: CustomEvent) => {
         const data = event.detail;
         if (data.roomId === roomId) {
-          setCurrentTurn(data.playerId);
-          setTurnTimeRemaining(Math.floor(data.remainingTime / 1000));
+          // Update round number
+          setCurrentRound(data.roundNumber || 1);
+          setRoundTimeRemaining(Math.floor(data.remainingTime / 1000) || 30);
 
           // Start countdown timer
-          if (turnTimer) clearInterval(turnTimer);
+          if (roundTimer) clearInterval(roundTimer);
           const timer = setInterval(() => {
-            setTurnTimeRemaining((prev) => {
+            setRoundTimeRemaining((prev) => {
               if (prev <= 1) {
                 clearInterval(timer);
                 return 0;
@@ -156,15 +154,27 @@ export default function GamePage() {
             });
           }, 1000);
 
-          setTurnTimer(timer);
+          setRoundTimer(timer);
+
+          console.log(
+            `Round ${data.roundNumber} started, ${
+              data.remainingTime / 1000
+            }s remaining`
+          );
         }
       };
 
-      // Turn end event handler
-      const handleTurnEnd = (event: CustomEvent) => {
+      // Round end event handler (replaces turn_end)
+      const handleRoundEnd = (event: CustomEvent) => {
         const data = event.detail;
         if (data.roomId === roomId) {
-          setCurrentTurn(data.nextPlayerId);
+          console.log(`Round ${data.roundNumber} ended`);
+
+          // Clear the round timer
+          if (roundTimer) {
+            clearInterval(roundTimer);
+            setRoundTimer(null);
+          }
 
           // Update game state
           if (data.gameState) {
@@ -197,6 +207,62 @@ export default function GamePage() {
         }
       };
 
+      // Keep existing handlers for turn_start and turn_end for backward compatibility
+      const handleTurnStart = (event: CustomEvent) => {
+        const data = event.detail;
+        if (data.roomId === roomId) {
+          // Just use the timing information without setting current turn
+          setRoundTimeRemaining(Math.floor(data.remainingTime / 1000) || 30);
+
+          // Start countdown timer
+          if (roundTimer) clearInterval(roundTimer);
+          const timer = setInterval(() => {
+            setRoundTimeRemaining((prev) => {
+              if (prev <= 1) {
+                clearInterval(timer);
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+
+          setRoundTimer(timer);
+        }
+      };
+
+      const handleTurnEnd = (event: CustomEvent) => {
+        // Just use for compatibility, round_end is the main event now
+        console.log("Received turn_end event (deprecated)");
+      };
+
+      // Game state update handler - for getting the latest game state changes
+      const handleGameStateUpdate = (event: CustomEvent) => {
+        const data = event.detail;
+        if (data.roomId === roomId && data.gameState) {
+          const gameState = data.gameState;
+
+          // Update the round number if available
+          if (gameState.roundNumber) {
+            setCurrentRound(gameState.roundNumber);
+          }
+
+          // Get player IDs from the room data
+          const beagleBoardPlayers =
+            currentRoom?.players.filter(
+              (p) => p.playerType === "beagleboard"
+            ) || [];
+
+          // Update tower heights
+          if (gameState.towerHeights && beagleBoardPlayers.length >= 2) {
+            const player1Id = beagleBoardPlayers[0].id;
+            const player2Id = beagleBoardPlayers[1].id;
+
+            setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
+            setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
+          }
+        }
+      };
+
       // Game ended event handler
       const handleGameEnded = (event: CustomEvent) => {
         const data = event.detail;
@@ -205,7 +271,7 @@ export default function GamePage() {
           setWinner(data.winnerId);
 
           // Clear any existing timer
-          if (turnTimer) clearInterval(turnTimer);
+          if (roundTimer) clearInterval(roundTimer);
 
           // Update final game state
           if (data.gameState) {
@@ -237,7 +303,9 @@ export default function GamePage() {
           "Gesture received:",
           data.gesture,
           "from player:",
-          data.playerId
+          data.playerId,
+          "with confidence:",
+          data.confidence
         );
 
         // Get player names from the room data
@@ -261,10 +329,40 @@ export default function GamePage() {
             data.cardId ? " card" : ""
           }!`;
 
+          console.log(`GESTURE UI UPDATE: ${message}`);
+
           if (data.playerId === player1Id) {
             setPlayer1CardPlayed(message);
+
+            // Update game state based on gesture
+            if (data.gesture === "attack") {
+              // Show attack visual
+              console.log("Player 1 performed attack");
+            } else if (data.gesture === "defend") {
+              // Activate shield
+              setPlayer1ShieldActive(true);
+              console.log("Player 1 activated shield");
+            } else if (data.gesture === "build") {
+              // Add block
+              addPlayer1Block();
+              console.log("Player 1 added block");
+            }
           } else if (data.playerId === player2Id) {
             setPlayer2CardPlayed(message);
+
+            // Update game state based on gesture
+            if (data.gesture === "attack") {
+              // Show attack visual
+              console.log("Player 2 performed attack");
+            } else if (data.gesture === "defend") {
+              // Activate shield
+              setPlayer2ShieldActive(true);
+              console.log("Player 2 activated shield");
+            } else if (data.gesture === "build") {
+              // Add block
+              addPlayer2Block();
+              console.log("Player 2 added block");
+            }
           }
 
           // Clear any existing timer
@@ -274,13 +372,32 @@ export default function GamePage() {
           const timer = setTimeout(() => {
             setPlayer1CardPlayed("");
             setPlayer2CardPlayed("");
+
+            // Reset shield visuals after time expires
+            if (data.gesture === "defend") {
+              if (data.playerId === player1Id) {
+                setPlayer1ShieldActive(false);
+              } else if (data.playerId === player2Id) {
+                setPlayer2ShieldActive(false);
+              }
+            }
           }, 5000);
 
           setCardPlayedTimer(timer);
+
+          // Play an appropriate sound for the gesture
+          try {
+            const audio = new Audio(`/sounds/${data.gesture}.mp3`);
+            audio.play().catch((e) => console.error("Error playing sound:", e));
+          } catch (e) {
+            console.warn("Could not play gesture sound", e);
+          }
         }
       };
 
       // Add event listeners
+      window.addEventListener("round_start", handleRoundStart as EventListener);
+      window.addEventListener("round_end", handleRoundEnd as EventListener);
       window.addEventListener("turn_start", handleTurnStart as EventListener);
       window.addEventListener("turn_end", handleTurnEnd as EventListener);
       window.addEventListener("game_ended", handleGameEnded as EventListener);
@@ -288,9 +405,21 @@ export default function GamePage() {
         "gesture_event",
         handleGestureEvent as EventListener
       );
+      window.addEventListener(
+        "game_state_update",
+        handleGameStateUpdate as EventListener
+      );
 
       // Cleanup on unmount
       return () => {
+        window.removeEventListener(
+          "round_start",
+          handleRoundStart as EventListener
+        );
+        window.removeEventListener(
+          "round_end",
+          handleRoundEnd as EventListener
+        );
         window.removeEventListener(
           "turn_start",
           handleTurnStart as EventListener
@@ -304,18 +433,22 @@ export default function GamePage() {
           "gesture_event",
           handleGestureEvent as EventListener
         );
+        window.removeEventListener(
+          "game_state_update",
+          handleGameStateUpdate as EventListener
+        );
 
-        if (turnTimer) clearInterval(turnTimer);
+        if (roundTimer) clearInterval(roundTimer);
       };
     }
-  }, [socketConnected, roomId, currentRoom, turnTimer]);
+  }, [socketConnected, roomId, currentRoom, roundTimer]);
 
   // Clean up timer on unmount
   useEffect(() => {
     return () => {
-      if (turnTimer) clearInterval(turnTimer);
+      if (roundTimer) clearInterval(roundTimer);
     };
-  }, [turnTimer]);
+  }, [roundTimer]);
 
   // Shield toggle handlers
   const togglePlayer1Shield = () => {
@@ -350,16 +483,13 @@ export default function GamePage() {
     return player ? player.name : playerId;
   };
 
-  // Determine whose turn it is for display
-  const getCurrentTurnDisplay = (): string => {
-    if (!currentTurn) {
-      // Check if the game state indicates play has started
-      if (currentRoom?.status === "playing") {
-        return "Game in progress...";
-      }
+  // Determine the round display for the UI
+  const getRoundDisplay = (): string => {
+    if (currentRoom?.status !== "playing") {
       return "Initializing game...";
     }
-    return `${getPlayerNameById(currentTurn)}'s Turn (${turnTimeRemaining}s)`;
+
+    return `Round ${currentRound} (${roundTimeRemaining}s)`;
   };
 
   // Game ending display
@@ -417,10 +547,10 @@ export default function GamePage() {
         {/* Game state display */}
         {gameState === "playing" && (
           <>
-            {/* Turn indicator */}
+            {/* Turn indicator - now shows round instead */}
             <div className="absolute top-4 left-0 right-0 text-center">
               <div className="bg-gray-800/80 text-white px-4 py-2 rounded-md inline-block">
-                {gameEnded ? getGameEndedDisplay() : getCurrentTurnDisplay()}
+                {gameEnded ? getGameEndedDisplay() : getRoundDisplay()}
               </div>
             </div>
 

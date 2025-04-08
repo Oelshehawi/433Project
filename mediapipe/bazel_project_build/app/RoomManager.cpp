@@ -201,28 +201,82 @@ void RoomManager::handleMessage(const std::string& message) {
             resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "round_start") {
-            // Handle round start event - now we just notify the user
+            // Handle round start events
             if (j.contains("payload")) {
-                std::cout << "New round started!" << std::endl;
+                std::cout << "Round started" << std::endl;
                 
+                int roundNumber = 1; // Default round number
                 if (j["payload"].contains("roundNumber")) {
-                    int roundNumber = j["payload"]["roundNumber"];
-                    std::cout << "Round #" << roundNumber << std::endl;
+                    roundNumber = j["payload"]["roundNumber"];
+                    currentRoundNumber = roundNumber;
                 }
                 
-                if (j["payload"].contains("remainingTime")) {
-                    int remainingTime = j["payload"]["remainingTime"];
-                    std::cout << "Round time: " << remainingTime << " milliseconds" << std::endl;
+                // Check if there's player-specific data in the payload
+                bool hasPlayerData = false;
+                if (j["payload"].contains("playerData")) {
+                    auto playerData = j["payload"]["playerData"];
+                    
+                    // Find this player's data in the array
+                    for (const auto& data : playerData) {
+                        if (data.contains("playerId") && data["playerId"] == deviceId) {
+                            std::cout << "Found player-specific data for this device" << std::endl;
+                            hasPlayerData = true;
+                            
+                            // Process player-specific data here if needed
+                            // ...
+                            
+                            break;
+                        }
+                    }
+                }
+                
+                // Update the LCD with round information
+                char line1[32];
+                char line2[32];
+                
+                snprintf(line1, sizeof(line1), "ROUND %d STARTED", roundNumber);
+                snprintf(line2, sizeof(line2), "Get ready to play!");
+                
+                char* startRoundMsg[] = {line1, line2};
+                lcd_place_message(startRoundMsg, 2, lcd_center);
+                
+                // Update the card display if we have cards
+                if (lastReceivedCards.size() > 0) {
+                    updateCardAndGameDisplay();
                 }
             }
             resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "round_end") {
-            // Handle round end event - simplified
-            std::cout << "Round ended" << std::endl;
-            if (j.contains("payload") && j["payload"].contains("roundNumber")) {
-                int roundNumber = j["payload"]["roundNumber"];
-                std::cout << "Round #" << roundNumber << " completed" << std::endl;
+            // Handle round end events
+            if (j.contains("payload")) {
+                std::cout << "Round ended" << std::endl;
+                
+                int roundNumber = currentRoundNumber;
+                if (j["payload"].contains("roundNumber")) {
+                    roundNumber = j["payload"]["roundNumber"];
+                }
+                
+                // Check for round results
+                std::string roundResult = "Round Complete";
+                if (j["payload"].contains("roundWinner")) {
+                    std::string winnerId = j["payload"]["roundWinner"];
+                    if (winnerId == deviceId) {
+                        roundResult = "Round Won!";
+                    } else {
+                        roundResult = "Round Lost";
+                    }
+                }
+                
+                // Update the LCD with round result
+                char line1[32];
+                char line2[32];
+                
+                snprintf(line1, sizeof(line1), "ROUND %d COMPLETE", roundNumber);
+                snprintf(line2, sizeof(line2), "%s", roundResult.c_str());
+                
+                char* endRoundMsg[] = {line1, line2};
+                lcd_place_message(endRoundMsg, 2, lcd_center);
             }
             resetLoadingState();
         }
@@ -260,11 +314,47 @@ void RoomManager::handleMessage(const std::string& message) {
             }
             resetLoadingState();
         }
+        else if (j.contains("event") && j["event"] == "game_state_update") {
+            // Handle game state updates
+            if (j.contains("payload") && j["payload"].contains("gameState")) {
+                auto& gameState = j["payload"]["gameState"];
+                
+                // Extract round number if available
+                int roundNumber = 0;
+                if (gameState.contains("roundNumber")) {
+                    roundNumber = gameState["roundNumber"];
+                    currentRoundNumber = roundNumber;
+                    std::cout << "Current round: " << roundNumber << std::endl;
+                }
+                
+                // If we have cards, update the display with current game info
+                if (lastReceivedCards.size() > 0) {
+                    updateCardAndGameDisplay();
+                }
+            }
+            resetLoadingState();
+        }
         else if (j.contains("event") && j["event"] == "beagle_board_command") {
-            // Handle beagle board specific commands - now we just log them
+            // Handle beagle board specific commands
             if (j.contains("payload") && j["payload"].contains("command")) {
                 std::string command = j["payload"]["command"];
                 std::cout << "Received server command: " << command << std::endl;
+                
+                // Check if the message is targeted for this specific BeagleBoard
+                bool isTargetedMessage = false;
+                if (j["payload"].contains("targetPlayerId")) {
+                    std::string targetPlayerId = j["payload"]["targetPlayerId"];
+                    isTargetedMessage = true;
+                    
+                    // If this message is not for us, ignore it
+                    if (targetPlayerId != deviceId) {
+                        std::cout << "Ignoring command targeted for another player: " << targetPlayerId << std::endl;
+                        resetLoadingState();
+                        return;
+                    }
+                    
+                    std::cout << "Processing targeted command for this device" << std::endl;
+                }
                 
                 // Handle CARDS command - display cards on LCD
                 if (command == "CARDS" && j["payload"].contains("cards")) {
@@ -283,10 +373,13 @@ void RoomManager::handleMessage(const std::string& message) {
                         cards.push_back(card);
                     }
                     
-                    // Display cards on LCD
+                    // Store cards for later display
+                    lastReceivedCards = cards;
+                    
+                    // Display cards on LCD with game info
                     if (!cards.empty()) {
                         std::cout << "Displaying " << cards.size() << " cards on LCD" << std::endl;
-                        displayCardsOnLCD(cards);
+                        updateCardAndGameDisplay();
                     } else {
                         std::cout << "Warning: Received empty cards array" << std::endl;
                     }
@@ -314,13 +407,6 @@ void RoomManager::handleMessage(const std::string& message) {
                 }
             }
             
-            resetLoadingState();
-        }
-        else if (j.contains("event") && j["event"] == "game_state_update") {
-            // Handle game state update events
-            if (j.contains("payload") && j["payload"].contains("gameState")) {
-                std::cout << "Received game state update from server" << std::endl;
-            }
             resetLoadingState();
         }
         else {
@@ -670,7 +756,73 @@ bool RoomManager::sendGestureData(const std::string& gestureData) {
         return false;
     }
     
-    // Legacy format for backward compatibility
-    std::string message = "GESTURE|DeviceID:" + deviceId + "|RoomID:" + currentRoomId + "|" + gestureData;
-    return client->sendMessage(message);
+    // Create JSON message using modern format
+    json payload = json::object();
+    payload["playerId"] = deviceId;
+    payload["roomId"] = currentRoomId;
+    
+    // Parse the gesture data as JSON and add it to the payload
+    try {
+        json gestureJson = json::parse(gestureData);
+        payload["gesture"] = gestureJson["gesture"];
+        payload["confidence"] = gestureJson["confidence"];
+    } catch (const json::parse_error& e) {
+        // If parsing fails, try to include the raw data
+        std::cerr << "Error parsing gesture data: " << e.what() << std::endl;
+        payload["gestureData"] = gestureData;
+    }
+    
+    json message = json::object();
+    message["event"] = "gesture_event";
+    message["payload"] = payload;
+    
+    std::string jsonMessage = message.dump();
+    std::cout << "Sending gesture event: " << jsonMessage << std::endl;
+    
+    return client->sendMessage(jsonMessage);
+}
+
+// Update the LCD with cards and game state for round-based gameplay
+void RoomManager::updateCardAndGameDisplay() {
+    if (lastReceivedCards.empty()) {
+        return;
+    }
+    
+    // Count card types
+    int attackCount = 0;
+    int defendCount = 0;
+    int buildCount = 0;
+    
+    for (const auto& card : lastReceivedCards) {
+        if (card.type == "attack") attackCount++;
+        else if (card.type == "defend") defendCount++;
+        else if (card.type == "build") buildCount++;
+    }
+    
+    // Create game info display
+    char line1[32];
+    char line2[32];
+    char line3[32];
+    
+    // Format the header line with round info
+    snprintf(line1, sizeof(line1), "=ROUND %d=", currentRoundNumber);
+    
+    // Format the card type counts
+    snprintf(line2, sizeof(line2), "ATK:%d DEF:%d BLD:%d", attackCount, defendCount, buildCount);
+    
+    // Format countdown timer (both players move simultaneously)
+    snprintf(line3, sizeof(line3), "TIME: %d sec", currentTurnTimeRemaining);
+    
+    // Display the summary
+    char* cardMsg[] = {line1, line2, line3};
+    lcd_place_message(cardMsg, 3, lcd_center);
+    
+    // Also log to console
+    std::cout << "\n************************************" << std::endl;
+    std::cout << "*       GAME STATE UPDATE        *" << std::endl;
+    std::cout << "************************************" << std::endl;
+    std::cout << "* ROUND: " << currentRoundNumber << std::endl;
+    std::cout << "* TIME:  " << currentTurnTimeRemaining << "s" << std::endl;
+    std::cout << "* CARDS: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
+    std::cout << "************************************\n" << std::endl;
 } 
