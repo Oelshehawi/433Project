@@ -11,6 +11,8 @@ import { sendToRoom } from "./messaging";
 // Constants for game configuration
 const MIN_GOAL_HEIGHT = 5;
 const MAX_GOAL_HEIGHT = 10;
+// Set to 1 for TEST MODE (single player), or 2 for normal gameplay
+export const MIN_REQUIRED_PLAYERS = 1; // TOGGLE: 1 = test mode, 2 = normal mode
 // Removed ROUND_DURATION_MS as we'll let clients handle timing
 
 // Initialize game state for a room
@@ -33,12 +35,21 @@ export function initializeGameState(roomId: string): boolean {
     (player) => player.playerType === "beagleboard"
   );
 
-  // Require at least 2 players
-  if (beagleBoardPlayers.length < 2) {
+  // Check if we have enough players based on MIN_REQUIRED_PLAYERS constant
+  if (beagleBoardPlayers.length < MIN_REQUIRED_PLAYERS) {
     console.error(
-      `Not enough players in room ${roomId}. Minimum 2 players required.`
+      `Not enough players in room ${roomId}. Minimum ${MIN_REQUIRED_PLAYERS} player(s) required.`
     );
     return false;
+  }
+
+  // Test mode is active if only 1 player and MIN_REQUIRED_PLAYERS is 1
+  const useTestMode =
+    beagleBoardPlayers.length === 1 && MIN_REQUIRED_PLAYERS === 1;
+  if (useTestMode) {
+    console.log(
+      `TEST MODE: Only 1 player detected. Creating virtual opponent.`
+    );
   }
 
   // Create new game state
@@ -69,10 +80,32 @@ export function initializeGameState(roomId: string): boolean {
     gameState.playerMoves.set(player.id, false);
   });
 
+  // In TEST MODE, set up virtual opponent
+  if (useTestMode) {
+    const virtualOpponentId = "virtual_opponent";
+    gameState.towerHeights.set(virtualOpponentId, 0);
+    gameState.goalHeights.set(
+      virtualOpponentId,
+      Math.floor(
+        Math.random() * (MAX_GOAL_HEIGHT - MIN_GOAL_HEIGHT + 1) +
+          MIN_GOAL_HEIGHT
+      )
+    );
+    gameState.playerShields.set(virtualOpponentId, false);
+    gameState.playerMoves.set(virtualOpponentId, false);
+
+    console.log(
+      `Virtual opponent initialized with goal height: ${gameState.goalHeights.get(
+        virtualOpponentId
+      )}`
+    );
+  }
+
   // Save game state to room
   room.gameState = gameState;
 
-  // Start the first round
+  // Start the first round - this will also send cards via round_start
+  console.log(`Starting first round for room ${roomId}`);
   startRound(roomId);
 
   return true;
