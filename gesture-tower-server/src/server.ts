@@ -32,6 +32,9 @@ const server = createServer(app);
 // WebSocket server
 const wss = new WebSocket.Server({ server });
 
+// Export server and wss for main.ts
+export { server, wss };
+
 // Broadcast to all clients
 export const broadcastToAllClients = (message: WebSocketMessage) => {
   const messageStr = JSON.stringify(message);
