@@ -103,7 +103,12 @@ wss.on("connection", (ws: WebSocket) => {
           break;
         case "ping":
           // Handle ping explicitly here as well as in setupPingHandler
-          client.send(JSON.stringify({ event: "pong", timestamp: Date.now() }));
+          client.send(
+            JSON.stringify({
+              event: "pong",
+              payload: { timestamp: Date.now() },
+            })
+          );
           break;
         default:
           console.log(`Unknown event type: ${data.event}`);
@@ -112,36 +117,4 @@ wss.on("connection", (ws: WebSocket) => {
       console.error("Error processing message:", error);
     }
   });
-
-  // Handle disconnection
-  client.on("close", () => {
-    console.log(`Client disconnected: ${clientId}`);
-
-    // Clear ping timeout
-    if (client.pingTimeout) {
-      clearTimeout(client.pingTimeout);
-    }
-
-    // Clean up
-    clients.delete(clientId);
-    beagleBoards.delete(clientId);
-
-    // If client was in a room, leave it
-    if (client.roomId) {
-      handleLeaveRoom(client, {
-        roomId: client.roomId,
-        playerId: client.playerId,
-      });
-    }
-  });
-
-  // Send initial room list
-  handleRoomList(client);
 });
-
-// REST API routes
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
-});
-
-// Note: server is started in main.ts, not here

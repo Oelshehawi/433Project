@@ -1147,8 +1147,13 @@ export const setupPingHandler = (client: ExtendedWebSocket) => {
 
       // Handle ping event explicitly
       if (data.event === "ping") {
-        // Send a pong response immediately
-        client.send(JSON.stringify({ event: "pong", timestamp: Date.now() }));
+        // Send a pong response immediately with a proper payload
+        client.send(
+          JSON.stringify({
+            event: "pong",
+            payload: { timestamp: Date.now() },
+          })
+        );
 
         // Reset client's ping timers since we received activity
         if (client.pingTimeout) {

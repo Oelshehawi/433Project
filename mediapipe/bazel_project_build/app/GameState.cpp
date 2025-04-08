@@ -16,26 +16,53 @@ GameState::~GameState() {
 }
 
 void GameState::startTimerThread() {
+    std::cout << "[GameState.cpp] STARTING TIMER THREAD - Current state: timerThreadRunning=" 
+              << (timerThreadRunning ? "true" : "false") << ", timerActive=" 
+              << (timerActive ? "true" : "false") << std::endl;
+    
     std::lock_guard<std::mutex> lock(timerMutex);
     
     // Stop any existing timer thread
-    stopTimerThread();
+    if (timerThreadRunning) {
+        std::cout << "[GameState.cpp] Stopping existing timer thread before starting new one" << std::endl;
+        stopTimerThread();
+    }
+    
+    // Ensure both flags are set properly
+    timerThreadRunning = true;
+    timerActive = true;
     
     // Start a new timer thread
-    timerThreadRunning = true;
+    std::cout << "[GameState.cpp] Creating new timer thread, state: timerThreadRunning=" 
+              << (timerThreadRunning ? "true" : "false") << ", timerActive=" 
+              << (timerActive ? "true" : "false") << std::endl;
+    
     timerThread = std::thread(&GameState::updateTimer, this);
+    std::cout << "[GameState.cpp] Timer thread created successfully" << std::endl;
 }
 
 void GameState::updateTimer() {
     std::cout << "[GameState.cpp] Timer thread started with " << currentTurnTimeRemaining << " seconds" << std::endl;
+    std::cout << "[GameState.cpp] Thread state: timerThreadRunning=" << (timerThreadRunning ? "true" : "false") 
+              << ", timerActive=" << (timerActive ? "true" : "false") << std::endl;
     
+    int debugCounter = 0;
     while (timerThreadRunning && timerActive) {
+        // Debug counter to track iterations
+        debugCounter++;
+        
         // Sleep for 1 second
         std::this_thread::sleep_for(std::chrono::seconds(1));
         
         // Update the timer
         {
+            std::cout << "[GameState.cpp] Timer loop iteration #" << debugCounter << std::endl;
             std::lock_guard<std::mutex> lock(timerMutex);
+            
+            // Check thread state again inside the mutex
+            std::cout << "[GameState.cpp] Thread state inside mutex: timerThreadRunning=" 
+                      << (timerThreadRunning ? "true" : "false") 
+                      << ", timerActive=" << (timerActive ? "true" : "false") << std::endl;
             
             if (currentTurnTimeRemaining > 0) {
                 currentTurnTimeRemaining--;
@@ -68,21 +95,32 @@ void GameState::updateTimer() {
         }
     }
     
-    std::cout << "[GameState.cpp] Timer thread ended" << std::endl;
+    std::cout << "[GameState.cpp] Timer thread ended after " << debugCounter << " iterations. Thread state: timerThreadRunning=" 
+              << (timerThreadRunning ? "true" : "false") << ", timerActive=" << (timerActive ? "true" : "false") << std::endl;
 }
 
 void GameState::stopTimerThread() {
+    std::cout << "[GameState.cpp] STOPPING TIMER THREAD - Current state: timerThreadRunning=" 
+              << (timerThreadRunning ? "true" : "false") << ", timerActive=" 
+              << (timerActive ? "true" : "false") << std::endl;
+    
     std::lock_guard<std::mutex> lock(timerMutex);
     
     if (timerThreadRunning) {
         timerThreadRunning = false;
+        timerActive = false;
+        
+        std::cout << "[GameState.cpp] Timer flags set to false, waiting for thread to join" << std::endl;
         
         // Wait for thread to finish if it's joinable
         if (timerThread.joinable()) {
             timerThread.join();
+            std::cout << "[GameState.cpp] Timer thread joined successfully" << std::endl;
+        } else {
+            std::cout << "[GameState.cpp] Timer thread is not joinable" << std::endl;
         }
-        
-        timerActive = false;
+    } else {
+        std::cout << "[GameState.cpp] Timer thread was not running, nothing to stop" << std::endl;
     }
 }
 

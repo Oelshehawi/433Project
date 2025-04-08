@@ -321,7 +321,7 @@ export default function RoomPage() {
       <div className="min-h-screen flex flex-col items-center justify-center">
         <h2 className="game-title text-3xl font-bold mb-4">Room not found</h2>
         <button
-          className="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg"
+          className="relative z-10 bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg hover:cursor-pointer"
           onClick={() => {
             // Clear localStorage data before going back
             if (typeof window !== "undefined") {
