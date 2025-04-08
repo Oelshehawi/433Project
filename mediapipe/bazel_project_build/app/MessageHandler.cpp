@@ -89,14 +89,19 @@ void MessageHandler::handleMessage(const std::string& message) {
 }
 
 void MessageHandler::handleRoundStart(const json& payload) {
-    std::cout << "Round started" << std::endl;
+    std::cout << "[MessageHandler.cpp] ROUND START EVENT RECEIVED" << std::endl;
     
-    // Let GameState handle timer and round info
+    // Check if cards are included in the round_start event (new format)
+    if (payload.contains("playerCards") && payload["playerCards"].is_object()) {
+        std::cout << "[MessageHandler.cpp] Round start event includes cards data (new format)" << std::endl;
+    }
+    
+    // Let GameState handle timer and round info (including cards processing if present)
     if (gameState) {
         gameState->updateTimerFromEvent(payload);
     }
     else {
-        std::cerr << "Error: GameState not available for round start event" << std::endl;
+        std::cerr << "[MessageHandler.cpp] Error: GameState not available for round start event" << std::endl;
     }
 }
 
@@ -178,7 +183,7 @@ void MessageHandler::handleGameEnded(const json& payload) {
 void MessageHandler::handleBeagleBoardCommand(const json& payload) {
     if (payload.contains("command")) {
         std::string command = payload["command"];
-        std::cout << "Received server command: " << command << std::endl;
+        std::cout << "[MessageHandler.cpp] BEAGLEBOARD COMMAND RECEIVED: " << command << std::endl;
         
         // Check if the message is targeted for this specific BeagleBoard
         if (payload.contains("targetPlayerId")) {
@@ -186,29 +191,38 @@ void MessageHandler::handleBeagleBoardCommand(const json& payload) {
             
             // If this message is not for us, ignore it
             if (targetPlayerId != roomManager->getDeviceId()) {
-                std::cout << "Ignoring command targeted for another player: " << targetPlayerId << std::endl;
+                std::cout << "[MessageHandler.cpp] Ignoring command targeted for another player: " << targetPlayerId << std::endl;
                 return;
             }
             
-            std::cout << "Processing targeted command for this device" << std::endl;
+            std::cout << "[MessageHandler.cpp] Processing targeted command for this device" << std::endl;
         }
         
         // Handle CARDS command - display cards on LCD
         if (command == "CARDS" && payload.contains("cards")) {
-            std::cout << "Received cards from server" << std::endl;
+            // Print a clear dividing line to make logs easier to read
+            std::cout << "\n===========================================" << std::endl;
+            std::cout << "BEAGLEBOARD COMMAND RECEIVED: CARDS UPDATE" << std::endl;
+            if (payload.contains("targetPlayerId")) {
+                std::cout << "Target Player ID: \"" << payload["targetPlayerId"].get<std::string>() << "\"" << std::endl;
+            }
+            if (payload.contains("cards") && payload["cards"].is_array()) {
+                std::cout << "Number of cards: " << payload["cards"].size() << std::endl;
+            }
+            std::cout << "===========================================\n" << std::endl;
             
             // Let GameState handle the cards
             if (gameState) {
                 gameState->processCards(payload);
             }
             else {
-                std::cerr << "Error: GameState not available for cards command" << std::endl;
+                std::cerr << "[MessageHandler.cpp] Error: GameState not available for cards command" << std::endl;
             }
         }
         
         // Log additional details if available
         if (payload.contains("details")) {
-            std::cout << "Command details: " << payload["details"].dump() << std::endl;
+            std::cout << "[MessageHandler.cpp] Command details: " << payload["details"].dump() << std::endl;
         }
     }
 }

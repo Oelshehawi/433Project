@@ -6,6 +6,7 @@
 #include <random>
 #include <sstream>
 #include <algorithm>
+#include <ctime>     // For std::time
 #include <nlohmann/json.hpp>
 
 // Forward declarations for LCD functions (from lcd_display.h)
@@ -51,9 +52,13 @@ RoomManager::RoomManager(WebSocketClient* client)
       messageHandler(nullptr), gameState(nullptr), displayManager(nullptr),
       connected(false), ready(false), 
       isWaitingForResponse(false), currentRequestType(""), lastRoomStatus(""), lastPlayerCount(0) {
+    
+    // Properly seed global random number generator for any legacy code that might use it
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
+    
     // Generate a unique device ID
     deviceId = generateDeviceId();
-    std::cout << "Room Manager initialized with device ID: " << deviceId << std::endl;
+    std::cout << "[RoomManager.cpp] Room Manager initialized with device ID: " << deviceId << std::endl;
     
     // Create the display manager first with nullptr for gameState
     displayManager = new DisplayManager(nullptr);
@@ -239,33 +244,36 @@ void RoomManager::handleMessage(const std::string& message) {
             // Handle round start events
             if (j.contains("payload")) {
                 std::cout << "----------------------------------------" << std::endl;
-                std::cout << "ROUND START EVENT RECEIVED" << std::endl;
+                std::cout << "[RoomManager.cpp] ROUND START EVENT RECEIVED" << std::endl;
                 
                 // Debug the exact data received
-                std::cout << "Round start payload: " << j["payload"].dump() << std::endl;
+                std::cout << "[RoomManager.cpp] Round start payload: " << j["payload"].dump(2) << std::endl;
+                
+                // Check if this is the new format with cards included
+                if (j["payload"].contains("playerCards")) {
+                    std::cout << "[RoomManager.cpp] Round start includes cards data (new format)" << std::endl;
+                }
                 
                 // Extract round number - this is the important part
                 int roundNumber = 1;
                 
                 if (j["payload"].contains("roundNumber")) {
                     roundNumber = j["payload"]["roundNumber"];
-                    std::cout << "Starting Round Number: " << roundNumber << std::endl;
+                    std::cout << "[RoomManager.cpp] Starting Round Number: " << roundNumber << std::endl;
                 }
                 
                 // Update currentRoundNumber directly
                 currentRoundNumber = roundNumber;
                 
-                // Let GameState handle timer (client-side only now)
+                // Let GameState handle timer and cards (client-side only now)
                 if (gameState) {
                     gameState->updateTimerFromEvent(j["payload"]);
                     
-                    // Update the card display if we have cards
-                    if (lastReceivedCards.size() > 0 && displayManager) {
-                        displayManager->updateCardAndGameDisplay();
-                    }
+                    // If we have cards, they should now be updated from the round_start event directly
+                    // So we don't need separate handling for lastReceivedCards here
                 }
                 else {
-                    std::cerr << "Error: GameState not available for round start event" << std::endl;
+                    std::cerr << "[RoomManager.cpp] Error: GameState not available for round start event" << std::endl;
                 }
                 
                 std::cout << "----------------------------------------" << std::endl;
@@ -603,8 +611,13 @@ bool RoomManager::createRoom(const std::string& roomName) {
         return false;
     }
     
-    // Generate a random room ID
-    std::string roomId = "room_" + std::to_string(std::rand() % 10000);
+    // Generate a random room ID using modern C++ random number generation
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(1000, 9999); // Range 1000-9999 for 4 digit numbers
+    std::string roomId = "room_" + std::to_string(dis(gen));
+    
+    std::cout << "[RoomManager.cpp] Generated random room ID: " << roomId << std::endl;
     
     // Create payload for room creation
     json room = json::object();

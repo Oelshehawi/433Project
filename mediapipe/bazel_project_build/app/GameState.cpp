@@ -86,8 +86,40 @@ void GameState::stopTimerThread() {
 }
 
 void GameState::updateTimerFromEvent(const json& roundStartPayload) {
+    std::cout << "[GameState.cpp] Round start event received with payload: " << roundStartPayload.dump() << std::endl;
+
+    // Update round number
     if (roundStartPayload.contains("roundNumber")) {
         currentRoundNumber = roundStartPayload["roundNumber"];
+    }
+    
+    // Handle cards if they're included in round_start payload (new format)
+    if (roundStartPayload.contains("playerCards") && roundStartPayload["playerCards"].is_object()) {
+        // Find cards for our player ID
+        const auto& playerCards = roundStartPayload["playerCards"];
+        if (playerCards.contains(roomManager->getDeviceId())) {
+            // Found cards for this player
+            const auto& cards = playerCards[roomManager->getDeviceId()];
+            
+            // Create a cards payload to process
+            json cardsPayload;
+            cardsPayload["cards"] = cards;
+            
+            std::cout << "[GameState.cpp] Found cards in round_start event, processing them now" << std::endl;
+            processCards(cardsPayload);
+        }
+    }
+    
+    // Check if the timer is already active (cards were received before round_start)
+    if (timerActive && timerThreadRunning && currentTurnTimeRemaining > 0) {
+        std::cout << "[GameState.cpp] Timer already active from early card processing. Current time: " 
+                  << currentTurnTimeRemaining << " seconds" << std::endl;
+        
+        // Force an immediate display update to refresh with current state
+        if (displayManager) {
+            displayManager->updateCardAndGameDisplay();
+        }
+        return;
     }
     
     // Always use fixed 30-second timer regardless of what server sends
@@ -112,6 +144,20 @@ void GameState::processCards(const json& cardsPayload) {
     if (!cardsPayload.contains("cards")) {
         std::cerr << "[GameState.cpp] Error: Cards payload does not contain cards array" << std::endl;
         return;
+    }
+    
+    // Check if timer needs initialization (cards received before round_start)
+    if (currentTurnTimeRemaining <= 0) {
+        std::cout << "[GameState.cpp] WARNING: Cards received before round_start event! Initializing default timer." << std::endl;
+        // Set a default timer value since we haven't received the round_start event yet
+        currentTurnTimeRemaining = 30; // Default 30 seconds
+        timerActive = true;
+        
+        // Start the timer thread if needed
+        if (!timerThreadRunning) {
+            std::cout << "[GameState.cpp] Starting timer thread with default value since round_start hasn't arrived" << std::endl;
+            startTimerThread();
+        }
     }
     
     // Clear the current cards

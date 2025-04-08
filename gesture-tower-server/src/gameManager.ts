@@ -108,44 +108,32 @@ export function startRound(roomId: string): boolean {
   console.log(`Starting round ${room.gameState.roundNumber} in room ${roomId}`);
   console.log(`Client will manage 30-second round timer`);
 
-  // Send round start event to all players - no remainingTime as clients handle timing
+  // Prepare card data for each player to include in the round_start event
+  const playerCards: { [playerId: string]: any } = {};
+
+  if (room.playerCards) {
+    beagleBoardPlayers.forEach((player) => {
+      const cards = room.playerCards?.get(player.id);
+      if (cards) {
+        playerCards[player.id] = cards.cards;
+        console.log(
+          `Prepared cards for player ${player.name} (${player.id}) to include in round_start`
+        );
+      }
+    });
+  }
+
+  // Send round start event to all players with cards included for each player
   sendToRoom(roomId, "round_start", {
     roomId,
     roundNumber: room.gameState.roundNumber,
-    // No remainingTime - clients handle timing themselves
+    playerCards: playerCards, // Include cards in the round_start event
   });
 
-  // Send each BeagleBoard player their current cards at the start of each round
-  if (room.playerCards) {
-    // For each player, send their cards in a targeted beagle_board_command to the room
-    const beagleBoardPlayers = room.players.filter(
-      (player) => player.playerType === "beagleboard"
-    );
+  console.log(`Sent round_start with included cards for room ${roomId}`);
 
-    console.log(
-      `[Round ${room.gameState.roundNumber}] Sending cards to ${beagleBoardPlayers.length} players in room ${roomId}`
-    );
-
-    for (const player of beagleBoardPlayers) {
-      const playerCards = room.playerCards.get(player.id);
-
-      if (playerCards) {
-        console.log(
-          `Sending cards for round ${room.gameState.roundNumber} to player ${player.name} (${player.id})`
-        );
-
-        // Send a targeted beagle_board_command event
-        sendToRoom(roomId, "beagle_board_command", {
-          targetPlayerId: player.id,
-          command: "CARDS",
-          cards: playerCards.cards,
-        });
-      }
-    }
-  }
-
-  // No server-side timer - clients will handle timing and send gestures
-  // when their timer expires if the player hasn't made a move
+  // We no longer need to send separate beagle_board_command events for cards
+  // as they're now included in the round_start event
 
   return true;
 }
