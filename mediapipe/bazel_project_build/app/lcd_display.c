@@ -51,7 +51,6 @@ void lcd_init(){
 	
     // LCD Init
     DEV_Delay_ms(2000);
-    printf("t\n");
 	LCD_1IN54_Init(HORIZONTAL);
 	LCD_1IN54_Clear(WHITE);
 	LCD_SetBacklight(1023);

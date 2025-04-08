@@ -134,8 +134,9 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
             // We found our cards
             const json& ourCards = roundStartPayload["playerCards"][ourDeviceId];
             
-            // Clear the existing card map
+            // Clear the existing card map and vector
             playerCards.clear();
+            lastReceivedCards.clear();
             
             // Process each card
             for (const auto& card : ourCards) {
@@ -143,9 +144,18 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
                     std::string cardId = card["id"];
                     std::string cardType = card["type"];
                     std::string cardName = card["name"];
+                    std::string cardDescription = card.contains("description") ? card["description"].get<std::string>() : "";
                     
                     // Add to our map of card types to card IDs
                     playerCards[cardType] = cardId;
+                    
+                    // Also add to lastReceivedCards for display purposes
+                    Card newCard;
+                    newCard.id = cardId;
+                    newCard.type = cardType;
+                    newCard.name = cardName;
+                    newCard.description = cardDescription;
+                    lastReceivedCards.push_back(newCard);
                 }
             }
             
