@@ -4,7 +4,6 @@ let socketStatus: 'disconnected' | 'connecting' | 'connected' = 'disconnected';
 let pingInterval: NodeJS.Timeout | null = null; // Track ping interval
 let lastPongTime: number = 0; // Track last pong received
 let connectionTimeout: NodeJS.Timeout | null = null; // Connection timeout handler
-let isTransitioningPages: boolean = false; // Track if we're in a page transition
 
 // Initialize WebSocket connection
 export const initializeSocket = (
@@ -86,7 +85,6 @@ export const initializeSocket = (
 
       socketStatus = 'connected';
       lastPongTime = Date.now(); // Initialize pong time
-      isTransitioningPages = false; // Reset transition flag
 
       // Start ping interval to keep connection alive
       startPingInterval();
@@ -216,7 +214,7 @@ const startPingInterval = () => {
   // Clear any existing interval first
   stopPingInterval();
 
-  // Send ping every 30 seconds
+  // Send ping every 15 seconds instead of 30 to prevent server timeouts
   pingInterval = setInterval(() => {
     if (socket && socket.readyState === WebSocket.OPEN) {
       console.log('[websocket.ts] Sending ping to server');
@@ -224,17 +222,22 @@ const startPingInterval = () => {
         console.error('[websocket.ts] Error sending ping:', err);
       });
 
-      // Check if we've received a pong in the last 45 seconds
+      // Check if we've received a pong in the last 30 seconds (reduced from 45)
       const now = Date.now();
-      if (now - lastPongTime > 45000) {
+      if (now - lastPongTime > 30000) {
         console.warn(
-          '[websocket.ts] No pong received in 45 seconds, reconnecting'
+          '[websocket.ts] No pong received in 30 seconds, reconnecting'
         );
         closeSocket();
         initializeSocket();
       }
+    } else if (socketStatus === 'connected') {
+      // If socket is not open but status says connected, reconnect
+      console.warn('[websocket.ts] Socket not open during ping, reconnecting');
+      closeSocket();
+      initializeSocket();
     }
-  }, 30000);
+  }, 15000); // Reduced from 30000 to 15000
 };
 
 // Stop ping interval
@@ -318,7 +321,7 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
 // A simplified version of sendMessage that doesn't return a Promise
 export const sendWebSocketMessage = (message: {
   event: string;
-  payload: any;
+  payload: Record<string, unknown>;
 }): void => {
   try {
     sendMessage(message.event, message.payload).catch((error) => {
@@ -391,12 +394,17 @@ export const signalNextRoundReady = (
 // Add a helper function to mark page transition
 export const markPageTransition = (): void => {
   console.log('[websocket.ts] Marking page transition');
-  isTransitioningPages = true;
 
-  // Set a timeout to reset the flag in case the navigation event doesn't happen
-  setTimeout(() => {
-    isTransitioningPages = false;
-  }, 5000);
+  // Instead of using a flag, we'll ensure the socket stays alive
+  // Force a refresh of socket status
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    // Send an immediate ping to keep the connection alive
+    sendMessage('ping', { timestamp: Date.now(), transition: true }).catch(
+      (err) => {
+        console.error('[websocket.ts] Error sending transition ping:', err);
+      }
+    );
+  }
 };
 
 // Force connection status refresh (call this after navigation)

@@ -1315,6 +1315,11 @@ function handleGameReady(client: ExtendedWebSocket, payload: any) {
   console.log(
     `[webSocketManager.ts] Web client ready to start game in room ${roomId}`
   );
+  console.log(`Received game_ready signal from web client for room ${roomId}`);
+  console.log(`Room ${roomId} marked as ready to start first round`);
+  console.log(
+    `Starting first round for room ${roomId} now that web client is ready`
+  );
 
   // Start the first round
   startRound(roomId);

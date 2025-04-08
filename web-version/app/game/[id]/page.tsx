@@ -61,6 +61,53 @@ export default function GamePage() {
   useEffect(() => {
     console.log('[GamePage] Mounted, verifying connection state');
 
+    // Helper function to wait for socket to be healthy and then signal game ready
+    const ensureConnectionAndSignalReady = async () => {
+      try {
+        // Wait up to 5 seconds for the socket to be healthy
+        let attempts = 0;
+        while (!isSocketHealthy() && attempts < 5) {
+          console.log(
+            `[GamePage] Waiting for socket to be healthy (attempt ${
+              attempts + 1
+            })`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          refreshConnectionStatus();
+          attempts++;
+        }
+
+        // If socket is healthy, signal ready for game/next round
+        if (isSocketHealthy()) {
+          console.log('[GamePage] Socket is healthy, signaling readiness');
+          useGameStore.setState({ socketConnected: true });
+
+          // If we have a pending round, signal ready for it
+          const state = useGameStore.getState();
+          if (state.pendingRoundNumber && !state.roundData.isTransitioning) {
+            console.log(
+              `[GamePage] Signaling ready for pending round ${state.pendingRoundNumber}`
+            );
+            state.readyForNextRound(state.pendingRoundNumber);
+          } else if (
+            state.gameStatus === 'waiting' &&
+            state.animationState.rulesAnimationComplete
+          ) {
+            // If we're just starting the game, send game_ready
+            console.log('[GamePage] Signaling game_ready');
+            sendMessage('game_ready', { roomId }).catch(console.error);
+          }
+        } else {
+          console.error(
+            '[GamePage] Failed to establish healthy socket connection'
+          );
+          setForceLoader(true);
+        }
+      } catch (error) {
+        console.error('[GamePage] Error in connection setup:', error);
+      }
+    };
+
     // Check if socket is already healthy
     if (isSocketHealthy()) {
       console.log('[GamePage] Socket is already healthy');
@@ -73,11 +120,32 @@ export default function GamePage() {
 
       // Set a brief force loader to avoid flickering UI during connection recovery
       setForceLoader(true);
+
+      // Clear the loader after a short delay
       setTimeout(() => {
         setForceLoader(false);
-      }, 1000);
+      }, 1500);
+
+      // Try to establish connection
+      ensureConnectionAndSignalReady();
     }
-  }, []);
+
+    // Connection recovery interval
+    const recoveryInterval = setInterval(() => {
+      if (!isSocketHealthy()) {
+        console.log(
+          '[GamePage] Recovery interval: Socket not healthy, attempting to refresh'
+        );
+        refreshConnectionStatus();
+        ensureConnectionAndSignalReady();
+      }
+    }, 10000);
+
+    // Cleanup interval on unmount
+    return () => {
+      clearInterval(recoveryInterval);
+    };
+  }, [roomId]);
 
   // Initialize game when component mounts
   useEffect(() => {

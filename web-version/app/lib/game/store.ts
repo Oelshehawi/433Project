@@ -108,13 +108,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
 
-      // Fetch game state from server using the current room
+      // Add structured error handling to separate connection issues from game state issues
       try {
+        // Fetch game state from server using the current room
         await sendMessage('get_game_state', { roomId });
         console.log('[game/store] Game state requested for room:', roomId);
       } catch (error) {
+        // Don't fail initialization for game state issues - we'll recover via events
         console.warn('[game/store] Failed to request game state:', error);
-        // Continue anyway, as we might receive updates via WebSocket events
+
+        // Register a one-time event listener to try again in 2 seconds if socket is connected
+        if (isSocketHealthy()) {
+          setTimeout(() => {
+            if (isSocketHealthy() && get().currentRoom === roomId) {
+              console.log('[game/store] Retrying game state request');
+              sendMessage('get_game_state', { roomId }).catch((err) =>
+                console.warn(
+                  '[game/store] Retry game state request failed:',
+                  err
+                )
+              );
+            }
+          }, 2000);
+        }
+      }
+
+      // Ensure we're connected to the room
+      try {
+        // Send a get_room request to make sure our connection is registered with the server
+        await sendMessage('get_room', { roomId });
+        console.log('[game/store] Room data requested for room:', roomId);
+      } catch (error) {
+        console.warn('[game/store] Failed to request room data:', error);
       }
 
       // Initialize the game state
@@ -167,10 +192,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       // If we're in a room, signal to the server that we're ready
       if (state.currentRoom) {
-        // Signal game_ready to server
-        sendMessage('game_ready', { roomId: state.currentRoom }).catch(
-          console.error
+        console.log(
+          '[game/store] Rules animation completed, sending game_ready signal'
         );
+
+        // Make multiple attempts to send game_ready signal
+        const sendGameReady = () => {
+          sendMessage('game_ready', { roomId: state.currentRoom }).catch(
+            (error) => {
+              console.error('[game/store] Error sending game_ready:', error);
+            }
+          );
+        };
+
+        // First attempt
+        sendGameReady();
+
+        // Second attempt after 1 second
+        setTimeout(sendGameReady, 1000);
+
+        // Third attempt after 3 seconds
+        setTimeout(sendGameReady, 3000);
+
         get().addEventLog('Sent game_ready signal to server', 'Animation');
       }
     }
@@ -237,10 +280,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       console.log(`[game/store] Signaling ready for round ${roundNumber}`);
 
-      // Use the helper function to send next_round_ready message
-      signalNextRoundReady(currentRoom, roundNumber);
+      // Make multiple attempts to send next_round_ready signal
+      const sendNextRoundReady = () => {
+        if (isSocketHealthy()) {
+          console.log(
+            `[game/store] Sending next_round_ready for round ${roundNumber}`
+          );
+          signalNextRoundReady(currentRoom, roundNumber);
+        } else {
+          console.warn(
+            '[game/store] Socket not healthy when trying to signal next round ready'
+          );
+          refreshConnectionStatus();
+        }
+      };
 
-      get().addEventLog(`Ready for round ${roundNumber}`, 'System');
+      // First attempt
+      sendNextRoundReady();
+
+      // Second attempt after 1 second
+      setTimeout(sendNextRoundReady, 1000);
+
+      // Third attempt after 3 seconds
+      setTimeout(sendNextRoundReady, 3000);
+
+      get().addEventLog(`Signaled ready for round ${roundNumber}`, 'System');
     } catch (error) {
       console.error('[game/store] Failed to signal next round ready:', error);
     }
@@ -559,24 +623,49 @@ if (typeof window !== 'undefined') {
         });
       }
 
-      // If game should continue, prepare for next round
-      if (shouldContinue) {
-        // Set pending round number for next round
-        useGameStore.setState({
-          pendingRoundNumber: (roundNumber || 1) + 1,
-        });
-
-        // Immediately signal readiness for next round
-        setTimeout(() => {
-          const nextRound = (roundNumber || 1) + 1;
-          state.readyForNextRound(nextRound);
-        }, 1000);
-      }
-
+      // Log the round end
       state.addEventLog(
         `Round ${roundNumber} ended${winnerId ? ` - Winner: ${winnerId}` : ''}`,
         'Server'
       );
+
+      // If game should continue, prepare for next round immediately
+      if (shouldContinue) {
+        const nextRound = (roundNumber || 1) + 1;
+        console.log(`[game/store] Preparing for round ${nextRound}`);
+
+        useGameStore.setState({
+          pendingRoundNumber: nextRound,
+        });
+
+        // Signal ready for next round immediately and with retries
+        const signalReady = () => {
+          console.log(
+            `[game/store] Signaling ready for round ${nextRound} from round_end handler`
+          );
+          if (state.currentRoom && isSocketHealthy()) {
+            signalNextRoundReady(state.currentRoom, nextRound);
+          }
+        };
+
+        // First attempt - immediate
+        signalReady();
+
+        // Retry after 1s, 3s, and 5s to ensure server receives the signal
+        setTimeout(signalReady, 1000);
+        setTimeout(signalReady, 3000);
+        setTimeout(signalReady, 5000);
+
+        // Reset transition state after all retries
+        setTimeout(() => {
+          useGameStore.setState({
+            roundData: {
+              ...useGameStore.getState().roundData,
+              isTransitioning: false,
+            },
+          });
+        }, 6000);
+      }
     } catch (error) {
       console.error('[game/store] Error processing round end event:', error);
     }
