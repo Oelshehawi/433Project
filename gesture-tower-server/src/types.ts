@@ -13,6 +13,7 @@ export type ClientEventType =
   | "beagleboard_command"
   | "get_room"
   | "round_end_ack"
+  | "next_round_ready"
   | "game_ready";
 
 // Server message types
@@ -178,6 +179,8 @@ export interface GestureEventPayload {
   gesture: GameActionType | GestureType;
   confidence: number;
   cardId?: string; // Optional card ID used for the gesture
+  roomId: string; // Add roomId property
+  roundNumber?: number; // Add optional roundNumber property
 }
 
 export interface ErrorPayload {
@@ -227,4 +230,10 @@ export interface MoveStatusPayload {
   status: "accepted" | "rejected";
   reason?: string;
   roundNumber: number;
+}
+
+// Add a new payload type for next round ready signal
+export interface NextRoundReadyPayload {
+  roomId: string;
+  roundNumber: number; // To ensure we're talking about the correct round
 }

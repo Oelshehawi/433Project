@@ -1,30 +1,38 @@
 #include "GestureDetector.h"
+#include "RoomManager.h"
+#include "GestureEventSender.h"
 #include <iostream>
-#include <iomanip>
+#include <unistd.h>
+#include <cmath>
+#include <algorithm>
+#include <map>
 #include <chrono>
 #include <thread>
 #include "lcd_display.h"
 #include "../hal/rotary_press_statemachine.h"
 
-// Function to get current time in milliseconds (used for gesture detection timing)
-static long long getTimeInMs(void) {
-    struct timespec spec;
-    clock_gettime(CLOCK_REALTIME, &spec);
-    long long seconds = spec.tv_sec;
-    long long nanoSeconds = spec.tv_nsec;
-    long long milliSeconds = seconds * 1000 + nanoSeconds / 1000000;
-    return milliSeconds;
+// Get current time in milliseconds
+long long GestureDetector::getTimeInMs() {
+    auto now = std::chrono::system_clock::now();
+    auto duration = now.time_since_epoch();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 }
 
 // GestureDetector implementation
-GestureDetector::GestureDetector(RoomManager* rm) : running(false), roomManager(rm), eventSender(nullptr) {
-    std::cout << "GestureDetector constructor" << std::endl;
+GestureDetector::GestureDetector(RoomManager* roomManager)
+    : roomManager(roomManager), 
+      runThread(false), 
+      handTopPosition(0.0),
+      handBottomPosition(0.0),
+      confidenceThreshold(0.65),
+      gestureEnabled(true),
+      processingStarted(false) {
     
-    // Create the event sender if we have a valid room manager
-    if (roomManager) {
-        eventSender = new GestureEventSender(roomManager, 
-                                           roomManager->getDeviceId(), 
-                                           roomManager->getCurrentRoomId());
+    // Create the gesture event sender if we have a client
+    if (roomManager && roomManager->getClient()) {
+        eventSender = new GestureEventSender(roomManager->getClient());
+    } else {
+        eventSender = nullptr;
     }
 }
 
@@ -50,15 +58,15 @@ bool GestureDetector::testCameraAccess() {
 }
 
 void GestureDetector::start() {
-    if (!running.load()) {
-        running.store(true);
+    if (!runThread.load()) {
+        runThread.store(true);
         gestureThread = std::thread(&GestureDetector::gestureLoop, this);
     }
 }
 
 void GestureDetector::stop() {
-    if (running.load()) {
-        running.store(false);
+    if (runThread.load()) {
+        runThread.store(false);
         if (gestureThread.joinable()) {
             gestureThread.join();
         }
@@ -68,14 +76,6 @@ void GestureDetector::stop() {
 // Log hand position for debugging
 void GestureDetector::logHandPosition(const handPosition& handPos, bool shouldLog) {
     if (!shouldLog) return;
-    
-    std::cout << "Hand detected: " << handPos.num_fingers_held_up << " fingers up" << std::endl;
-    std::cout << "Finger states: "; 
-    std::cout << "Thumb=" << (handPos.thumb_held_up ? "UP" : "down") << ", ";
-    std::cout << "Index=" << (handPos.index_held_up ? "UP" : "down") << ", ";
-    std::cout << "Middle=" << (handPos.middle_held_up ? "UP" : "down") << ", ";
-    std::cout << "Ring=" << (handPos.ring_held_up ? "UP" : "down") << ", ";
-    std::cout << "Pinky=" << (handPos.pinky_held_up ? "UP" : "down") << std::endl;
 }
 
 // Recognize gesture from hand position
@@ -107,35 +107,20 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
 
 void GestureDetector::gestureLoop() {
     if (!camera.openCamera()) {
-        std::cerr << "Error: Could not open camera." << std::endl;
         return;
     }
     
-    std::cout << "GestureDetector started" << std::endl;
-    
-    // Display initial message
-    char* startMsg[] = {"Show a gesture", "to make your move"};
-    lcd_place_message(startMsg, 2, lcd_center);
-    
-    while (running.load()) {
+    while (runThread.load()) {
         if (roomManager == nullptr) {
-            std::cerr << "Error: Room manager is not initialized." << std::endl;
-            break;
-        }
-        
-        // Make sure our event sender has the current room ID
-        if (eventSender) {
-            eventSender->setCurrentRoomId(roomManager->getCurrentRoomId());
+            return;
         }
         
         cv::Mat frame;
         if (!camera.captureFrame(frame)) {
-            std::cerr << "Error: Could not capture frame." << std::endl;
             continue;
         }
         
         if (frame.empty()) {
-            std::cerr << "Error: Blank frame grabbed." << std::endl;
             continue;
         }
         
@@ -143,7 +128,6 @@ void GestureDetector::gestureLoop() {
         auto status = hand_analyze_image(frame, &handPos);
         
         if (!status.ok()) {
-            std::cerr << "Error analyzing hand: " << status.ToString() << std::endl;
             continue;
         }
         
@@ -155,17 +139,6 @@ void GestureDetector::gestureLoop() {
             
             std::string detectedMove, actionType;
             if (recognizeGesture(handPos, detectedMove, actionType)) {
-                // Log the recognized gesture
-                std::cout << "Recognized gesture: " << detectedMove << " (" << actionType << ")" << std::endl;
-                
-                // Display confirmation message
-                char confirmMessage[32];
-                snprintf(confirmMessage, sizeof(confirmMessage), "%s detected", detectedMove.c_str());
-                
-                // Display on LCD
-                char* msg[] = {confirmMessage, "Press to confirm"};
-                lcd_place_message(msg, 2, lcd_center);
-                
                 // Get initial rotary encoder value
                 int initialValue = rotary_press_statemachine_getValue();
                 long long confirmationStartTime = getTimeInMs();
@@ -174,7 +147,7 @@ void GestureDetector::gestureLoop() {
                 // Wait for confirmation or timeout (5 seconds)
                 const int CONFIRMATION_TIMEOUT_MS = 5000; // 5 seconds
                 
-                while (running.load() && (getTimeInMs() - confirmationStartTime < CONFIRMATION_TIMEOUT_MS)) {
+                while (runThread.load() && (getTimeInMs() - confirmationStartTime < CONFIRMATION_TIMEOUT_MS)) {
                     // Check if button was pressed
                     int currentValue = rotary_press_statemachine_getValue();
                     if (currentValue != initialValue) {
@@ -188,41 +161,11 @@ void GestureDetector::gestureLoop() {
                 
                 // If confirmed or timed out
                 if (gestureConfirmed) {
-                    // Display sending message
-                    char* sendingMsg[] = {"Sending gesture", "to server..."};
-                    lcd_place_message(sendingMsg, 2, lcd_center);
-                    
                     // Send the gesture
-                    if (eventSender) {
-                        eventSender->sendGesture(actionType, 0.95f);
-                    } else {
-                        // Fallback to direct room manager call
-                        json gestureData = json::object();
-                        gestureData["gesture"] = actionType;
-                        gestureData["confidence"] = 0.95f;
-                        roomManager->sendGestureData(gestureData.dump());
-                    }
-                    
-                    // Display confirmation of sending
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                    char* sentMsg[] = {"Gesture sent", "Waiting for next round"};
-                    lcd_place_message(sentMsg, 2, lcd_center);
-                    
-                    // Stop gesture detection after successful confirmation
-                    std::cout << "Gesture confirmed and sent. Stopping detection." << std::endl;
-                    running.store(false);
-                    break;
+                    confirmGesture(actionType);
                 } else {
-                    // Timed out without confirmation
-                    char* timeoutMsg[] = {"Confirmation", "timed out"};
-                    lcd_place_message(timeoutMsg, 2, lcd_center);
-                    
                     // Short delay to show timeout message
                     std::this_thread::sleep_for(std::chrono::milliseconds(1500));
-                    
-                    // Reset to initial message
-                    char* resetMsg[] = {"Show a gesture", "to make your move"};
-                    lcd_place_message(resetMsg, 2, lcd_center);
                 }
             }
         }
@@ -231,7 +174,6 @@ void GestureDetector::gestureLoop() {
     }
     
     camera.closeCamera();
-    std::cout << "GestureDetector stopped" << std::endl;
 }
 
 handPosition GestureDetector::getCurrentHand() {
@@ -240,18 +182,11 @@ handPosition GestureDetector::getCurrentHand() {
 }
 
 void GestureDetector::runTestingMode() {
-    std::cout << "Running camera test mode. Press any key to exit." << std::endl;
-    
     // Just test the camera with simple feedback
     CameraHAL testCamera;
     if (!testCamera.openCamera()) {
-        std::cerr << "Error: Could not open camera for testing" << std::endl;
         return;
     }
-    
-    // Show info on LCD
-    char* testMsg[] = {"Camera Test Mode", "Running..."};
-    lcd_place_message(testMsg, 2, lcd_center);
     
     bool firstCapture = true;
     int frames = 0;
@@ -262,18 +197,12 @@ void GestureDetector::runTestingMode() {
         cv::Mat frame;
         
         if (!testCamera.captureFrame(frame)) {
-            std::cerr << "Error: Could not capture frame" << std::endl;
             break;
         }
         
         // If this is our first frame, show success message
         if (firstCapture) {
-            std::cout << "Camera working! First frame captured successfully." << std::endl;
-            std::cout << "Frame size: " << frame.cols << "x" << frame.rows << std::endl;
             firstCapture = false;
-            
-            char* successMsg[] = {"Camera working!", "Detecting gestures..."};
-            lcd_place_message(successMsg, 2, lcd_center);
         }
         
         frames++;
@@ -287,24 +216,7 @@ void GestureDetector::runTestingMode() {
             std::string detectedMove, actionType;
             if (recognizeGesture(handPos, detectedMove, actionType)) {
                 gesturesDetected++;
-                
-                // Display the recognized gesture
-                std::cout << "Detected: " << detectedMove << " gesture" << std::endl;
-                char gestureMsg[32];
-                snprintf(gestureMsg, sizeof(gestureMsg), "Detected: %s", detectedMove.c_str());
-                
-                char countMsg[32];
-                snprintf(countMsg, sizeof(countMsg), "Count: %d", gesturesDetected);
-                
-                char* displayMsg[] = {gestureMsg, countMsg};
-                lcd_place_message(displayMsg, 2, lcd_center);
-                
-                // Pause briefly to show the gesture
-                std::this_thread::sleep_for(std::chrono::milliseconds(500));
             }
-            
-            // Log hand position details
-            logHandPosition(handPos, true);
         }
         
         // Check how long we've been running
@@ -314,15 +226,6 @@ void GestureDetector::runTestingMode() {
         // Every 5 seconds, display frame rate if no gestures detected recently
         if (elapsed >= 5) {
             double fps = static_cast<double>(frames) / elapsed;
-            std::cout << "Frames captured: " << frames << " (" << std::fixed << std::setprecision(1) << fps << " FPS)" << std::endl;
-            
-            char fpsMsg[32];
-            snprintf(fpsMsg, sizeof(fpsMsg), "%.1f FPS", fps);
-            char statsMsg[32];
-            snprintf(statsMsg, sizeof(statsMsg), "Gestures: %d", gesturesDetected);
-            
-            char* successMsg[] = {fpsMsg, statsMsg};
-            lcd_place_message(successMsg, 2, lcd_center);
             
             // Reset counters
             frames = 0;
@@ -333,8 +236,6 @@ void GestureDetector::runTestingMode() {
         int currentValue = rotary_press_statemachine_getValue();
         static int previousValue = currentValue;
         if (currentValue != previousValue) {
-            std::cout << "Button pressed, exiting camera test" << std::endl;
-            previousValue = currentValue;
             break;
         }
         
@@ -343,8 +244,23 @@ void GestureDetector::runTestingMode() {
     }
     
     testCamera.closeCamera();
+}
+
+void GestureDetector::confirmGesture(const std::string& actionType) {
+    // Try to send the gesture via the event sender first
+    bool sent = false;
+    if (eventSender && roomManager) {
+        sent = eventSender->sendGestureEvent(
+            roomManager->getCurrentRoomId(),
+            roomManager->getDeviceId(),
+            actionType,
+            0.95f
+        );
+    }
     
-    // Show exit message
-    char* exitMsg[] = {"Camera test", "complete"};
-    lcd_place_message(exitMsg, 2, lcd_center);
+    // Fallback to the room manager if sending via event sender failed
+    if (!sent && roomManager) {
+        std::string gestureData = "{\"gesture\":\"" + actionType + "\",\"confidence\":0.95}";
+        roomManager->sendGestureData(gestureData);
+    }
 } 

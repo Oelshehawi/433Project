@@ -13,6 +13,7 @@ import {
   GameActionType,
   BeagleBoard,
   GameState,
+  MoveStatusPayload,
 } from "./types";
 import {
   broadcastToAll,
@@ -53,6 +54,9 @@ export const getRoomList = (): RoomListItem[] => {
 
 // Track which rooms have received the game_ready signal from web clients
 const webClientReadyRooms = new Set<string>();
+
+// Track rooms waiting for web client confirmation to start next round
+export const webClientNextRoundReadyRooms = new Map<string, number>(); // roomId -> roundNumber
 
 // Add a function to check and set if a room is in its first round
 export function isFirstRound(roomId: string): boolean {
@@ -682,173 +686,106 @@ export const handleGameStart = (
   }
 };
 
-// Handle gesture events
+// Handle gesture event from client
 export const handleGestureEvent = (
   client: ExtendedWebSocket,
   payload: GestureEventPayload
 ) => {
-  try {
-    const { playerId, gesture, confidence, cardId } = payload;
-    const roomId = client.roomId;
+  const { roomId, playerId, gesture, confidence, cardId, roundNumber } =
+    payload;
 
-    // Validate data
-    if (!playerId || !gesture || !roomId) {
-      return;
-    }
+  console.log(
+    `[roomManager.ts] Received gesture event from ${playerId} in room ${roomId}:`
+  );
+  console.log(`[roomManager.ts] - Gesture: ${gesture}`);
+  console.log(`[roomManager.ts] - Confidence: ${confidence}`);
+  console.log(`[roomManager.ts] - Card ID: ${cardId || "none"}`);
+  console.log(
+    `[roomManager.ts] - Round Number: ${roundNumber || "not specified"}`
+  );
 
-    // Check if room exists and is playing
-    if (!rooms.has(roomId) || rooms.get(roomId)!.status !== "playing") {
-      return;
-    }
+  // Validate room and player
+  if (!rooms.has(roomId)) {
+    console.error(
+      `[roomManager.ts] Room ${roomId} not found for gesture event`
+    );
+    return sendToClient(client, "error", {
+      error: "Room not found",
+    } as ErrorPayload);
+  }
 
-    const room = rooms.get(roomId)!;
+  const room = rooms.get(roomId)!;
 
-    console.log(
-      `Gesture event: ${gesture} from player ${playerId} (conf: ${confidence})`
+  // Check if player is in the room
+  const player = room.players.find((p) => p.id === playerId);
+  if (!player) {
+    console.error(
+      `[roomManager.ts] Player ${playerId} not found in room ${roomId}`
+    );
+    return sendToClient(client, "error", {
+      error: "Player not found in room",
+    } as ErrorPayload);
+  }
+
+  // Check if game is in progress
+  if (room.status !== "playing") {
+    console.error(`[roomManager.ts] Room ${roomId} is not in playing state`);
+    return sendToClient(client, "error", {
+      error: "Game not in progress",
+    } as ErrorPayload);
+  }
+
+  // Ensure game state exists
+  if (!room.gameState) {
+    console.error(`[roomManager.ts] Game state not found for room ${roomId}`);
+    return sendToClient(client, "error", {
+      error: "Game state not found",
+    } as ErrorPayload);
+  }
+
+  // Check if this is a valid gesture type that can be mapped to a game action
+  if (gesture === "attack" || gesture === "defend" || gesture === "build") {
+    // Process the game action
+    const success = processAction(
+      roomId,
+      playerId,
+      gesture as GameActionType,
+      confidence || 1.0, // Default to 1.0 if confidence not provided
+      cardId // Pass the cardId
     );
 
-    // Get the current round number from the game state
-    const currentRound = room.gameState?.roundNumber || 0;
-
-    // Log current game state info for debugging
-    console.log(`Current game state - Round: ${currentRound}`);
-    console.log(
-      `Player move status for ${playerId}: ${room.gameState?.playerMoves.get(
-        playerId
-      )}`
-    );
-
-    // Debug: Print all player move statuses
-    if (room.gameState?.playerMoves) {
-      console.log(`All player move statuses for round ${currentRound}:`);
-      room.gameState.playerMoves.forEach((hasMoved, pid) => {
-        console.log(
-          `  - Player ${pid}: ${hasMoved ? "has moved" : "has not moved"}`
-        );
-      });
-    }
-
-    // Check if the player has already moved this round
-    if (room.gameState && room.gameState.playerMoves.get(playerId)) {
-      // Player has already moved this round
-      console.log(
-        `Player ${playerId} has already moved this round (${currentRound})`
+    if (!success) {
+      console.error(
+        `[roomManager.ts] Failed to process action for ${playerId} in room ${roomId}`
       );
-
-      // Send a message back to this specific client indicating their move wasn't processed
-      sendToClient(client, "move_status", {
-        status: "rejected",
-        reason: "already_moved",
-        roundNumber: currentRound,
-      });
-
-      return;
+      return sendToClient(client, "error", {
+        error: "Failed to process action",
+      } as ErrorPayload);
     }
 
-    // If this is a game action (attack, defend, build)
-    if (gesture === "attack" || gesture === "defend" || gesture === "build") {
-      // Process the action in the game state
-      if (room.gameState) {
-        const actionProcessed = processAction(
-          roomId,
-          playerId,
-          gesture as GameActionType
-        );
-        if (!actionProcessed) {
-          console.error(
-            `Failed to process action ${gesture} for player ${playerId}`
-          );
-        }
+    // Send move status confirmation to the client
+    sendToClient(client, "move_status", {
+      status: "accepted",
+      roundNumber: room.gameState.roundNumber,
+    } as MoveStatusPayload);
+  } else {
+    // Log unknown gesture type
+    console.warn(`[roomManager.ts] Unknown gesture type: ${gesture}`);
 
-        // Mark this player's move as complete
-        room.gameState.playerMoves.set(playerId, true);
-        console.log(
-          `Marked player ${playerId} as having moved in round ${currentRound}`
-        );
-
-        // Send a move_status event to confirm the move was accepted
-        sendToClient(client, "move_status", {
-          status: "accepted",
-          roundNumber: currentRound,
-        });
-
-        // Check if all players have moved after this action
-        let allPlayersMoved = true;
-        room.gameState.playerMoves.forEach((hasMoved) => {
-          if (!hasMoved) {
-            allPlayersMoved = false;
-          }
-        });
-
-        // If all players have moved, end the round automatically
-        if (allPlayersMoved) {
-          console.log(
-            `All players have submitted gestures in room ${roomId}, ending round ${currentRound}`
-          );
-          endRound(roomId);
-        }
-      }
-
-      // If there's a card ID, process card usage
-      if (cardId && room.playerCards && room.playerCards.has(playerId)) {
-        // Process card action
-        const playerCards = room.playerCards.get(playerId);
-
-        if (playerCards) {
-          // Find the card
-          const cardIndex = playerCards.cards.findIndex(
-            (card) => card.id === cardId
-          );
-
-          if (cardIndex !== -1) {
-            const card = playerCards.cards[cardIndex];
-
-            // Check if card type matches the gesture
-            if (card.type === gesture) {
-              // Remove the used card
-              playerCards.cards.splice(cardIndex, 1);
-
-              // Draw a new card - use basic types only
-              const newCard = {
-                id: `new-${Date.now()}`,
-                type: ["attack", "defend", "build"][
-                  Math.floor(Math.random() * 3)
-                ] as GameActionType,
-                name: `Basic ${
-                  gesture.charAt(0).toUpperCase() + gesture.slice(1)
-                }`,
-                description: `A basic ${gesture} card`,
-              };
-
-              playerCards.cards.push(newCard);
-
-              // Send the updated cards back to the player
-              const playerClient = Array.from(clients.values()).find(
-                (c: ExtendedWebSocket) => c.playerId === playerId
-              );
-
-              if (playerClient) {
-                sendToClient(playerClient, "beagle_board_command", {
-                  command: "CARDS",
-                  cards: playerCards.cards,
-                });
-              }
-            }
-          }
-        }
-      }
-    }
-
-    // Broadcast gesture event to all players in the room
+    // Still send the gesture event to the room for display purposes
     sendToRoom(roomId, "gesture_event", {
       playerId,
       gesture,
-      confidence,
+      confidence: confidence || 1.0,
       cardId,
-      roundNumber: currentRound, // Include the round number in the broadcast
-    });
-  } catch (error) {
-    console.error("Error handling gesture event:", error);
+    } as GestureEventPayload);
+
+    // Send confirmation
+    sendToClient(client, "move_status", {
+      status: "accepted",
+      reason: "Non-gameplay gesture",
+      roundNumber: room.gameState.roundNumber,
+    } as MoveStatusPayload);
   }
 };
 
@@ -1002,5 +939,73 @@ export function startRoomGame(roomId: string) {
       gameState: rooms.get(roomId)!.gameState,
       message: "Waiting for web client to complete animations",
     });
+  }
+}
+
+// Add function to handle next_round_ready event from web client
+export function handleNextRoundReady(client: ExtendedWebSocket, payload: any) {
+  const { roomId, roundNumber } = payload;
+
+  console.log(
+    `[roomManager.ts] Received next_round_ready signal from web client for room ${roomId}, round ${roundNumber}`
+  );
+
+  // Verify the room exists
+  if (!rooms.has(roomId)) {
+    console.error(
+      `[roomManager.ts] Room ${roomId} not found for next_round_ready signal`
+    );
+    return;
+  }
+
+  const room = rooms.get(roomId)!;
+
+  // Verify the game state exists
+  if (!room.gameState) {
+    console.error(`[roomManager.ts] Game state not found for room ${roomId}`);
+    return;
+  }
+
+  // Check if this is for the current round or the next round
+  // If current round number + 1 = payload round number, client is ready for next round
+  if (room.gameState.roundNumber + 1 === roundNumber) {
+    console.log(
+      `[roomManager.ts] Web client ready for next round ${roundNumber} in room ${roomId}`
+    );
+
+    // Store that this room's web client is ready for the next round
+    webClientNextRoundReadyRooms.set(roomId, roundNumber);
+
+    // Check if all players have completed their moves in the current round
+    const allPlayersCompleted = Array.from(
+      room.gameState.playerMoves.values()
+    ).every((moved) => moved);
+
+    // If all players have completed their moves and all BeagleBoards have acknowledged
+    // Now we can start the next round since the web client is also ready
+    if (allPlayersCompleted) {
+      console.log(
+        `[roomManager.ts] All conditions met to start round ${roundNumber} in room ${roomId}:`
+      );
+      console.log(
+        `  - All players completed their moves for round ${room.gameState.roundNumber}`
+      );
+      console.log(`  - Web client animation ready for round ${roundNumber}`);
+
+      // Start the next round
+      startRound(roomId);
+
+      // Remove from ready map since we've started the round
+      webClientNextRoundReadyRooms.delete(roomId);
+    }
+  } else if (room.gameState.roundNumber === roundNumber) {
+    // Client is confirming it's ready for current round (could happen if client reloads)
+    console.log(
+      `[roomManager.ts] Web client confirming readiness for current round ${roundNumber}`
+    );
+  } else {
+    console.warn(
+      `[roomManager.ts] Round number mismatch: web client requested round ${roundNumber} but current round is ${room.gameState.roundNumber}`
+    );
   }
 }

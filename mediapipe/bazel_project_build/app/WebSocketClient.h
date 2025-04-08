@@ -13,7 +13,7 @@
 // ClientData definition - moved from cpp file to header to fix incomplete type error
 struct ClientData {
     class WebSocketClient* client;
-    std::string receivedData;
+    std::string fragmentBuffer;
 };
 
 // Forward declarations for libwebsockets
@@ -34,15 +34,24 @@ public:
     
     bool sendMessage(const std::string& message);
     void setMessageCallback(std::function<void(const std::string&)> callback);
-    
-    // Check if the client failed to initialize or connect
-    bool isFailed() const { return !running; }
+    void setConnectionCallback(std::function<void(bool)> callback);
     
     // Check if connected to the server
-    bool isConnected() const { return connected; }
+    bool isConnected() const;
+    
+    // Request wake-up of the service thread
+    void requestWake();
     
     // Ensure messages are processed quickly
     void ensureMessageProcessing();
+    
+    // Internal methods - must be public for protocol_callback
+    void onConnected();
+    void onDisconnected();
+    void onMessageReceived(const std::string& message);
+    std::string getNextMessage();
+    int callback_writable(struct lws *wsi);
+    int callback_closed(struct lws *wsi);
     
     // Allow the protocol callback to access private members
     friend int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason, 
@@ -70,31 +79,17 @@ private:
     std::queue<std::string> messageQueue;
     std::mutex queueMutex;
     
-    // User-defined message callback
+    // User-defined callbacks
     std::function<void(const std::string&)> messageCallback;
+    std::function<void(bool)> connectionCallback;
     
     // Thread management
-    std::thread clientThread;
-    std::mutex connectionMutex;
+    std::thread thread;
+    std::mutex stateMutex;
     std::condition_variable connectionCV;
-    std::mutex wakeMutex;
-    std::condition_variable wakeCV;
     
     // Private methods
     void run();
-    void wakeServiceThread();
-    
-    // Helper methods
-    std::string parseCommandPayload(const std::string& payload);
-    std::string commandToEventName(const std::string& command);
-
-    // Internal message handler
-    void onMessageReceived(const std::string& message);
-
-    // Friends
-    friend int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason, 
-                    void *user, void *in, size_t len);
-    friend class WebSocketReceiver; // Allow WebSocketReceiver to access private members
 };
 
 #endif // WEBSOCKET_CLIENT_H 

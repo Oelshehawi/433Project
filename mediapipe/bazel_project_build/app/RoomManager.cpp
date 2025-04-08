@@ -60,7 +60,6 @@ RoomManager::RoomManager(WebSocketClient* client)
     
     // Generate a unique device ID
     deviceId = generateDeviceId();
-    std::cout << "[RoomManager.cpp] Room Manager initialized with device ID: " << deviceId << std::endl;
     
     // Create the display manager first with nullptr for gameState
     displayManager = new DisplayManager(nullptr);
@@ -115,7 +114,6 @@ RoomManager::~RoomManager() {
 
 bool RoomManager::startReceiver() {
     if (!client) {
-        std::cerr << "No WebSocket client available" << std::endl;
         return false;
     }
     
@@ -176,11 +174,6 @@ void RoomManager::handleMessage(const std::string& message) {
                                 bool statusChanged = (roomStatus != lastRoomStatus);
                                 
                                 if (playerCountChanged || statusChanged) {
-                                    std::cout << "You're now connected to room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
-                                    std::cout << "Players in room: " << playerCount << "/" 
-                                              << (room.contains("maxPlayers") ? room["maxPlayers"].get<int>() : 2) << std::endl;
-                                    
-                                    // Update tracking variables
                                     lastPlayerCount = playerCount;
                                     lastRoomStatus = roomStatus;
                                 }
@@ -190,8 +183,6 @@ void RoomManager::handleMessage(const std::string& message) {
                         
                         // If we didn't find ourselves in the player list
                         if (!foundSelf && connected) {
-                            std::cout << "You're no longer in room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
-                            connected = false;
                             currentRoomId = "";
                             lastPlayerCount = 0;
                             lastRoomStatus = "";
@@ -219,8 +210,6 @@ void RoomManager::handleMessage(const std::string& message) {
                 std::string roomId = j["payload"]["roomId"];
                 if (roomId == currentRoomId) {
                     connected = true;
-                    std::cout << "Successfully joined room: " << roomId << std::endl;
-                    // Request room list to see updated player count
                     fetchAvailableRooms();
                 }
             }
@@ -230,7 +219,6 @@ void RoomManager::handleMessage(const std::string& message) {
             // Handle leave_room response - clear currentRoomId when confirmed by server
             if (currentRequestType == "leave_room") {
                 currentRoomId = "";
-                std::cout << "Server confirmed room exit" << std::endl;
             }
             resetLoadingState();
         }
@@ -241,9 +229,6 @@ void RoomManager::handleMessage(const std::string& message) {
                 // Check if this is about us or another player
                 if (j["payload"].contains("playerId") && j["payload"]["playerId"] == deviceId) {
                     ready = isReady;
-                    std::cout << "Your ready status is now: " << (isReady ? "Ready" : "Not ready") << std::endl;
-                } else {
-                    std::cout << "Another player's ready status changed" << std::endl;
                 }
             }
             resetLoadingState();
@@ -251,15 +236,8 @@ void RoomManager::handleMessage(const std::string& message) {
         else if (j.contains("event") && j["event"] == "round_start") {
             // Handle round start events
             if (j.contains("payload")) {
-                std::cout << "----------------------------------------" << std::endl;
-                std::cout << "[RoomManager.cpp] ROUND START EVENT RECEIVED" << std::endl;
-                
-                // Debug the exact data received
-                std::cout << "[RoomManager.cpp] Round start payload: " << j["payload"].dump(2) << std::endl;
-                
                 // Check if this is the new format with cards included
                 if (j["payload"].contains("playerCards")) {
-                    std::cout << "[RoomManager.cpp] Round start includes cards data (new format)" << std::endl;
                 }
                 
                 // Extract round number - this is the important part
@@ -267,7 +245,6 @@ void RoomManager::handleMessage(const std::string& message) {
                 
                 if (j["payload"].contains("roundNumber")) {
                     roundNumber = j["payload"]["roundNumber"];
-                    std::cout << "[RoomManager.cpp] Starting Round Number: " << roundNumber << std::endl;
                 }
                 
                 // Update currentRoundNumber directly
@@ -276,31 +253,16 @@ void RoomManager::handleMessage(const std::string& message) {
                 // Let GameState handle timer and cards (client-side only now)
                 if (gameState) {
                     gameState->updateTimerFromEvent(j["payload"]);
-                    
-                    // If we have cards, they should now be updated from the round_start event directly
-                    // So we don't need separate handling for lastReceivedCards here
                 }
-                else {
-                    std::cerr << "[RoomManager.cpp] Error: GameState not available for round start event" << std::endl;
-                }
-                
-                std::cout << "----------------------------------------" << std::endl;
             }
             resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "round_end") {
             // Handle round end events
             if (j.contains("payload")) {
-                std::cout << "----------------------------------------" << std::endl;
-                std::cout << "ROUND END EVENT RECEIVED" << std::endl;
-                
-                // Debug the exact data received
-                std::cout << "Round end payload: " << j["payload"].dump() << std::endl;
-                
                 int roundNumber = currentRoundNumber;
                 if (j["payload"].contains("roundNumber")) {
                     roundNumber = j["payload"]["roundNumber"];
-                    std::cout << "Completed Round Number: " << roundNumber << std::endl;
                 }
                 
                 // Check for round results
@@ -308,7 +270,6 @@ void RoomManager::handleMessage(const std::string& message) {
                 if (j["payload"].contains("roundWinner")) {
                     std::string winnerId = j["payload"]["roundWinner"];
                     isWinner = (winnerId == deviceId);
-                    std::cout << "Round winner: " << (isWinner ? "YOU" : winnerId) << std::endl;
                 }
                 
                 // Use DisplayManager to update the LCD with round result
@@ -320,34 +281,27 @@ void RoomManager::handleMessage(const std::string& message) {
                 if (gameState) {
                     gameState->stopTimerThread();
                 }
-                
-                std::cout << "Waiting for next round to begin..." << std::endl;
-                std::cout << "----------------------------------------" << std::endl;
             }
             resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "game_starting") {
             // Handle game starting event (countdown)
-            std::cout << "Game is starting soon..." << std::endl;
-            
-            // Use DisplayManager to show countdown
-            if (displayManager) {
-                displayManager->displayGameStarting();
+            if (j.contains("payload")) {
+                // Use DisplayManager to show countdown
+                if (displayManager) {
+                    displayManager->displayGameStarting();
+                }
             }
-            
             resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "game_started") {
             // Handle game started event - just update game status
             gameInProgress = true;
-            std::cout << "Game has started!" << std::endl;
             
             // Use DisplayManager to show game has started
             if (displayManager) {
                 displayManager->displayGameStarted();
             }
-            
-            resetLoadingState();
         }
         else if (j.contains("event") && j["event"] == "game_ended") {
             // Handle game ended event
@@ -375,7 +329,6 @@ void RoomManager::handleMessage(const std::string& message) {
                 if (gameState.contains("roundNumber")) {
                     roundNumber = gameState["roundNumber"];
                     currentRoundNumber = roundNumber;
-                    std::cout << "Current round: " << roundNumber << std::endl;
                 }
                 
                 // If we have cards, update the display with current game info
@@ -389,7 +342,6 @@ void RoomManager::handleMessage(const std::string& message) {
             // Handle beagle board specific commands
             if (j.contains("payload") && j["payload"].contains("command")) {
                 std::string command = j["payload"]["command"];
-                std::cout << "Received server command: " << command << std::endl;
                 
                 // Check if the message is targeted for this specific BeagleBoard
                 bool isTargetedMessage = false;
@@ -399,30 +351,16 @@ void RoomManager::handleMessage(const std::string& message) {
                     
                     // If this message is not for us, ignore it
                     if (targetPlayerId != deviceId) {
-                        std::cout << "Ignoring command targeted for another player: " << targetPlayerId << std::endl;
-                        resetLoadingState();
                         return;
                     }
-                    
-                    std::cout << "Processing targeted command for this device" << std::endl;
                 }
                 
                 // Handle CARDS command - display cards on LCD
                 if (command == "CARDS" && j["payload"].contains("cards")) {
-                    std::cout << "Received cards from server" << std::endl;
-                    
                     // Let GameState handle the cards
                     if (gameState) {
                         gameState->processCards(j["payload"]);
                     }
-                    else {
-                        std::cerr << "Error: GameState not available for cards command" << std::endl;
-                    }
-                }
-                
-                // Log the details
-                if (j["payload"].contains("details")) {
-                    std::cout << "Command details: " << j["payload"]["details"].dump() << std::endl;
                 }
             }
             
@@ -433,12 +371,6 @@ void RoomManager::handleMessage(const std::string& message) {
             if (j.contains("payload")) {
                 auto& payload = j["payload"];
                 if (payload.contains("playerId") && payload.contains("gesture")) {
-                    std::string playerId = payload["playerId"];
-                    std::string gesture = payload["gesture"];
-                    
-                    // Log gesture event
-                    std::cout << "Gesture event: " << gesture << " from player " << playerId 
-                              << (playerId == deviceId ? " (YOU)" : "") << std::endl;
                 }
             }
             
@@ -450,43 +382,30 @@ void RoomManager::handleMessage(const std::string& message) {
             resetLoadingState();
         }
     } catch (const json::parse_error& e) {
-        std::cerr << "Error parsing JSON message: " << e.what() << std::endl;
-        
         // Try legacy format parsing for backwards compatibility
         if (message.find("ROOMLIST|") == 0) {
             parseRoomList(message.substr(9)); // Skip "ROOMLIST|"
-            
-            // Only display room list if this was in response to a listrooms command
-            if (currentRequestType == "room_list") {
-                displayRoomList();
-            }
             
             // Reset loading state
             resetLoadingState();
         }
         else if (message.find("JOINED|") == 0) {
-            std::cout << "Successfully joined room" << std::endl;
             connected = true;
             resetLoadingState();
         }
         else if (message.find("LEFT|") == 0) {
-            std::cout << "Successfully left room" << std::endl;
             connected = false;
             currentRoomId = "";
             resetLoadingState();
         }
         else if (message.find("RESPONSE:JOIN_ROOM") == 0) {
             if (message.find("status:SUCCESS") != std::string::npos) {
-                std::cout << "Successfully joined room" << std::endl;
                 connected = true;
-            } else {
-                std::cerr << "Failed to join room: " << message << std::endl;
             }
             resetLoadingState();
         }
         else if (message.find("RESPONSE:LEAVE_ROOM") == 0) {
             if (message.find("status:SUCCESS") != std::string::npos) {
-                std::cout << "Successfully left room" << std::endl;
                 connected = false;
                 currentRoomId = "";
             }
@@ -569,26 +488,16 @@ void RoomManager::displayRoomList() {
     std::lock_guard<std::mutex> lock(roomsMutex);
     
     if (availableRooms.empty()) {
-        std::cout << "No rooms available. Try creating a new room." << std::endl;
+        std::cout << "[RoomManager] No rooms available." << std::endl;
         return;
     }
     
-    std::cout << "Available rooms:" << std::endl;
-    std::cout << "--------------------------------------------------------" << std::endl;
-    std::cout << std::left << std::setw(24) << "Room ID" << " | "
-              << std::setw(25) << "Name" << " | "
-              << std::setw(10) << "Players" << " | "
-              << std::setw(10) << "Status" << std::endl;
-    std::cout << "--------------------------------------------------------" << std::endl;
-    
+    std::cout << "[RoomManager] Available rooms: " << std::endl;
     for (const auto& room : availableRooms) {
-        std::cout << std::left << std::setw(24) << room.id << " | "
-                  << std::setw(25) << room.name << " | "
-                  << std::setw(10) << room.playerCount << "/" << room.maxPlayers << " | "
-                  << std::setw(10) << room.status << std::endl;
+        std::cout << "[RoomManager] Room ID: " << room.id << ", Name: " << room.name 
+                  << ", Players: " << room.playerCount << "/" << room.maxPlayers 
+                  << ", Status: " << room.status << std::endl;
     }
-    
-    std::cout << "--------------------------------------------------------" << std::endl;
 }
 
 bool RoomManager::fetchAvailableRooms() {
@@ -599,23 +508,29 @@ bool RoomManager::fetchAvailableRooms() {
     
     std::string jsonMessage = message.dump();
     
+    // Set tracking state
+    isWaitingForResponse = true;
+    currentRequestType = "room_list";
+    
     // Direct send for maximum performance
-    return sendMessageWithTracking(jsonMessage, "room_list");
+    bool result = client->sendMessage(jsonMessage);
+    
+    // Ensure immediate processing
+    client->ensureMessageProcessing();
+    
+    return result;
 }
 
 bool RoomManager::createRoom(const std::string& roomName) {
     if (!client || !client->isConnected()) {
-        std::cerr << "Cannot create room: WebSocket not connected" << std::endl;
         return false;
     }
     
     if (roomName.empty()) {
-        std::cerr << "Cannot create room: Room name is empty" << std::endl;
         return false;
     }
     
     if (playerName.empty()) {
-        std::cerr << "Cannot create room: Player name is not set" << std::endl;
         return false;
     }
     
@@ -624,8 +539,6 @@ bool RoomManager::createRoom(const std::string& roomName) {
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> dis(1000, 9999); // Range 1000-9999 for 4 digit numbers
     std::string roomId = "room_" + std::to_string(dis(gen));
-    
-    std::cout << "[RoomManager.cpp] Generated random room ID: " << roomId << std::endl;
     
     // Create payload for room creation
     json room = json::object();
@@ -661,8 +574,6 @@ bool RoomManager::createRoom(const std::string& roomName) {
     
     std::string jsonMessage = message.dump();
     
-    std::cout << "Sending create room request: " << jsonMessage << std::endl;
-    
     // Set request tracking 
     isWaitingForResponse = true;
     currentRequestType = "create_room";
@@ -688,7 +599,6 @@ bool RoomManager::sendMessageWithTracking(const std::string& message, const std:
     if (isWaitingForResponse) {
         // Instead of waiting for a timeout, allow new requests to proceed
         // and simply update the tracking information
-        std::cout << "New request while waiting for " << currentRequestType << ", continuing anyway" << std::endl;
         resetLoadingState();
     }
     
@@ -709,17 +619,14 @@ const std::vector<Room> RoomManager::getAvailableRooms() const {
 
 bool RoomManager::joinRoom(const std::string& roomId) {
     if (!client || !client->isConnected()) {
-        std::cerr << "Cannot join room: WebSocket not connected" << std::endl;
         return false;
     }
     
     if (roomId.empty()) {
-        std::cerr << "Cannot join room: Room ID is empty" << std::endl;
         return false;
     }
     
     if (playerName.empty()) {
-        std::cerr << "Cannot join room: Player name is not set" << std::endl;
         return false;
     }
     
@@ -737,8 +644,6 @@ bool RoomManager::joinRoom(const std::string& roomId) {
     message["payload"] = payload;
     
     std::string jsonMessage = message.dump();
-    
-    std::cout << "Sending join request: " << jsonMessage << std::endl;
     
     return sendMessageWithTracking(jsonMessage, "join_room");
 }
@@ -758,16 +663,13 @@ bool RoomManager::leaveRoom() {
     message["event"] = "leave_room";
     message["payload"] = payload;
     
-    std::string jsonMessage = message.dump();
-    
     connected = false; // Optimistically mark as disconnected
     
-    return sendMessageWithTracking(jsonMessage, "leave_room");
+    return sendMessageWithTracking(message.dump(), "leave_room");
 }
 
 void RoomManager::setReady(bool isReady) {
     if (!client || !connected) {
-        std::cerr << "Cannot set ready status: not connected to a room" << std::endl;
         return;
     }
     
@@ -781,21 +683,15 @@ void RoomManager::setReady(bool isReady) {
     message["event"] = "player_ready";
     message["payload"] = payload;
     
-    std::string jsonMessage = message.dump();
-    
     // Set ready status for tracking purposes - will be confirmed by server response
     ready = isReady;
     
     // Send the message - no tracking needed as we'll receive room_updated
-    client->sendMessage(jsonMessage);
-    
-    // Output message to user
-    std::cout << "Setting status to " << (isReady ? "ready" : "not ready") << "..." << std::endl;
+    client->sendMessage(message.dump());
 }
 
 bool RoomManager::sendGestureData(const std::string& gestureData) {
     if (!client || !client->isConnected() || !connected) {
-        std::cerr << "Cannot send gesture data: not connected" << std::endl;
         return false;
     }
     
@@ -813,13 +709,9 @@ bool RoomManager::sendGestureData(const std::string& gestureData) {
         // Include cardId if it exists in the gesture data
         if (gestureJson.contains("cardId") && !gestureJson["cardId"].empty()) {
             payload["cardId"] = gestureJson["cardId"];
-            std::cout << "Sending gesture event with card ID: " << gestureJson["cardId"].get<std::string>() << std::endl;
-        } else {
-            std::cout << "Sending gesture event without card ID" << std::endl;
         }
     } catch (const json::parse_error& e) {
         // If parsing fails, try to include the raw data
-        std::cerr << "Error parsing gesture data: " << e.what() << std::endl;
         payload["gestureData"] = gestureData;
     }
     
@@ -827,32 +719,21 @@ bool RoomManager::sendGestureData(const std::string& gestureData) {
     message["event"] = "gesture_event";
     message["payload"] = payload;
     
-    std::string jsonMessage = message.dump();
-    std::cout << "Sending gesture event: " << jsonMessage << std::endl;
-    
-    return client->sendMessage(jsonMessage);
+    return client->sendMessage(message.dump());
 }
 
 bool RoomManager::sendGestureEvent(const std::string& roomId, const std::string& playerId, 
                                   const std::string& gesture, float confidence, const std::string& cardId) {
     // Ensure we have a valid gesture event sender
     if (!gestureEventSender) {
-        std::cerr << "[RoomManager.cpp] Cannot send gesture event - gestureEventSender is null" << std::endl;
-        
         // Create the gesture event sender if it doesn't exist
-        gestureEventSender = new GestureEventSender(this, deviceId, currentRoomId);
+        gestureEventSender = new GestureEventSender(client);
         
         if (!gestureEventSender) {
-            std::cerr << "[RoomManager.cpp] Failed to create gestureEventSender" << std::endl;
             return false;
         }
     }
     
-    // Update the room ID if it has changed
-    if (roomId != currentRoomId) {
-        gestureEventSender->setCurrentRoomId(roomId);
-    }
-    
     // Forward the gesture event to the gesture event sender
-    return gestureEventSender->sendGesture(gesture, confidence, cardId);
+    return gestureEventSender->sendGestureEvent(roomId, playerId, gesture, confidence, cardId);
 } 

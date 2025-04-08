@@ -5,6 +5,8 @@ import {
   GameActionType,
   Room,
   Player,
+  GestureEventPayload,
+  GestureType,
 } from "./types";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -337,16 +339,88 @@ function handleBeagleBoardWSCommand(client: ExtendedWebSocket, payload: any) {
   }
 }
 
-// Handle BeagleBoard gesture messages
+// Parse a BeagleBoard gesture command
+function parseBeagleBoardGesture(message: string): GestureEventPayload | null {
+  try {
+    // Expected format: "GESTURE|<deviceId>|<gesture>|<confidence>|<cardId>"
+    const parts = message.split("|");
+    if (parts.length < 4 || parts[0] !== "GESTURE") {
+      return null;
+    }
+
+    const deviceId = parts[1];
+    const gestureType = parts[2] as GestureType;
+    const confidence = parseFloat(parts[3]);
+    const cardId = parts.length > 4 ? parts[4] : undefined;
+
+    // Get the BeagleBoard client info
+    const beagleBoard = Array.from(beagleBoards.values()).find(
+      (bb) => bb.deviceId === deviceId
+    );
+
+    if (!beagleBoard) {
+      console.error(
+        `[webSocketManager.ts] BeagleBoard with ID ${deviceId} not found`
+      );
+      return null;
+    }
+
+    // Need to know which room the device is in
+    if (!beagleBoard.roomId) {
+      console.error(
+        `[webSocketManager.ts] BeagleBoard ${deviceId} is not in a room`
+      );
+      return null;
+    }
+
+    // Get the current round number from the room
+    let roundNumber: number | undefined;
+    if (rooms.has(beagleBoard.roomId)) {
+      const room = rooms.get(beagleBoard.roomId)!;
+      if (room.gameState) {
+        roundNumber = room.gameState.roundNumber;
+      }
+    }
+
+    const gesture: GestureEventPayload = {
+      playerId: deviceId,
+      gesture: gestureType,
+      confidence: confidence,
+      cardId,
+      roomId: beagleBoard.roomId,
+      roundNumber,
+    };
+
+    return gesture;
+  } catch (error) {
+    console.error(
+      `[webSocketManager.ts] Error parsing BeagleBoard gesture:`,
+      error
+    );
+    return null;
+  }
+}
+
+// Handle BeagleBoard gesture message
 function handleBeagleBoardGesture(client: ExtendedWebSocket, message: string) {
   try {
-    const gestureResult = parseGestureMessage(message);
-    if (!gestureResult) return;
+    const gesture = parseBeagleBoardGesture(message);
+    if (!gesture) {
+      console.error(
+        `[webSocketManager.ts] Invalid gesture message format: ${message}`
+      );
+      return;
+    }
 
-    const { deviceId, roomId, gestureData } = gestureResult;
-    handleGestureData(deviceId, roomId, gestureData);
+    console.log(`[webSocketManager.ts] Parsed BeagleBoard gesture:`, gesture);
+
+    // Process the gesture as a game event
+    handleGestureEvent(client, gesture);
   } catch (error) {
-    console.error("Error handling BeagleBoard gesture:", error);
+    console.error(
+      `[webSocketManager.ts] Error handling BeagleBoard gesture:`,
+      error
+    );
   }
 }
 
@@ -688,195 +762,53 @@ function setBeagleBoardReady(
   }
 }
 
-// Handle gesture data from Beagle board
+// Helper function to handle gesture processing with extra details
 function handleGestureData(
   deviceId: string,
   roomId: string,
-  gestureData: string
+  gestureData: string,
+  confidence: number,
+  cardId?: string
 ) {
   try {
-    console.log(`Raw gesture data received: ${gestureData}`);
-
-    // Parse the gesture data - handle potential JSON parsing issues
-    let gestureJson;
-    try {
-      // Try to parse as JSON
-      gestureJson = JSON.parse(gestureData);
-      console.log("Successfully parsed gesture data as JSON:", gestureJson);
-    } catch (parseError) {
-      // If it's not valid JSON, try to extract gesture information
-      console.warn(`Error parsing gesture data as JSON: ${parseError}`);
-      console.warn(`Raw gesture data: ${gestureData}`);
-
-      // Try to extract the gesture type from the string
-      if (gestureData.includes("defend")) {
-        gestureJson = { gesture: "defend", confidence: 0.95 };
-      } else if (gestureData.includes("attack")) {
-        gestureJson = { gesture: "attack", confidence: 0.95 };
-      } else if (gestureData.includes("build")) {
-        gestureJson = { gesture: "build", confidence: 0.95 };
-      } else {
-        // Default to unknown if we can't determine the gesture
-        gestureJson = { gesture: "unknown", confidence: 0.5 };
-      }
-
-      console.log("Fallback parsed gesture:", gestureJson);
-    }
-
-    // Ensure a room exists with this ID
-    if (!rooms.has(roomId)) {
-      console.error(
-        `Room ${roomId} not found for gesture from device ${deviceId}`
-      );
-      return;
-    }
-
-    // Find the player ID associated with this device in the room
-    const room = rooms.get(roomId)!;
-    const board = beagleBoards.get(deviceId);
-
-    if (!board || !board.playerName) {
-      console.error(
-        `Device ${deviceId} not properly registered with a player name`
-      );
-      return;
-    }
-
-    // Find the player in the room
-    const player = room.players.find((p) => p.name === board.playerName);
-    if (!player) {
-      console.error(`Player ${board.playerName} not found in room ${roomId}`);
-      return;
-    }
-
-    // Determine the gesture type
-    let gestureType: string;
-    let cardId: string | undefined;
-
-    // Handle game-specific gestures for our tower defense game
-    if (typeof gestureJson === "string") {
-      // Simple string format (e.g., "basic attack", "basic defend", "basic build")
-      gestureType = gestureJson.includes("attack")
-        ? "attack"
-        : gestureJson.includes("defend")
-        ? "defend"
-        : gestureJson.includes("build")
-        ? "build"
-        : "unknown";
-    } else {
-      // JSON object format with gesture field
-      gestureType = gestureJson.gesture || "unknown";
-      // If there's a cardId in the data, use it
-      cardId = gestureJson.cardId;
-    }
-
-    console.log(
-      `Parsed gesture: ${gestureType} from device ${deviceId} for player ${player.name}`
+    // Find the BeagleBoard client
+    const beagleBoard = Array.from(beagleBoards.values()).find(
+      (bb) => bb.deviceId === deviceId && bb.roomId === roomId
     );
 
-    // If the room has player cards, find a matching card to use
-    if (room.playerCards && room.playerCards.has(player.id) && !cardId) {
-      const playerCards = room.playerCards.get(player.id);
-      if (playerCards) {
-        // Find the first card that matches the gesture type
-        const matchingCard = playerCards.cards.find(
-          (card) => card.type === gestureType
-        );
-        if (matchingCard) {
-          cardId = matchingCard.id;
-          console.log(
-            `Found matching card ${cardId} of type ${gestureType} for player ${player.id}`
-          );
-        }
+    // If device is not registered, we can't process its gesture
+    if (!beagleBoard || !beagleBoard.client) {
+      console.error(
+        `[webSocketManager.ts] Cannot process gesture - BeagleBoard ${deviceId} not found or not connected`
+      );
+      return;
+    }
+
+    // Get the round number from the room if available
+    let roundNumber: number | undefined;
+    if (rooms.has(roomId)) {
+      const room = rooms.get(roomId)!;
+      if (room.gameState) {
+        roundNumber = room.gameState.roundNumber;
       }
     }
 
-    // Create gesture event payload
-    const payload = {
-      playerId: player.id,
-      gesture: gestureType,
-      confidence: gestureJson.confidence || 1.0,
+    // Create a gesture event payload
+    const gestureEvent: GestureEventPayload = {
+      playerId: deviceId,
+      gesture: gestureData as GestureType,
+      confidence,
       cardId,
+      roomId,
+      roundNumber,
     };
 
-    console.log(`Broadcasting gesture event to room ${roomId}:`, payload);
-
-    // Send the gesture event to all clients in the room
-    sendToRoom(roomId, "gesture_event", payload);
-
-    // Process the action in the game manager if we have a valid action type
-    if (
-      gestureType === "attack" ||
-      gestureType === "defend" ||
-      gestureType === "build"
-    ) {
-      processAction(roomId, player.id, gestureType as GameActionType);
-    }
-
-    // If this is a game action and we have found a matching card
-    if (
-      (gestureType === "attack" ||
-        gestureType === "defend" ||
-        gestureType === "build") &&
-      cardId &&
-      room.playerCards &&
-      room.playerCards.has(player.id)
-    ) {
-      const playerCards = room.playerCards.get(player.id)!;
-
-      // Find the card in the player's hand
-      const cardIndex = playerCards.cards.findIndex(
-        (card) => card.id === cardId
-      );
-      if (cardIndex !== -1) {
-        // Remove the used card
-        const usedCard = playerCards.cards.splice(cardIndex, 1)[0];
-        console.log(
-          `Player ${player.id} used card ${usedCard.name} (${usedCard.id})`
-        );
-
-        // Draw a new card - use basic types only
-        const newCard = {
-          id: `card-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          type: ["attack", "defend", "build"][
-            Math.floor(Math.random() * 3)
-          ] as GameActionType,
-          name: `Basic ${
-            ["Attack", "Defend", "Build"][Math.floor(Math.random() * 3)]
-          }`,
-          description: `A basic card for ${player.name}`,
-        };
-
-        // Add the new card to the player's hand
-        playerCards.cards.push(newCard);
-        console.log(
-          `Player ${player.id} drew new card ${newCard.name} (${newCard.id}) - sending updated cards to player`
-        );
-
-        // Send the updated cards to the player
-        if (board.client) {
-          board.client.send(
-            JSON.stringify({
-              event: "beagle_board_command",
-              payload: {
-                command: "CARDS",
-                cards: playerCards.cards,
-              },
-            })
-          );
-        }
-      }
-    }
-
-    console.log(
-      `Processed gesture ${gestureType} from device ${deviceId} in room ${roomId}`
-    );
+    // Process the gesture through the room manager
+    handleGestureEvent(beagleBoard.client, gestureEvent);
   } catch (error) {
     console.error(
-      "Error handling gesture data:",
-      error,
-      "Raw data:",
-      gestureData
+      `[webSocketManager.ts] Error processing gesture data:`,
+      error
     );
   }
 }
@@ -910,62 +842,6 @@ function parseBeagleBoardCommand(message: string): {
     return { command, deviceId, params };
   } catch (error) {
     console.error("Error parsing Beagle board command:", error);
-    return null;
-  }
-}
-
-// Helper function to parse gesture messages from Beagle boards
-function parseGestureMessage(
-  message: string
-): { deviceId: string; roomId: string; gestureData: string } | null {
-  try {
-    // Handle legacy format
-    if (message.startsWith("GESTURE|")) {
-      const parts = message.split("|");
-      if (parts.length < 3) {
-        console.error("Invalid legacy gesture message format:", message);
-        return null;
-      }
-
-      const deviceIdPart = parts[1].split(":");
-      const deviceId = deviceIdPart[1];
-
-      const roomIdPart = parts[2].split(":");
-      const roomId = roomIdPart[1];
-
-      // Extract the gesture data (everything after the third pipe)
-      const gestureData = parts.slice(3).join("|");
-
-      console.log(
-        `Parsed legacy gesture message: deviceId=${deviceId}, roomId=${roomId}, gestureData=${gestureData}`
-      );
-      return { deviceId, roomId, gestureData };
-    }
-
-    // Try to parse as JSON (this would be a fallback, but we're shifting to JSON format)
-    try {
-      const jsonMessage = JSON.parse(message);
-      if (jsonMessage.event === "gesture_event" && jsonMessage.payload) {
-        const { roomId, playerId } = jsonMessage.payload;
-        if (roomId && playerId) {
-          // Extract gesture data
-          const { gesture, confidence } = jsonMessage.payload;
-          const gestureData = JSON.stringify({ gesture, confidence });
-
-          console.log(
-            `Parsed JSON gesture message: playerId=${playerId}, roomId=${roomId}, gesture=${gesture}`
-          );
-          return { deviceId: playerId, roomId, gestureData };
-        }
-      }
-    } catch (jsonError) {
-      console.error("Error parsing gesture message as JSON:", jsonError);
-    }
-
-    console.error("Unrecognized gesture message format:", message);
-    return null;
-  } catch (error) {
-    console.error("Error parsing gesture message:", error);
     return null;
   }
 }

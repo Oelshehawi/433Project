@@ -2,31 +2,28 @@
 
 #include <string>
 #include "WebSocketClient.h"
-#include "RoomManager.h"
 #include <nlohmann/json.hpp>
-
-// Forward declarations
-class RoomManager;
 
 // For convenience
 using json = nlohmann::json;
 
 class GestureEventSender {
 private:
-    RoomManager* roomManager;
-    std::string deviceId;
-    std::string currentRoomId;
+    WebSocketClient* client;
 
 public:
-    GestureEventSender(RoomManager* roomManager, const std::string& deviceId, const std::string& roomId);
+    GestureEventSender(WebSocketClient* client);
     ~GestureEventSender();
     
-    // Update room ID
-    void setCurrentRoomId(const std::string& roomId);
-    
     // Send a gesture event to the server
-    bool sendGesture(const std::string& gestureType, float confidence, const std::string& cardId = "");
+    bool sendGestureEvent(
+        const std::string& roomId,
+        const std::string& playerId,
+        const std::string& gesture,
+        float confidence,
+        const std::string& cardId = ""
+    );
     
-    // Create a gesture payload
-    json createGesturePayload(const std::string& gestureType, float confidence, const std::string& cardId = "");
+    // Set client
+    void setClient(WebSocketClient* client);
 }; 

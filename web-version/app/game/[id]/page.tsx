@@ -7,6 +7,7 @@ import {
   initializeSocket,
   getSocketStatus,
   sendWebSocketMessage,
+  signalNextRoundReady,
 } from "../../lib/websocket";
 import { getSavedRoomInfo } from "../../components/room/RoomHelpers";
 
@@ -37,6 +38,10 @@ export default function GamePage() {
   const [textAnimationComplete, setTextAnimationComplete] = useState(false);
   const [rulesAnimationComplete, setRulesAnimationComplete] = useState(false);
   const [animationComplete, setAnimationComplete] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false); // Track if animations are in progress
+  const [moveAnimations, setMoveAnimations] = useState<
+    Array<{ playerId: string; gesture: string }>
+  >([]);
 
   // Game state for gameplay
   const [player1ShieldActive, setPlayer1ShieldActive] = useState(false);
@@ -67,6 +72,37 @@ export default function GamePage() {
   // Add state for round end message
   const [roundEndMessage, setRoundEndMessage] = useState<string>("");
 
+  // Add state for event log display
+  const [eventLogs, setEventLogs] = useState<string[]>([]);
+  const maxEventLogs = 10; // Increased from 5 to show more logs
+
+  // Add animation states for round transitions
+  const [isRoundTransitioning, setIsRoundTransitioning] = useState(false);
+  const [pendingRoundNumber, setPendingRoundNumber] = useState<number | null>(
+    null
+  );
+
+  // Enhanced function to add an event log with timestamp and source
+  const addEventLog = (message: string, source: string = "UI") => {
+    const now = new Date();
+    const timestamp = `${now.getHours().toString().padStart(2, "0")}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, "0")}:${now.getSeconds().toString().padStart(2, "0")}`;
+
+    setEventLogs((prev) => {
+      const formattedMessage = `${timestamp} [${source}] ${message}`;
+      const newLogs = [formattedMessage, ...prev.slice(0, maxEventLogs - 1)];
+      return newLogs;
+    });
+  };
+
+  // Function to clear all event logs
+  const clearEventLogs = () => {
+    setEventLogs([]);
+    addEventLog("Logs cleared", "UI");
+  };
+
   // Initialize WebSocket connection
   useEffect(() => {
     const socket = initializeSocket();
@@ -75,11 +111,13 @@ export default function GamePage() {
     // Check if socket is already connected
     if (getSocketStatus() === "connected") {
       setSocketConnected(true);
+      addEventLog("WebSocket connected", "WebSocket");
     } else {
       // Set up event listener for socket connection
       const handleSocketConnected = () => {
         console.log("WebSocket connected in game page");
         setSocketConnected(true);
+        addEventLog("WebSocket connected", "WebSocket");
       };
 
       window.addEventListener("ws_connected", handleSocketConnected);
@@ -138,6 +176,7 @@ export default function GamePage() {
         // Signal to the server that we're ready to start the game
         if (roomId && socketConnected) {
           console.log("Sending game_ready signal to server");
+          addEventLog("Sent: game_ready", "WebSocket");
 
           // Use the existing WebSocket connection through the helper function
           sendWebSocketMessage({
@@ -155,16 +194,92 @@ export default function GamePage() {
     socketConnected,
   ]);
 
+  // Update useEffect to handle round transitions and signal readiness
+  useEffect(() => {
+    // Only process if we have a pending round and are not already transitioning
+    if (
+      pendingRoundNumber !== null &&
+      !isRoundTransitioning &&
+      roomId &&
+      socketConnected
+    ) {
+      // Set transitioning state
+      setIsRoundTransitioning(true);
+
+      console.log(
+        `[page.tsx] Starting transition animation for round ${pendingRoundNumber}`
+      );
+      addEventLog(
+        `Starting transition to round ${pendingRoundNumber}`,
+        "Animation"
+      );
+
+      // Wait for animations to complete, then signal ready
+      setTimeout(() => {
+        console.log(
+          `[page.tsx] Animation complete, signaling ready for round ${pendingRoundNumber}`
+        );
+        addEventLog(
+          `Animations complete, ready for round ${pendingRoundNumber}`,
+          "Animation"
+        );
+
+        // Signal to server we're ready for the next round
+        signalNextRoundReady(roomId, pendingRoundNumber);
+
+        // Reset states
+        setPendingRoundNumber(null);
+        setIsRoundTransitioning(false);
+      }, 3000); // Animation duration - adjust as needed
+    }
+  }, [pendingRoundNumber, isRoundTransitioning, roomId, socketConnected]);
+
   // Add event listeners for tower game events
   useEffect(() => {
     if (socketConnected) {
-      // Round start event handler (replaces turn_start)
+      // Round start event handler
       const handleRoundStart = (event: CustomEvent) => {
         const data = event.detail;
         if (data.roomId === roomId) {
           // Update round number
           setCurrentRound(data.roundNumber || 1);
           setRoundTimeRemaining(Math.floor(data.remainingTime / 1000) || 30);
+
+          // Log the event with basic info
+          addEventLog(
+            `Received: round_start (${data.roundNumber})`,
+            "GameState"
+          );
+
+          // Log card information if available
+          if (data.gameState && data.gameState.playerCards) {
+            // Count cards by type
+            const cardCounts: { [key: string]: number } = {};
+            let totalCards = 0;
+
+            Object.entries(data.gameState.playerCards).forEach(
+              ([playerId, cards]) => {
+                if (Array.isArray(cards)) {
+                  totalCards += cards.length;
+                  cards.forEach((card: any) => {
+                    if (card.type) {
+                      cardCounts[card.type] = (cardCounts[card.type] || 0) + 1;
+                    }
+                  });
+                }
+              }
+            );
+
+            if (totalCards > 0) {
+              const cardInfo = Object.entries(cardCounts)
+                .map(([type, count]) => `${type}:${count}`)
+                .join(", ");
+              addEventLog(
+                `Cards received: ${totalCards} (${cardInfo})`,
+                "GameState"
+              );
+            }
+          }
 
           // Start countdown timer
           if (roundTimer) clearInterval(roundTimer);
@@ -242,11 +357,14 @@ export default function GamePage() {
         }
       };
 
-      // Round end event handler (replaces turn_end)
+      // Round end event handler
       const handleRoundEnd = (event: CustomEvent) => {
         const data = event.detail;
         if (data.roomId === roomId) {
-          console.log(`Round ${data.roundNumber} ended`);
+          console.log(`[page.tsx] Round ${data.roundNumber} ended`);
+
+          // Log the event
+          addEventLog(`Received: round_end (${data.roundNumber})`, "GameState");
 
           // Clear the round timer
           if (roundTimer) {
@@ -273,7 +391,7 @@ export default function GamePage() {
                 setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
                 setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
                 console.log(
-                  `End of round tower heights - Player 1: ${
+                  `[page.tsx] End of round tower heights - Player 1: ${
                     gameState.towerHeights[player1Id] || 0
                   }, Player 2: ${gameState.towerHeights[player2Id] || 0}`
                 );
@@ -287,7 +405,7 @@ export default function GamePage() {
                   gameState.towerHeights[virtualOpponentId] || 0
                 );
                 console.log(
-                  `End of round tower heights - Player 1: ${
+                  `[page.tsx] End of round tower heights - Player 1: ${
                     gameState.towerHeights[player1Id] || 0
                   }, Virtual Opponent: ${
                     gameState.towerHeights[virtualOpponentId] || 0
@@ -326,48 +444,38 @@ export default function GamePage() {
             }
           }
 
-          // Display round end message temporarily
+          // Start animation sequence for round end
+          setIsAnimating(true);
+
+          // Display round end message
           setRoundEndMessage(`Round ${data.roundNumber} Complete`);
 
-          // Clear the message after 3 seconds
+          // After basic animations finish, check if we should transition to next round
           setTimeout(() => {
             setRoundEndMessage("");
+            setIsAnimating(false);
+
+            // If the game should continue to the next round
+            if (data.shouldContinue) {
+              const nextRoundNumber = data.roundNumber + 1;
+              console.log(
+                `[page.tsx] Preparing transition to round ${nextRoundNumber}`
+              );
+
+              // Set the pending round number to trigger the transition effect
+              setPendingRoundNumber(nextRoundNumber);
+            }
           }, 3000);
         }
-      };
-
-      // Keep existing handlers for turn_start and turn_end for backward compatibility
-      const handleTurnStart = (event: CustomEvent) => {
-        const data = event.detail;
-        if (data.roomId === roomId) {
-          // Just use the timing information without setting current turn
-          setRoundTimeRemaining(Math.floor(data.remainingTime / 1000) || 30);
-
-          // Start countdown timer
-          if (roundTimer) clearInterval(roundTimer);
-          const timer = setInterval(() => {
-            setRoundTimeRemaining((prev) => {
-              if (prev <= 1) {
-                clearInterval(timer);
-                return 0;
-              }
-              return prev - 1;
-            });
-          }, 1000);
-
-          setRoundTimer(timer);
-        }
-      };
-
-      const handleTurnEnd = (event: CustomEvent) => {
-        // Just use for compatibility, round_end is the main event now
-        console.log("Received turn_end event (deprecated)");
       };
 
       // Game state update handler - for getting the latest game state changes
       const handleGameStateUpdate = (event: CustomEvent) => {
         const data = event.detail;
         if (data.roomId === roomId && data.gameState) {
+          // Log the event
+          addEventLog(`Received: game_state_update`, "GameState");
+
           const gameState = data.gameState;
 
           // Update the round number if available
@@ -388,6 +496,14 @@ export default function GamePage() {
 
             setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
             setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
+
+            // Log tower height updates
+            addEventLog(
+              `Tower heights: ${player1Name}=${
+                gameState.towerHeights[player1Id] || 0
+              }, ${player2Name}=${gameState.towerHeights[player2Id] || 0}`,
+              "GameState"
+            );
           } else if (
             gameState.towerHeights &&
             beagleBoardPlayers.length === 1
@@ -399,6 +515,14 @@ export default function GamePage() {
             setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
             setPlayer2TowerHeight(
               gameState.towerHeights[virtualOpponentId] || 0
+            );
+
+            // Log tower height updates for single player
+            addEventLog(
+              `Tower heights: ${player1Name}=${
+                gameState.towerHeights[player1Id] || 0
+              }, AI=${gameState.towerHeights[virtualOpponentId] || 0}`,
+              "GameState"
             );
           }
 
@@ -444,6 +568,9 @@ export default function GamePage() {
           setGameEnded(true);
           setWinner(data.winnerId);
 
+          // Log the event
+          addEventLog(`Received: game_ended`, "GameState");
+
           // Clear any existing timer
           if (roundTimer) clearInterval(roundTimer);
 
@@ -472,9 +599,35 @@ export default function GamePage() {
       // Gesture event handler to update UI
       const handleGestureEvent = (event: CustomEvent) => {
         const data = event.detail;
-        // Update UI based on the gesture
+        // Update UI based on the gesture and log the event
+        addEventLog(
+          `Received: gesture_event (${data.gesture})`,
+          "GestureDetector"
+        );
+
+        // Add to animations queue to track pending animations
+        setMoveAnimations((prev) => [
+          ...prev,
+          {
+            playerId: data.playerId,
+            gesture: data.gesture,
+          },
+        ]);
+
+        // Log additional details about the gesture
+        if (data.confidence) {
+          addEventLog(
+            `Gesture confidence: ${(data.confidence * 100).toFixed(1)}%`,
+            "GestureDetector"
+          );
+        }
+
+        if (data.cardId) {
+          addEventLog(`Card ID: ${data.cardId}`, "GestureDetector");
+        }
+
         console.log(
-          "Gesture received:",
+          "[page.tsx] Gesture received:",
           data.gesture,
           "from player:",
           data.playerId,
@@ -503,7 +656,7 @@ export default function GamePage() {
             data.cardId ? " card" : ""
           }!`;
 
-          console.log(`GESTURE UI UPDATE: ${message}`);
+          console.log(`[page.tsx] GESTURE UI UPDATE: ${message}`);
 
           if (data.playerId === player1Id) {
             setPlayer1CardPlayed(message);
@@ -511,15 +664,15 @@ export default function GamePage() {
             // Update game state based on gesture
             if (data.gesture === "attack") {
               // Show attack visual
-              console.log("Player 1 performed attack");
+              console.log("[page.tsx] Player 1 performed attack");
             } else if (data.gesture === "defend") {
               // Activate shield
               setPlayer1ShieldActive(true);
-              console.log("Player 1 activated shield");
+              console.log("[page.tsx] Player 1 activated shield");
             } else if (data.gesture === "build") {
               // Add block
               addPlayer1Block();
-              console.log("Player 1 added block");
+              console.log("[page.tsx] Player 1 added block");
             }
           } else if (data.playerId === player2Id) {
             setPlayer2CardPlayed(message);
@@ -527,15 +680,15 @@ export default function GamePage() {
             // Update game state based on gesture
             if (data.gesture === "attack") {
               // Show attack visual
-              console.log("Player 2 performed attack");
+              console.log("[page.tsx] Player 2 performed attack");
             } else if (data.gesture === "defend") {
               // Activate shield
               setPlayer2ShieldActive(true);
-              console.log("Player 2 activated shield");
+              console.log("[page.tsx] Player 2 activated shield");
             } else if (data.gesture === "build") {
               // Add block
               addPlayer2Block();
-              console.log("Player 2 added block");
+              console.log("[page.tsx] Player 2 added block");
             }
           }
 
@@ -555,6 +708,17 @@ export default function GamePage() {
                 setPlayer2ShieldActive(false);
               }
             }
+
+            // Remove this animation from the queue
+            setMoveAnimations((prev) =>
+              prev.filter(
+                (anim) =>
+                  !(
+                    anim.playerId === data.playerId &&
+                    anim.gesture === data.gesture
+                  )
+              )
+            );
           }, 5000);
 
           setCardPlayedTimer(timer);
@@ -562,18 +726,25 @@ export default function GamePage() {
           // Play an appropriate sound for the gesture
           try {
             const audio = new Audio(`/sounds/${data.gesture}.mp3`);
-            audio.play().catch((e) => console.error("Error playing sound:", e));
+            audio
+              .play()
+              .catch((e) =>
+                console.error("[page.tsx] Error playing sound:", e)
+              );
           } catch (e) {
-            console.warn("Could not play gesture sound", e);
+            console.warn("[page.tsx] Could not play gesture sound", e);
           }
         }
+      };
+
+      // Add an event handler for game_starting
+      const handleGameStarting = (event: CustomEvent) => {
+        addEventLog(`Received: game_starting`, "GameState");
       };
 
       // Add event listeners
       window.addEventListener("round_start", handleRoundStart as EventListener);
       window.addEventListener("round_end", handleRoundEnd as EventListener);
-      window.addEventListener("turn_start", handleTurnStart as EventListener);
-      window.addEventListener("turn_end", handleTurnEnd as EventListener);
       window.addEventListener("game_ended", handleGameEnded as EventListener);
       window.addEventListener(
         "gesture_event",
@@ -582,6 +753,10 @@ export default function GamePage() {
       window.addEventListener(
         "game_state_update",
         handleGameStateUpdate as EventListener
+      );
+      window.addEventListener(
+        "game_starting",
+        handleGameStarting as EventListener
       );
 
       // Cleanup on unmount
@@ -595,11 +770,6 @@ export default function GamePage() {
           handleRoundEnd as EventListener
         );
         window.removeEventListener(
-          "turn_start",
-          handleTurnStart as EventListener
-        );
-        window.removeEventListener("turn_end", handleTurnEnd as EventListener);
-        window.removeEventListener(
           "game_ended",
           handleGameEnded as EventListener
         );
@@ -611,11 +781,22 @@ export default function GamePage() {
           "game_state_update",
           handleGameStateUpdate as EventListener
         );
+        window.removeEventListener(
+          "game_starting",
+          handleGameStarting as EventListener
+        );
 
         if (roundTimer) clearInterval(roundTimer);
       };
     }
-  }, [socketConnected, roomId, currentRoom, roundTimer]);
+  }, [
+    socketConnected,
+    roomId,
+    currentRoom,
+    roundTimer,
+    player1Name,
+    player2Name,
+  ]);
 
   // Clean up timer on unmount
   useEffect(() => {
@@ -725,6 +906,44 @@ export default function GamePage() {
             <div className="absolute top-4 left-0 right-0 text-center">
               <div className="bg-gray-800/80 text-white px-4 py-2 rounded-md inline-block">
                 {gameEnded ? getGameEndedDisplay() : getRoundDisplay()}
+              </div>
+            </div>
+
+            {/* Event Log Display */}
+            <div className="absolute top-16 left-0 right-0 text-center">
+              <div className="bg-gray-900/70 text-white px-4 py-2 rounded-md inline-block max-w-[600px] w-full mx-auto">
+                <div className="text-sm font-mono text-left max-h-[180px] overflow-y-auto">
+                  <div className="text-xs text-gray-400 mb-1 border-b border-gray-700 pb-1 flex justify-between items-center">
+                    <span>Debug Logs</span>
+                    <button
+                      onClick={clearEventLogs}
+                      className="text-xs text-gray-400 hover:text-white"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {eventLogs.map((log, index) => {
+                    // Extract source from log if possible
+                    const sourceMatch = log.match(/\[(.*?)\]/);
+                    const source = sourceMatch ? sourceMatch[1] : "UI";
+
+                    // Determine color based on source
+                    let textColor = "text-white";
+                    if (source === "GameState") textColor = "text-green-400";
+                    if (source === "GestureDetector")
+                      textColor = "text-blue-400";
+                    if (source === "WebSocket") textColor = "text-purple-400";
+
+                    return (
+                      <div
+                        key={index}
+                        className={`whitespace-nowrap ${textColor} text-xs`}
+                      >
+                        {log}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 

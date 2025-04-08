@@ -19,16 +19,13 @@ MessageHandler::~MessageHandler() {
 }
 
 void MessageHandler::handleMessage(const std::string& message) {
-    try {
-        std::cout << "[MessageHandler.cpp] Received message to handle" << std::endl;
-        
+    try {        
         // Parse message as JSON
         json j = json::parse(message);
         
         // Route to appropriate handler based on event type
         if (j.contains("event")) {
             std::string eventType = j["event"];
-            std::cout << "[MessageHandler.cpp] Handling event type: " << eventType << std::endl;
             
             if (eventType == "room_list") {
                 if (j.contains("payload")) {
@@ -41,11 +38,8 @@ void MessageHandler::handleMessage(const std::string& message) {
                 }
             }
             else if (eventType == "round_start") {
-                std::cout << "[MessageHandler.cpp] Got a round_start event!" << std::endl;
                 if (j.contains("payload")) {
                     handleRoundStart(j["payload"]);
-                } else {
-                    std::cout << "[MessageHandler.cpp] WARNING: round_start event has no payload!" << std::endl;
                 }
             }
             else if (eventType == "round_end") {
@@ -85,7 +79,6 @@ void MessageHandler::handleMessage(const std::string& message) {
             }
             else {
                 // For unimplemented handlers, just forward to the RoomManager's handler
-                // This is a temporary bridge until we fully implement all handlers
                 roomManager->handleMessage(message);
                 return;
             }
@@ -95,67 +88,23 @@ void MessageHandler::handleMessage(const std::string& message) {
         roomManager->resetLoadingState();
         
     } catch (const json::parse_error& e) {
-        std::cerr << "MessageHandler: Error parsing JSON message: " << e.what() << std::endl;
         // Simply log error and reset loading state
         roomManager->resetLoadingState();
     }
 }
 
 void MessageHandler::handleRoundStart(const json& payload) {
-    std::cout << "\n[MessageHandler.cpp] =========== ROUND START EVENT BEING PROCESSED ===========\n" << std::endl;
-    std::cout << "[MessageHandler.cpp] Full payload: " << payload.dump(2) << std::endl;
-    
-    // Check if cards are included in the round_start event (new format)
-    if (payload.contains("playerCards") && payload["playerCards"].is_object()) {
-        std::cout << "[MessageHandler.cpp] Round start event includes cards data (new format)" << std::endl;
-        
-        // Get our device ID
-        std::string ourDeviceId = roomManager ? roomManager->getDeviceId() : "unknown";
-        std::cout << "[MessageHandler.cpp] Our device ID: " << ourDeviceId << std::endl;
-        
-        // Check if our device ID is in the playerCards object
-        if (payload["playerCards"].contains(ourDeviceId)) {
-            std::cout << "[MessageHandler.cpp] Found our cards in the payload!" << std::endl;
-            std::cout << "[MessageHandler.cpp] Card count: " << payload["playerCards"][ourDeviceId].size() << std::endl;
-            
-            // Print first card details if available
-            if (payload["playerCards"][ourDeviceId].size() > 0) {
-                auto& firstCard = payload["playerCards"][ourDeviceId][0];
-                std::cout << "[MessageHandler.cpp] First card type: " << firstCard.value("type", "unknown") << std::endl;
-            }
-        } else {
-            std::cout << "[MessageHandler.cpp] WARNING: Our device ID not found in playerCards!" << std::endl;
-            std::cout << "[MessageHandler.cpp] Available player IDs: ";
-            for (auto& [playerId, cards] : payload["playerCards"].items()) {
-                std::cout << playerId << " ";
-            }
-            std::cout << std::endl;
-        }
-    } else {
-        std::cout << "[MessageHandler.cpp] Round start event does NOT include cards data!" << std::endl;
-    }
-    
     // Let GameState handle timer and round info (including cards processing if present)
     if (gameState) {
-        std::cout << "[MessageHandler.cpp] Calling gameState->updateTimerFromEvent()" << std::endl;
         gameState->updateTimerFromEvent(payload);
-        std::cout << "[MessageHandler.cpp] Returned from gameState->updateTimerFromEvent()" << std::endl;
     }
-    else {
-        std::cerr << "[MessageHandler.cpp] ERROR: GameState not available for round start event" << std::endl;
-    }
-    
-    std::cout << "\n[MessageHandler.cpp] =========== ROUND START PROCESSING COMPLETE ===========\n" << std::endl;
 }
 
 void MessageHandler::handleRoundEnd(const json& payload) {
-    std::cout << "[MessageHandler.cpp] ========== ROUND END EVENT RECEIVED ==========" << std::endl;
-    
     // Extract round number
     int roundNumber = gameState ? gameState->getCurrentRoundNumber() : 1;
     if (payload.contains("roundNumber")) {
         roundNumber = payload["roundNumber"];
-        std::cout << "[MessageHandler.cpp] Round " << roundNumber << " has ended" << std::endl;
     }
     
     // Check for round results
@@ -164,20 +113,10 @@ void MessageHandler::handleRoundEnd(const json& payload) {
     if (payload.contains("roundWinner")) {
         winnerId = payload["roundWinner"];
         isWinner = (winnerId == roomManager->getDeviceId());
-        std::cout << "[MessageHandler.cpp] Round winner: " << winnerId << (isWinner ? " (YOU!)" : "") << std::endl;
-    }
-    
-    // Get game state from payload if available
-    if (payload.contains("gameState")) {
-        const json& gameStateData = payload["gameState"];
-        std::cout << "[MessageHandler.cpp] Received game state update in round_end event" << std::endl;
-        
-        // Process tower heights, etc. if needed here
     }
     
     // Stop gesture detection if it's running
     if (roomManager && roomManager->gestureDetector && roomManager->gestureDetector->isRunning()) {
-        std::cout << "[MessageHandler.cpp] Stopping gesture detection as round has ended" << std::endl;
         roomManager->gestureDetector->stop();
     }
     
@@ -185,10 +124,6 @@ void MessageHandler::handleRoundEnd(const json& payload) {
     if (roomManager->displayManager) {
         roomManager->displayManager->displayRoundEnd(roundNumber, isWinner);
     }
-    
-    // Wait for next round to start - no need to send round_end_ack here as it's already handled
-    // in GameState after gesture is sent
-    std::cout << "[MessageHandler.cpp] Waiting for next round to start..." << std::endl;
 }
 
 void MessageHandler::handleGestureEvent(const json& payload) {
@@ -196,16 +131,10 @@ void MessageHandler::handleGestureEvent(const json& payload) {
     if (payload.contains("playerId") && payload.contains("gesture")) {
         std::string playerId = payload["playerId"];
         std::string gesture = payload["gesture"];
-        
-        // Log gesture event
-        std::cout << "Gesture event: " << gesture << " from player " << playerId 
-                  << (playerId == roomManager->getDeviceId() ? " (YOU)" : "") << std::endl;
     }
 }
 
 void MessageHandler::handleGameStarting(const json& payload) {
-    std::cout << "Game is starting soon..." << std::endl;
-    
     // Use DisplayManager to show countdown
     if (roomManager->displayManager) {
         roomManager->displayManager->displayGameStarting();
@@ -213,8 +142,6 @@ void MessageHandler::handleGameStarting(const json& payload) {
 }
 
 void MessageHandler::handleGameStarted(const json& payload) {
-    std::cout << "Game has started!" << std::endl;
-    
     // Update game state
     if (roomManager) {
         roomManager->gameInProgress = true;
@@ -247,7 +174,6 @@ void MessageHandler::handleGameEnded(const json& payload) {
 void MessageHandler::handleBeagleBoardCommand(const json& payload) {
     if (payload.contains("command")) {
         std::string command = payload["command"];
-        std::cout << "[MessageHandler.cpp] BEAGLEBOARD COMMAND RECEIVED: " << command << std::endl;
         
         // Check if the message is targeted for this specific BeagleBoard
         if (payload.contains("targetPlayerId")) {
@@ -255,38 +181,16 @@ void MessageHandler::handleBeagleBoardCommand(const json& payload) {
             
             // If this message is not for us, ignore it
             if (targetPlayerId != roomManager->getDeviceId()) {
-                std::cout << "[MessageHandler.cpp] Ignoring command targeted for another player: " << targetPlayerId << std::endl;
                 return;
             }
-            
-            std::cout << "[MessageHandler.cpp] Processing targeted command for this device" << std::endl;
         }
         
         // Handle CARDS command - display cards on LCD
         if (command == "CARDS" && payload.contains("cards")) {
-            // Print a clear dividing line to make logs easier to read
-            std::cout << "\n===========================================" << std::endl;
-            std::cout << "BEAGLEBOARD COMMAND RECEIVED: CARDS UPDATE" << std::endl;
-            if (payload.contains("targetPlayerId")) {
-                std::cout << "Target Player ID: \"" << payload["targetPlayerId"].get<std::string>() << "\"" << std::endl;
-            }
-            if (payload.contains("cards") && payload["cards"].is_array()) {
-                std::cout << "Number of cards: " << payload["cards"].size() << std::endl;
-            }
-            std::cout << "===========================================\n" << std::endl;
-            
             // Let GameState handle the cards
             if (gameState) {
                 gameState->processCards(payload);
             }
-            else {
-                std::cerr << "[MessageHandler.cpp] Error: GameState not available for cards command" << std::endl;
-            }
-        }
-        
-        // Log additional details if available
-        if (payload.contains("details")) {
-            std::cout << "[MessageHandler.cpp] Command details: " << payload["details"].dump() << std::endl;
         }
     }
 }
@@ -329,11 +233,6 @@ void MessageHandler::handleRoomUpdated(const json& payload) {
                         bool statusChanged = (roomStatus != roomManager->lastRoomStatus);
                         
                         if (playerCountChanged || statusChanged) {
-                            std::cout << "You're now connected to room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
-                            std::cout << "Players in room: " << playerCount << "/" 
-                                      << (room.contains("maxPlayers") ? room["maxPlayers"].get<int>() : 2) << std::endl;
-                            
-                            // Update tracking variables
                             roomManager->lastPlayerCount = playerCount;
                             roomManager->lastRoomStatus = roomStatus;
                         }
@@ -343,7 +242,6 @@ void MessageHandler::handleRoomUpdated(const json& payload) {
                 
                 // If we didn't find ourselves in the player list
                 if (!foundSelf && roomManager->connected) {
-                    std::cout << "You're no longer in room: \"" << room["name"].get<std::string>() << "\"" << std::endl;
                     roomManager->connected = false;
                     roomManager->currentRoomId = "";
                     roomManager->lastPlayerCount = 0;
@@ -360,7 +258,6 @@ void MessageHandler::handleJoinRoom(const json& payload) {
         std::string roomId = payload["roomId"];
         if (roomId == roomManager->currentRoomId) {
             roomManager->connected = true;
-            std::cout << "Successfully joined room: " << roomId << std::endl;
             // Request room list to see updated player count
             roomManager->fetchAvailableRooms();
         }
@@ -371,7 +268,6 @@ void MessageHandler::handleLeaveRoom(const json& payload) {
     // Handle leave_room response - clear currentRoomId when confirmed by server
     if (roomManager->currentRequestType == "leave_room") {
         roomManager->currentRoomId = "";
-        std::cout << "Server confirmed room exit" << std::endl;
     }
 }
 
@@ -382,9 +278,6 @@ void MessageHandler::handlePlayerReady(const json& payload) {
         // Check if this is about us or another player
         if (payload.contains("playerId") && payload["playerId"] == roomManager->deviceId) {
             roomManager->ready = isReady;
-            std::cout << "Your ready status is now: " << (isReady ? "Ready" : "Not ready") << std::endl;
-        } else {
-            std::cout << "Another player's ready status changed" << std::endl;
         }
     }
 }
@@ -396,12 +289,7 @@ void MessageHandler::handleMoveStatus(const json& payload) {
     std::string reason = payload.contains("reason") ? payload["reason"].get<std::string>() : "unknown";
     int roundNumber = payload.contains("roundNumber") ? payload["roundNumber"].get<int>() : 0;
     
-    std::cout << "[MessageHandler.cpp] Move was " << status << " by server. Round: " << roundNumber 
-              << ", Reason: " << reason << std::endl;
-    
     if (status == "accepted") {
-        std::cout << "Move accepted for round " << roundNumber << std::endl;
-        
         // If the gesture detector is still running, stop it
         if (roomManager && roomManager->gestureDetector && roomManager->gestureDetector->isRunning()) {
             roomManager->gestureDetector->stop();
@@ -413,12 +301,9 @@ void MessageHandler::handleMoveStatus(const json& payload) {
         }
     } 
     else if (status == "rejected") {
-        std::cout << "Move rejected - for round " << roundNumber << std::endl;
         if (reason == "already_moved") {
-            std::cout << "Move already sent - for round " << roundNumber << std::endl;
         }
         else if (reason == "invalid_round") {
-            std::cout << "Invalid round number: " << roundNumber << std::endl;
         }
     }
 }

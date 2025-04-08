@@ -127,11 +127,7 @@ int main(int argc, char* argv[]) {
         
         // Create and initialize gesture event sender
         std::cout << "Initializing gesture event sender..." << std::endl;
-        roomManager->gestureEventSender = new GestureEventSender(
-            roomManager, 
-            roomManager->getDeviceId(),
-            roomManager->getCurrentRoomId()
-        );
+        roomManager->gestureEventSender = new GestureEventSender(webSocketClient);
         
         // Test camera access
         std::cout << "Testing camera access..." << std::endl;
