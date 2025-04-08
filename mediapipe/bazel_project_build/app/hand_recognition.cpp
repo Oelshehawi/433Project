@@ -178,12 +178,12 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
         ret->num_fingers_held_up++;
     }*/
    if (is_left_hand){
-    if (thumb_high.x() < thumb_tip.x() || thumb_low.x() < thumb_tip.x()){
+    if (thumb_high.x() < thumb_tip.x() || thumb_low.x() < thumb_tip.x() || thumb_tip.y() < THUMB_Y_THRESHOLD){
         ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
     }
    }else{
-    if (thumb_high.x() > thumb_tip.x() || thumb_low.x() > thumb_tip.x()){
+    if (thumb_high.x() > thumb_tip.x() || thumb_low.x() > thumb_tip.x()|| thumb_tip.y() < THUMB_Y_THRESHOLD){
         ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
     }
