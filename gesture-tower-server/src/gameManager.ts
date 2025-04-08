@@ -33,16 +33,13 @@ export function initializeGameState(roomId: string): boolean {
     (player) => player.playerType === "beagleboard"
   );
 
-  // TEMPORARY TEST MODE: Allow single player games
-  if (beagleBoardPlayers.length < 1) {
+  // Require at least 2 players
+  if (beagleBoardPlayers.length < 2) {
     console.error(
-      `Not enough players in room ${roomId}. Minimum 1 player required in test mode.`
+      `Not enough players in room ${roomId}. Minimum 2 players required.`
     );
     return false;
   }
-  console.log(
-    `TESTING MODE: Initializing game with ${beagleBoardPlayers.length} BeagleBoard player(s).`
-  );
 
   // Create new game state
   const gameState: GameState = {
@@ -71,22 +68,6 @@ export function initializeGameState(roomId: string): boolean {
     // Initialize player moves to false
     gameState.playerMoves.set(player.id, false);
   });
-
-  // TEMPORARY TEST MODE: Add a virtual opponent for single player testing if needed
-  if (beagleBoardPlayers.length === 1) {
-    const virtualOpponentId = "virtual_opponent";
-    gameState.towerHeights.set(virtualOpponentId, 0);
-    gameState.goalHeights.set(
-      virtualOpponentId,
-      Math.floor(
-        Math.random() * (MAX_GOAL_HEIGHT - MIN_GOAL_HEIGHT + 1) +
-          MIN_GOAL_HEIGHT
-      )
-    );
-    gameState.playerShields.set(virtualOpponentId, false);
-    gameState.playerMoves.set(virtualOpponentId, false);
-    console.log(`TESTING MODE: Added virtual opponent for single player game.`);
-  }
 
   // Save game state to room
   room.gameState = gameState;

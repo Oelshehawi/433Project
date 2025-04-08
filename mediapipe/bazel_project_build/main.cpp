@@ -33,19 +33,26 @@ void displayHelp() {
 }
 
 int main(int argc, char* argv[]) {
-    // Silence output from specific warnings by redirecting stderr temporarily
+    // More aggressive silencing of output from specific warnings by redirecting stderr
     std::freopen("/dev/null", "w", stderr);
     
     // Suppress TensorFlow and MediaPipe verbose logging with environment variables
-    setenv("TF_CPP_MIN_LOG_LEVEL", "3", 1);  // 0=debug, 1=info, 2=warning, 3=error
-    setenv("GLOG_minloglevel", "3", 1);      // 0=info, 1=warning, 2=error, 3=fatal
-    setenv("GLOG_stderrthreshold", "3", 1);  // Only log errors and fatal messages
-    setenv("MEDIAPIPE_DISABLE_VERBOSE_LOGGING", "1", 1);  // Disable verbose MediaPipe logging
+    setenv("TF_CPP_MIN_LOG_LEVEL", "3", 1);             // 0=debug, 1=info, 2=warning, 3=error
+    setenv("GLOG_minloglevel", "3", 1);                 // 0=info, 1=warning, 2=error, 3=fatal
+    setenv("GLOG_stderrthreshold", "3", 1);             // Only log errors and fatal messages
+    setenv("MEDIAPIPE_DISABLE_VERBOSE_LOGGING", "1", 1); // Disable verbose MediaPipe logging
+    setenv("MEDIAPIPE_NO_WARNING", "1", 1);             // Additional suppression for MediaPipe
+    setenv("TERM", "linux", 1);                        // Remove colored output in terminal
     
-    // After setting environment variables, restore stderr
+    // After setting environment variables, restore stderr but with filtering
     std::freopen("/dev/tty", "w", stderr);
     
     std::cout << "=== Beagle Board Gesture Control Client - Starting up... ===" << std::endl;
+    
+    // Create a simple filter for stderr to suppress specific warning messages
+    std::ofstream logFile("/tmp/mediapipe.log", std::ios::out | std::ios::app);
+    std::streambuf* stderr_buf = std::cerr.rdbuf();
+    std::cerr.rdbuf(logFile.rdbuf());
     
     try {
         // Initialize WebSocket client

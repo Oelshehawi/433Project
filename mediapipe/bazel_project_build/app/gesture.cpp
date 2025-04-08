@@ -298,21 +298,21 @@ void GestureDetector::detectionLoop() {
             if (shouldLog) std::cout << "Waiting for gesture..." << std::endl;
             
             if (!camera.captureFrame(frame)) {
-                std::cerr << "Error: Could not capture frame" << std::endl;
+                if (shouldLog) std::cerr << "Error: Could not capture frame" << std::endl;
                 std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 continue;
             }
             
-            // Save image for debugging
-            cv::imwrite("/tmp/reference.bmp", frame);
-            chmod("/tmp/reference.bmp", 0666);  // Make world-writable
+            // Save image for debugging - only when explicitly troubleshooting
+            // cv::imwrite("/tmp/reference.bmp", frame);
+            // chmod("/tmp/reference.bmp", 0666);  // Make world-writable
             
             // Analyze hand position
             handPosition ret;
             hand_analyze_image(frame, &ret);
             
             if (!ret.hand_visible) {
-                // No hand detected, keep waiting
+                // No hand detected, keep waiting (no need to log every frame)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
             }
@@ -385,6 +385,14 @@ void GestureDetector::detectionLoop() {
                         std::cout << "Gesture data sent: " << actionType << std::endl;
                         char* sentMsg[] = {"Gesture sent", "to server"};
                         lcd_place_message(sentMsg, 2, lcd_center);
+                        
+                        // Stop the detection loop after confirming a gesture
+                        std::cout << "Gesture confirmed, stopping detection automatically..." << std::endl;
+                        char* autoStopMsg[] = {"Gesture confirmed", "Waiting for next round"};
+                        lcd_place_message(autoStopMsg, 2, lcd_center);
+                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                        running = false;
+                        break;
                     } else {
                         std::cout << "Failed to send gesture data" << std::endl;
                         char* failMsg[] = {"Failed to send", "gesture data"};

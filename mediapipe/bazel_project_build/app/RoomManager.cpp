@@ -505,7 +505,7 @@ bool RoomManager::createRoom(const std::string& roomName) {
     json room = json::object();
     room["id"] = roomId;
     room["name"] = roomName;
-    room["maxPlayers"] = 4;
+    room["maxPlayers"] = 2;
     room["status"] = "waiting";
     room["hostId"] = deviceId;
     

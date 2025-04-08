@@ -21,12 +21,7 @@ import {
   getRoomList,
   rooms,
 } from "./roomManager";
-import {
-  clients,
-  beagleBoards,
-  broadcastToAll,
-  sendToRoom,
-} from "./messaging";
+import { clients, beagleBoards, broadcastToAll, sendToRoom } from "./messaging";
 import { initializeGameState, processAction } from "./gameManager";
 import { initializeCardsForRoom } from "./cardManager";
 
@@ -954,7 +949,7 @@ function createRoomForBeagleBoard(
       },
     ],
     status: "waiting",
-    maxPlayers: 4, // Default max players
+    maxPlayers: 2, // Default max players
   };
 
   // Add room to the rooms map

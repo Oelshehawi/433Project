@@ -44,6 +44,9 @@ public:
     // Ensure messages are processed quickly
     void ensureMessageProcessing();
     
+    // Process received messages
+    void onMessageReceived(const std::string& message);
+    
     // Allow the protocol callback to access private members
     friend int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason, 
                               void *user, void *in, size_t len);
