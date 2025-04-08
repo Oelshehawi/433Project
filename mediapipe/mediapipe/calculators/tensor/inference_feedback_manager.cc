@@ -111,9 +111,11 @@ InferenceFeedbackManager::ConvertSignatureTensorNamesToModelIndices(
       input_output_tensor_names_map.size() > 1) {
     // Fail gracefully by returning an empty TensorFeedbackIndicesLink list if
     // SignatureDef is not available or not supported.
+    /*
     ABSL_LOG(WARNING)
         << "Feedback manager requires a model with a single signature "
            "inference. Disabling support for feedback tensors.";
+    */
     return indices_links;
   }
   // Obtain reference to single-signature in input_output_tensor_names_map.
