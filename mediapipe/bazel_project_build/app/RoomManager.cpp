@@ -11,6 +11,9 @@ using json = nlohmann::json;
 // Forward declaration
 class RoomManager;
 
+// Forward declaration for displayCardsOnLCD function from gesture.cpp
+void displayCardsOnLCD(const std::vector<Card>& cards);
+
 // Generate a random device ID
 std::string RoomManager::generateDeviceId() {
     static const char alphanum[] =
