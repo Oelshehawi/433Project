@@ -117,7 +117,6 @@ static void DEV_GPIO_Init(void)
 
 UBYTE DEV_ModuleInit(void)
 {
-    printf("Entering DEV_ModuleInit...\n");
 
 //#ifdef USE_DEV_LIB
     // printf("  --> USE_DEV_LIB\n");
