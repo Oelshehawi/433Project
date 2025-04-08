@@ -45,6 +45,9 @@ public:
     void start();
     void stop();
     
+    // Check if running
+    bool isRunning() const { return running.load(); }
+    
     // Get current hand position
     handPosition getCurrentHand();
     

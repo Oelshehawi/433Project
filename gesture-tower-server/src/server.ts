@@ -13,6 +13,8 @@ import {
   handleGetRoom,
   handleGameStart,
   handleGestureEvent,
+  handleRoundEndAck,
+  handleGameReady,
 } from "./roomManager";
 import { clients, beagleBoards } from "./messaging";
 import {
@@ -108,6 +110,12 @@ wss.on("connection", (ws: WebSocket) => {
           break;
         case "get_room":
           handleGetRoom(client, data.payload);
+          break;
+        case "round_end_ack":
+          handleRoundEndAck(client, data.payload);
+          break;
+        case "game_ready":
+          handleGameReady(client, data.payload);
           break;
         case "ping":
           // Handle ping explicitly here as well as in setupPingHandler

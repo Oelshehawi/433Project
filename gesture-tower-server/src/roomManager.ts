@@ -28,6 +28,7 @@ import {
   processAction,
   endRound,
   MIN_REQUIRED_PLAYERS, // Import the constant
+  startRound,
 } from "./gameManager";
 import { v4 as uuidv4 } from "uuid";
 
@@ -49,6 +50,56 @@ export const getRoomList = (): RoomListItem[] => {
 
   return roomList;
 };
+
+// Track which rooms have received the game_ready signal from web clients
+const webClientReadyRooms = new Set<string>();
+
+// Add a function to check and set if a room is in its first round
+export function isFirstRound(roomId: string): boolean {
+  if (!rooms.has(roomId)) return false;
+  const room = rooms.get(roomId)!;
+  return room.gameState?.roundNumber === 1;
+}
+
+// Add function to handle game_ready event from web client
+export function handleGameReady(client: ExtendedWebSocket, payload: any) {
+  const { roomId } = payload;
+
+  console.log(`Received game_ready signal from web client for room ${roomId}`);
+
+  // Verify the room exists
+  if (!rooms.has(roomId)) {
+    console.error(`Room ${roomId} not found for game_ready signal`);
+    return;
+  }
+
+  const room = rooms.get(roomId)!;
+
+  // Mark this room as having received the game_ready signal
+  webClientReadyRooms.add(roomId);
+  console.log(`Room ${roomId} marked as ready to start first round`);
+
+  // Check if the game is in its first round and we're waiting to start
+  if (
+    room.status === "playing" &&
+    room.gameState &&
+    room.gameState.roundNumber === 1
+  ) {
+    // Check if we have initialized cards but haven't sent the first round_start yet
+    if (room.playerCards && room.playerCards.size > 0) {
+      console.log(
+        `Starting first round for room ${roomId} now that web client is ready`
+      );
+      startRound(roomId);
+    } else {
+      console.error(
+        `Cannot start first round: cards not initialized for room ${roomId}`
+      );
+    }
+  } else {
+    console.log(`Game in room ${roomId} already started or not in first round`);
+  }
+}
 
 // Handle creating a new room
 export const handleCreateRoom = (
@@ -715,6 +766,12 @@ export const handleGestureEvent = (
           `Marked player ${playerId} as having moved in round ${currentRound}`
         );
 
+        // Send a move_status event to confirm the move was accepted
+        sendToClient(client, "move_status", {
+          status: "accepted",
+          roundNumber: currentRound,
+        });
+
         // Check if all players have moved after this action
         let allPlayersMoved = true;
         room.gameState.playerMoves.forEach((hasMoved) => {
@@ -845,3 +902,105 @@ export const handleGetRoom = (
     } as ErrorPayload);
   }
 };
+
+// Handle round end acknowledgment from beagleboard
+export function handleRoundEndAck(client: ExtendedWebSocket, payload: any) {
+  const { roomId, playerId, roundNumber } = payload;
+
+  console.log(
+    `Received round_end_ack from ${playerId} for round ${roundNumber} in room ${roomId}`
+  );
+
+  // Verify the room exists
+  if (!rooms.has(roomId)) {
+    console.error(
+      `Room ${roomId} not found for round_end_ack from ${playerId}`
+    );
+    return;
+  }
+
+  const room = rooms.get(roomId)!;
+
+  // Check if we have a game state
+  if (!room.gameState) {
+    console.error(`Game state not found for room ${roomId}`);
+    return;
+  }
+
+  // Check if this acknowledgment is for the current round
+  if (room.gameState.roundNumber !== roundNumber) {
+    console.warn(
+      `Round number mismatch: got ack for round ${roundNumber} but current round is ${room.gameState.roundNumber}`
+    );
+    return;
+  }
+
+  // Mark this player as having completed their move
+  console.log(`Marking ${playerId} as having completed round ${roundNumber}`);
+  room.gameState.playerMoves.set(playerId, true);
+
+  // Check if all players have completed their moves
+  const allPlayersCompleted = Array.from(
+    room.gameState.playerMoves.values()
+  ).every((moved) => moved);
+
+  console.log(`Player move status for round ${roundNumber}:`);
+  room.gameState.playerMoves.forEach((moved, id) => {
+    console.log(`  - ${id}: ${moved ? "completed" : "not completed"}`);
+  });
+
+  // If all players have completed their moves, end the round
+  if (allPlayersCompleted) {
+    console.log(
+      `All players have completed their moves for round ${roundNumber}. Ending round.`
+    );
+    endRound(roomId);
+  }
+}
+
+// Modify existing startRoomGame to delay first round until web client is ready
+export function startRoomGame(roomId: string) {
+  // ... existing code ...
+
+  // Initialize game state with cards
+  const { initializeGameState } = require("./gameManager");
+  const { initializeCardsForRoom } = require("./cardManager");
+
+  console.log(`PRE-INITIALIZING CARDS for room ${roomId}`);
+  const cardsInitialized = initializeCardsForRoom(roomId);
+
+  if (!cardsInitialized) {
+    console.error(`Failed to initialize cards for room ${roomId}`);
+    return;
+  }
+
+  console.log(`Cards pre-initialized successfully for room ${roomId}`);
+
+  // Initialize game state
+  const gameInitialized = initializeGameState(roomId);
+
+  if (!gameInitialized) {
+    console.error(`Failed to initialize game state for room ${roomId}`);
+    return;
+  }
+
+  // Only start the first round automatically if the web client is ready
+  // Otherwise, wait for game_ready signal from web client
+  if (webClientReadyRooms.has(roomId)) {
+    console.log(
+      `Web client already signaled ready for room ${roomId}, starting first round immediately`
+    );
+    startRound(roomId);
+  } else {
+    console.log(
+      `Waiting for web client game_ready signal before starting first round in room ${roomId}`
+    );
+    // The first round will be started by the handleGameReady function
+    // Just update the room status and wait
+    sendToRoom(roomId, "game_state_update", {
+      roomId,
+      gameState: rooms.get(roomId)!.gameState,
+      message: "Waiting for web client to complete animations",
+    });
+  }
+}

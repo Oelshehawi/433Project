@@ -1,6 +1,8 @@
 #include "GameState.h"
 #include "RoomManager.h"
 #include "DisplayManager.h"
+#include "GestureDetector.h"
+#include "GestureEventSender.h"
 #include <iostream>
 #include <algorithm>
 #include <random>
@@ -336,58 +338,115 @@ void GameState::getCardCounts(int& attackCount, int& defendCount, int& buildCoun
     }
 }
 
-void GameState::autoPlayCard() {
-    // Check if we have cards to play
-    if (!roomManager || lastReceivedCards.empty()) {
+void GameState::sendRoundEndEvent() {
+    if (!roomManager || !roomManager->client) {
+        std::cerr << "[GameState.cpp] ERROR: Cannot send round_end event - roomManager or client is null" << std::endl;
         return;
     }
     
-    // Choose a random card of an available type
-    std::vector<Card> availableCards;
-    std::map<std::string, bool> typeAdded;
+    std::cout << "[GameState.cpp] Sending round_end event for round " << currentRoundNumber << std::endl;
     
-    // Group one card of each type
-    for (const auto& card : lastReceivedCards) {
-        if (!typeAdded[card.type]) {
-            availableCards.push_back(card);
-            typeAdded[card.type] = true;
-        }
+    // Stop gesture detection if it's running
+    if (roomManager->gestureDetector && roomManager->gestureDetector->isRunning()) {
+        std::cout << "[GameState.cpp] Stopping gesture detection before sending round_end" << std::endl;
+        roomManager->gestureDetector->stop();
     }
     
-    if (!availableCards.empty()) {
-        // Randomly select a card
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dist(0, availableCards.size() - 1);
-        const Card& selectedCard = availableCards[dist(gen)];
-        
-        std::cout << "[GameState.cpp] Auto-playing a " << selectedCard.type << " card (ID: " << selectedCard.id << ")" << std::endl;
-        
-        // Create and send gesture data with cardId included
-        json gestureData = {
-            {"gesture", selectedCard.type},
-            {"confidence", 0.95},
-            {"cardId", selectedCard.id}
-        };
-        
-        // Send the gesture data
-        roomManager->sendGestureData(gestureData.dump());
-        
-        // Display auto-play message
-        if (displayManager) {
-            displayManager->displayAutoPlay(selectedCard.type);
-            
-            // Wait a moment before returning to card display
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-            
-            // Force update with no console output (we'll add a special flag for this)
-            std::cout << "[GameState.cpp] Auto-play complete. If gesture detection is running, it should be stopped." << std::endl;
-            std::cout << "[GameState.cpp] Updating display back to cards and game info without console output." << std::endl;
-            
-            // Instead of calling updateCardAndGameDisplay directly, let's give the server a moment to respond
-            // with any state changes before updating the display
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            displayManager->updateCardAndGameDisplay();
-        }
+    // Stop the timer thread to ensure it doesn't continue running
+    std::cout << "[GameState.cpp] Stopping timer thread as round is ending" << std::endl;
+    stopTimerThread();
+    
+    // Create and send round_end event
+    json payload = json::object();
+    payload["roomId"] = roomManager->getRoomId();
+    payload["playerId"] = deviceId;
+    payload["roundNumber"] = currentRoundNumber;
+    
+    json message = json::object();
+    message["event"] = "round_end_ack";
+    message["payload"] = payload;
+    
+    std::string messageStr = message.dump();
+    
+    roomManager->client->sendMessage(messageStr);
+    
+    // Update display to show "Waiting for next round" message
+    if (displayManager) {
+        displayManager->displayWaitingForNextRound(currentRoundNumber);
     }
+}
+
+void GameState::autoPlayCard() {
+    // Ensure we have cards to play
+    if (playerCards.empty()) {
+        std::cout << "[GameState.cpp] No cards available to auto-play" << std::endl;
+        sendRoundEndEvent(); // Still send round end even if no cards
+        return;
+    }
+    
+    // Choose a card randomly from the available cards
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> distrib(0, playerCards.size() - 1);
+    size_t cardIndex = distrib(gen);
+    
+    // Get an iterator to the selected card
+    auto it = playerCards.begin();
+    std::advance(it, cardIndex);
+    
+    // Extract card information
+    std::string cardType = it->first;
+    std::string cardId = it->second;
+    
+    std::cout << "[GameState.cpp] Auto-playing a " << cardType << " card (ID: " << cardId << ")" << std::endl;
+    
+    // Send the gesture event
+    if (roomManager && roomManager->gestureEventSender) {
+        std::cout << "Sending gesture event with card ID: " << cardId << std::endl;
+        roomManager->sendGestureEvent(
+            roomManager->getRoomId(), 
+            deviceId, 
+            cardType, 
+            0.95, // Default confidence value
+            cardId
+        );
+        std::cout << "Auto-playing a " << cardType << " card" << std::endl;
+    } else {
+        std::cerr << "[GameState.cpp] Cannot send gesture - gestureEventSender is null" << std::endl;
+    }
+    
+    std::cout << "[GameState.cpp] Auto-play complete. If gesture detection is running, it should be stopped." << std::endl;
+    
+    // Update display back to cards and game info (without console output)
+    if (displayManager) {
+        displayManager->updateCardAndGameDisplay(false);
+    }
+    
+    // Send round end event after auto-playing
+    sendRoundEndEvent();
+}
+
+void GameState::handleConfirmedGesture(const std::string& gesture, float confidence, const std::string& cardId) {
+    std::cout << "[GameState.cpp] Handling confirmed gesture: " << gesture << " (confidence: " << confidence << ")" << std::endl;
+    
+    // Send the gesture to the server
+    if (roomManager && roomManager->gestureEventSender) {
+        roomManager->sendGestureEvent(
+            roomManager->getRoomId(),
+            deviceId,
+            gesture,
+            confidence,
+            cardId
+        );
+    } else {
+        std::cerr << "[GameState.cpp] Cannot send gesture - gestureEventSender is null" << std::endl;
+    }
+    
+    // Update display if needed
+    if (displayManager) {
+        displayManager->displayGestureConfirmed(gesture);
+    }
+    
+    // Send round end event after handling the gesture
+    sendRoundEndEvent();
 } 

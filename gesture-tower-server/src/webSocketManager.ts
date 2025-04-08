@@ -164,6 +164,10 @@ function handleMessage(client: ExtendedWebSocket, message: WebSocketMessage) {
         handleBeagleBoardWSCommand(client, payload);
       }
       break;
+    case "round_end_ack":
+      // Handle round end acknowledgment from beagleboard
+      handleRoundEndAck(client, payload);
+      break;
     default:
       console.warn(`Unknown event type: ${event}`);
       break;
@@ -1188,3 +1192,59 @@ export const resetPingTimeoutOnMessage = (client: ExtendedWebSocket) => {
     setPingTimeout(client);
   }
 };
+
+// Function to handle round end acknowledgment from beagleboard
+function handleRoundEndAck(client: ExtendedWebSocket, payload: any) {
+  const { roomId, playerId, roundNumber } = payload;
+
+  console.log(
+    `Received round_end_ack from ${playerId} for round ${roundNumber} in room ${roomId}`
+  );
+
+  // Verify the room exists
+  if (!rooms.has(roomId)) {
+    console.error(
+      `Room ${roomId} not found for round_end_ack from ${playerId}`
+    );
+    return;
+  }
+
+  const room = rooms.get(roomId)!;
+
+  // Check if we have a game state
+  if (!room.gameState) {
+    console.error(`Game state not found for room ${roomId}`);
+    return;
+  }
+
+  // Check if this acknowledgment is for the current round
+  if (room.gameState.roundNumber !== roundNumber) {
+    console.warn(
+      `Round number mismatch: got ack for round ${roundNumber} but current round is ${room.gameState.roundNumber}`
+    );
+    return;
+  }
+
+  // Mark this player as having completed their move
+  console.log(`Marking ${playerId} as having completed round ${roundNumber}`);
+  room.gameState.playerMoves.set(playerId, true);
+
+  // Check if all players have completed their moves
+  const allPlayersCompleted = Array.from(
+    room.gameState.playerMoves.values()
+  ).every((moved) => moved);
+
+  console.log(`Player move status for round ${roundNumber}:`);
+  room.gameState.playerMoves.forEach((moved, id) => {
+    console.log(`  - ${id}: ${moved ? "completed" : "not completed"}`);
+  });
+
+  // If all players have completed their moves, end the round
+  if (allPlayersCompleted) {
+    console.log(
+      `All players have completed their moves for round ${roundNumber}. Ending round.`
+    );
+    const { endRound } = require("./gameManager");
+    endRound(roomId);
+  }
+}

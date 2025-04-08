@@ -2,6 +2,7 @@
 #include "DisplayManager.h"
 #include "GameState.h"
 #include "MessageHandler.h"
+#include "GestureEventSender.h"
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -50,6 +51,7 @@ std::string RoomManager::generateDeviceId() {
 RoomManager::RoomManager(WebSocketClient* client)
     : client(client), receiver(nullptr), 
       messageHandler(nullptr), gameState(nullptr), displayManager(nullptr), gestureDetector(nullptr),
+      gestureEventSender(nullptr),
       connected(false), ready(false), 
       isWaitingForResponse(false), currentRequestType(""), lastRoomStatus(""), lastPlayerCount(0), gameInProgress(false) {
     
@@ -102,6 +104,12 @@ RoomManager::~RoomManager() {
     if (displayManager) {
         delete displayManager;
         displayManager = nullptr;
+    }
+    
+    // Cleanup gesture event sender
+    if (gestureEventSender) {
+        delete gestureEventSender;
+        gestureEventSender = nullptr;
     }
 }
 
@@ -823,4 +831,28 @@ bool RoomManager::sendGestureData(const std::string& gestureData) {
     std::cout << "Sending gesture event: " << jsonMessage << std::endl;
     
     return client->sendMessage(jsonMessage);
+}
+
+bool RoomManager::sendGestureEvent(const std::string& roomId, const std::string& playerId, 
+                                  const std::string& gesture, float confidence, const std::string& cardId) {
+    // Ensure we have a valid gesture event sender
+    if (!gestureEventSender) {
+        std::cerr << "[RoomManager.cpp] Cannot send gesture event - gestureEventSender is null" << std::endl;
+        
+        // Create the gesture event sender if it doesn't exist
+        gestureEventSender = new GestureEventSender(this, deviceId, currentRoomId);
+        
+        if (!gestureEventSender) {
+            std::cerr << "[RoomManager.cpp] Failed to create gestureEventSender" << std::endl;
+            return false;
+        }
+    }
+    
+    // Update the room ID if it has changed
+    if (roomId != currentRoomId) {
+        gestureEventSender->setCurrentRoomId(roomId);
+    }
+    
+    // Forward the gesture event to the gesture event sender
+    return gestureEventSender->sendGesture(gesture, confidence, cardId);
 } 

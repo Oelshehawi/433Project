@@ -108,9 +108,28 @@ export function initializeGameState(roomId: string): boolean {
   // Save game state to room
   room.gameState = gameState;
 
-  // Start the first round - this will also send cards via round_start
-  console.log(`Starting first round for room ${roomId}`);
-  startRound(roomId);
+  // Send initial game state update to all clients
+  console.log(`Sending initial game state update for room ${roomId}`);
+
+  // Convert Maps to objects for sending over WebSocket
+  const gameStateForSending = {
+    towerHeights: Object.fromEntries(gameState.towerHeights),
+    goalHeights: Object.fromEntries(gameState.goalHeights),
+    roundNumber: gameState.roundNumber,
+    roundStartTime: gameState.roundStartTime,
+  };
+
+  sendToRoom(roomId, "game_state_update", {
+    roomId,
+    gameState: gameStateForSending,
+    message: "Game initialized, waiting for web client ready signal",
+  });
+
+  // Don't start the first round automatically
+  // It will be started when the web client sends the game_ready signal
+  console.log(
+    `Game state initialized for room ${roomId}. Waiting for web client to be ready before starting first round.`
+  );
 
   return true;
 }
@@ -201,25 +220,33 @@ export function startRound(roomId: string): boolean {
       }
     });
   } else {
-    console.error(
-      `ERROR: room.playerCards is not initialized for room ${roomId}!`
-    );
+    console.error(`No player cards initialized for room ${roomId}`);
+    return false;
   }
 
-  // Debug: Log the payload we're about to send
+  // Create payload with card data
   const payload = {
     roomId,
     roundNumber: room.gameState.roundNumber,
-    playerCards: playerCards,
+    playerCards,
+    // Convert Maps to objects for sending over WebSocket
+    gameState: {
+      towerHeights: Object.fromEntries(room.gameState.towerHeights),
+      goalHeights: Object.fromEntries(room.gameState.goalHeights),
+      roundNumber: room.gameState.roundNumber,
+      roundStartTime: room.gameState.roundStartTime,
+    },
   };
 
-  console.log(
-    `Creating round_start payload with size ~${
-      JSON.stringify(payload).length
-    } bytes`
-  );
+  console.log(`Payload size: ~${JSON.stringify(payload).length} bytes`);
+
   console.log(
     `Payload contains cards for ${Object.keys(playerCards).length} players`
+  );
+  console.log(
+    `Payload contains goal heights for ${
+      Object.keys(Object.fromEntries(room.gameState.goalHeights)).length
+    } players`
   );
 
   // Send round start event to all players with cards included for each player

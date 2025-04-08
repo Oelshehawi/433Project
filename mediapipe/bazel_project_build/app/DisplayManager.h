@@ -17,9 +17,10 @@ public:
     ~DisplayManager();
 
     // Display methods
-    void updateCardAndGameDisplay();
+    void updateCardAndGameDisplay(bool showOutput = true);
     void displayRoundStart(int roundNumber, int timeRemaining);
     void displayRoundEnd(int roundNumber, bool isWinner);
+    void displayWaitingForNextRound(int completedRound);
     void displayGameStarting();
     void displayGameStarted();
     void displayGameEnded(bool isWinner);
@@ -29,6 +30,7 @@ public:
     void displayRoomConnection(const std::string& roomName, int playerCount, int maxPlayers);
     void displayError(const std::string& errorMessage);
     void displayMessage(const std::string& line1, const std::string& line2);
+    void displayGestureConfirmed(const std::string& gesture);
     
     // Set the GameState (needed to resolve circular reference)
     void setGameState(GameState* gs) { gameState = gs; }

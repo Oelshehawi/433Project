@@ -17,6 +17,7 @@ class MessageHandler;
 class GameState;
 class DisplayManager;
 class GestureDetector;
+class GestureEventSender;
 
 // For convenience
 using json = nlohmann::json;
@@ -94,6 +95,7 @@ private:
 
 public:
     GestureDetector* gestureDetector; // Made public for direct access
+    GestureEventSender* gestureEventSender; // Public gesture event sender
 
     RoomManager(WebSocketClient* client);
     ~RoomManager();
@@ -128,6 +130,7 @@ public:
     bool isGameActive() const { return gameInProgress; }
     const std::string& getPlayerName() const { return playerName; }
     std::string getCurrentRoomId() const { return currentRoomId; }
+    std::string getRoomId() const { return currentRoomId; }
     WebSocketClient* getClient() { return client; }
 
     // Set player name
@@ -135,6 +138,10 @@ public:
 
     // Send gesture data
     bool sendGestureData(const std::string& gestureData);
+    
+    // Send gesture event - convenience method to call gestureEventSender
+    bool sendGestureEvent(const std::string& roomId, const std::string& playerId, 
+                         const std::string& gesture, float confidence, const std::string& cardId = "");
 
     // Friend classes that need access to private members
     friend class MessageHandler;

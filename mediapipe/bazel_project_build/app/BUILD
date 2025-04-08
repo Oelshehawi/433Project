@@ -96,7 +96,11 @@ cc_library(
     srcs = ["GameState.cpp"],
     hdrs = ["GameState.h"],
     includes = ["."],
-    deps = [":CoreHeaders"],
+    deps = [
+        ":CoreHeaders",
+        ":GestureDetector",
+        ":GestureEventSender"
+    ],
 )
 
 cc_library(
@@ -107,7 +111,8 @@ cc_library(
     deps = [
         ":CoreHeaders", 
         ":WebSocketClient", 
-        ":DisplayManager"
+        ":DisplayManager",
+        ":GestureDetector"
     ],
     visibility = ["//visibility:public"],
 )
@@ -123,7 +128,8 @@ cc_library(
         ":WebSocketReceiver", 
         ":DisplayManager", 
         ":GameState", 
-        ":MessageHandler"
+        ":MessageHandler",
+        ":GestureEventSender"
     ],
 )
 

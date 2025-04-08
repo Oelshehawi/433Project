@@ -11,7 +11,9 @@ export type ClientEventType =
   | "game_started"
   | "gesture_event"
   | "beagleboard_command"
-  | "get_room";
+  | "get_room"
+  | "round_end_ack"
+  | "game_ready";
 
 // Server message types
 export type ServerEventType =

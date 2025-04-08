@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useRoomStore } from "../../lib/room/store";
-import { initializeSocket, getSocketStatus } from "../../lib/websocket";
+import {
+  initializeSocket,
+  getSocketStatus,
+  sendWebSocketMessage,
+} from "../../lib/websocket";
 import { getSavedRoomInfo } from "../../components/room/RoomHelpers";
 
 // Import game components
@@ -59,6 +63,9 @@ export default function GamePage() {
   const [cardPlayedTimer, setCardPlayedTimer] = useState<NodeJS.Timeout | null>(
     null
   );
+
+  // Add state for round end message
+  const [roundEndMessage, setRoundEndMessage] = useState<string>("");
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -127,9 +134,26 @@ export default function GamePage() {
         // User has dismissed the rules, now show players and move to playing state
         setAnimationComplete(true);
         setGameState("playing");
+
+        // Signal to the server that we're ready to start the game
+        if (roomId && socketConnected) {
+          console.log("Sending game_ready signal to server");
+
+          // Use the existing WebSocket connection through the helper function
+          sendWebSocketMessage({
+            event: "game_ready",
+            payload: { roomId },
+          });
+        }
       }
     }
-  }, [gameState, textAnimationComplete, rulesAnimationComplete]);
+  }, [
+    gameState,
+    textAnimationComplete,
+    rulesAnimationComplete,
+    roomId,
+    socketConnected,
+  ]);
 
   // Add event listeners for tower game events
   useEffect(() => {
@@ -158,9 +182,63 @@ export default function GamePage() {
 
           console.log(
             `Round ${data.roundNumber} started, ${
-              data.remainingTime / 1000
+              data.remainingTime / 1000 || 30
             }s remaining`
           );
+
+          // Update tower goal heights from server data if available
+          if (data.gameState && data.gameState.goalHeights) {
+            // Get player IDs from the room data
+            const beagleBoardPlayers =
+              currentRoom?.players.filter(
+                (p) => p.playerType === "beagleboard"
+              ) || [];
+
+            console.log(
+              "Received goal heights from server:",
+              data.gameState.goalHeights
+            );
+
+            if (beagleBoardPlayers.length >= 2) {
+              const player1Id = beagleBoardPlayers[0].id;
+              const player2Id = beagleBoardPlayers[1].id;
+
+              // Update goal heights from server data
+              if (data.gameState.goalHeights[player1Id]) {
+                setPlayer1GoalHeight(data.gameState.goalHeights[player1Id]);
+                console.log(
+                  `Set Player 1 (${player1Name}) goal height to ${data.gameState.goalHeights[player1Id]}`
+                );
+              }
+
+              if (data.gameState.goalHeights[player2Id]) {
+                setPlayer2GoalHeight(data.gameState.goalHeights[player2Id]);
+                console.log(
+                  `Set Player 2 (${player2Name}) goal height to ${data.gameState.goalHeights[player2Id]}`
+                );
+              }
+            } else if (beagleBoardPlayers.length === 1) {
+              // Handle single player mode
+              const player1Id = beagleBoardPlayers[0].id;
+              const virtualOpponentId = "virtual_opponent";
+
+              if (data.gameState.goalHeights[player1Id]) {
+                setPlayer1GoalHeight(data.gameState.goalHeights[player1Id]);
+                console.log(
+                  `Set Player 1 (${player1Name}) goal height to ${data.gameState.goalHeights[player1Id]}`
+                );
+              }
+
+              if (data.gameState.goalHeights[virtualOpponentId]) {
+                setPlayer2GoalHeight(
+                  data.gameState.goalHeights[virtualOpponentId]
+                );
+                console.log(
+                  `Set Virtual Opponent goal height to ${data.gameState.goalHeights[virtualOpponentId]}`
+                );
+              }
+            }
+          }
         }
       };
 
@@ -187,23 +265,74 @@ export default function GamePage() {
               ) || [];
 
             // Update tower heights
-            if (gameState.towerHeights && beagleBoardPlayers.length >= 2) {
-              const player1Id = beagleBoardPlayers[0].id;
-              const player2Id = beagleBoardPlayers[1].id;
+            if (gameState.towerHeights) {
+              if (beagleBoardPlayers.length >= 2) {
+                const player1Id = beagleBoardPlayers[0].id;
+                const player2Id = beagleBoardPlayers[1].id;
 
-              setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
-              setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
+                setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
+                setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
+                console.log(
+                  `End of round tower heights - Player 1: ${
+                    gameState.towerHeights[player1Id] || 0
+                  }, Player 2: ${gameState.towerHeights[player2Id] || 0}`
+                );
+              } else if (beagleBoardPlayers.length === 1) {
+                // Handle single player mode
+                const player1Id = beagleBoardPlayers[0].id;
+                const virtualOpponentId = "virtual_opponent";
+
+                setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
+                setPlayer2TowerHeight(
+                  gameState.towerHeights[virtualOpponentId] || 0
+                );
+                console.log(
+                  `End of round tower heights - Player 1: ${
+                    gameState.towerHeights[player1Id] || 0
+                  }, Virtual Opponent: ${
+                    gameState.towerHeights[virtualOpponentId] || 0
+                  }`
+                );
+              }
             }
 
-            // Update goal heights if they exist
-            if (gameState.goalHeights && beagleBoardPlayers.length >= 2) {
-              const player1Id = beagleBoardPlayers[0].id;
-              const player2Id = beagleBoardPlayers[1].id;
+            // Update goal heights if provided
+            if (gameState.goalHeights) {
+              if (beagleBoardPlayers.length >= 2) {
+                const player1Id = beagleBoardPlayers[0].id;
+                const player2Id = beagleBoardPlayers[1].id;
 
-              setPlayer1GoalHeight(gameState.goalHeights[player1Id] || 5);
-              setPlayer2GoalHeight(gameState.goalHeights[player2Id] || 5);
+                if (gameState.goalHeights[player1Id]) {
+                  setPlayer1GoalHeight(gameState.goalHeights[player1Id]);
+                }
+
+                if (gameState.goalHeights[player2Id]) {
+                  setPlayer2GoalHeight(gameState.goalHeights[player2Id]);
+                }
+              } else if (beagleBoardPlayers.length === 1) {
+                const player1Id = beagleBoardPlayers[0].id;
+                const virtualOpponentId = "virtual_opponent";
+
+                if (gameState.goalHeights[player1Id]) {
+                  setPlayer1GoalHeight(gameState.goalHeights[player1Id]);
+                }
+
+                if (gameState.goalHeights[virtualOpponentId]) {
+                  setPlayer2GoalHeight(
+                    gameState.goalHeights[virtualOpponentId]
+                  );
+                }
+              }
             }
           }
+
+          // Display round end message temporarily
+          setRoundEndMessage(`Round ${data.roundNumber} Complete`);
+
+          // Clear the message after 3 seconds
+          setTimeout(() => {
+            setRoundEndMessage("");
+          }, 3000);
         }
       };
 
@@ -259,6 +388,51 @@ export default function GamePage() {
 
             setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
             setPlayer2TowerHeight(gameState.towerHeights[player2Id] || 0);
+          } else if (
+            gameState.towerHeights &&
+            beagleBoardPlayers.length === 1
+          ) {
+            // Handle single player mode
+            const player1Id = beagleBoardPlayers[0].id;
+            const virtualOpponentId = "virtual_opponent";
+
+            setPlayer1TowerHeight(gameState.towerHeights[player1Id] || 0);
+            setPlayer2TowerHeight(
+              gameState.towerHeights[virtualOpponentId] || 0
+            );
+          }
+
+          // Update goal heights if they are included
+          if (gameState.goalHeights) {
+            if (beagleBoardPlayers.length >= 2) {
+              const player1Id = beagleBoardPlayers[0].id;
+              const player2Id = beagleBoardPlayers[1].id;
+
+              if (gameState.goalHeights[player1Id]) {
+                setPlayer1GoalHeight(gameState.goalHeights[player1Id]);
+                console.log(
+                  `Updated Player 1 goal height to ${gameState.goalHeights[player1Id]}`
+                );
+              }
+
+              if (gameState.goalHeights[player2Id]) {
+                setPlayer2GoalHeight(gameState.goalHeights[player2Id]);
+                console.log(
+                  `Updated Player 2 goal height to ${gameState.goalHeights[player2Id]}`
+                );
+              }
+            } else if (beagleBoardPlayers.length === 1) {
+              const player1Id = beagleBoardPlayers[0].id;
+              const virtualOpponentId = "virtual_opponent";
+
+              if (gameState.goalHeights[player1Id]) {
+                setPlayer1GoalHeight(gameState.goalHeights[player1Id]);
+              }
+
+              if (gameState.goalHeights[virtualOpponentId]) {
+                setPlayer2GoalHeight(gameState.goalHeights[virtualOpponentId]);
+              }
+            }
           }
         }
       };
@@ -553,6 +727,13 @@ export default function GamePage() {
                 {gameEnded ? getGameEndedDisplay() : getRoundDisplay()}
               </div>
             </div>
+
+            {/* Round end message - shown temporarily when a round ends */}
+            {roundEndMessage && (
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/70 text-white px-6 py-4 rounded-lg text-xl font-bold animate-pulse z-50">
+                {roundEndMessage}
+              </div>
+            )}
 
             {/* Rules button - top left corner */}
             <RulesButton />

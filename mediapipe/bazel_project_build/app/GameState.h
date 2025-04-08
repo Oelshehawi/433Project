@@ -27,6 +27,8 @@ private:
     int currentRoundNumber = 1;
     int currentTurnTimeRemaining = 0;
     std::vector<Card> lastReceivedCards;
+    // Map to store available cards by type -> id
+    std::map<std::string, std::string> playerCards;
 
     // Timer management
     bool timerActive = false;
@@ -70,7 +72,13 @@ public:
     // Process card data from server
     void processCards(const json& cardsPayload);
     void processCardsDirectly(const json& cardsPayload);
+    
+    // Handle confirmed gesture
+    void handleConfirmedGesture(const std::string& gesture, float confidence, const std::string& cardId = "");
 
     // Count cards by type
     void getCardCounts(int& attackCount, int& defendCount, int& buildCount) const;
+
+    // Send round end event
+    void sendRoundEndEvent();
 }; 

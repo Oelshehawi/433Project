@@ -12,9 +12,11 @@ DisplayManager::~DisplayManager() {
     // Nothing to clean up
 }
 
-void DisplayManager::updateCardAndGameDisplay() {
-    // Only log when debugging display issues
-    // std::cout << "\n[DisplayManager.cpp] ====== UPDATING DISPLAY ======" << std::endl;
+void DisplayManager::updateCardAndGameDisplay(bool showOutput) {
+    // Only log when debugging display issues or when showOutput is true
+    if (showOutput) {
+        std::cout << "\n[DisplayManager.cpp] ====== UPDATING DISPLAY ======" << std::endl;
+    }
     
     if (!gameState) {
         std::cerr << "[DisplayManager.cpp] ERROR: GameState not set for DisplayManager" << std::endl;
@@ -31,11 +33,13 @@ void DisplayManager::updateCardAndGameDisplay() {
     int timeRemaining = gameState->getCurrentTurnTimeRemaining();
     int roundNumber = gameState->getCurrentRoundNumber();
     
-    // Debug info about what we're displaying - reduced verbosity
-    // std::cout << "[DisplayManager.cpp] Display update called with:" << std::endl;
-    // std::cout << "[DisplayManager.cpp] Round: " << roundNumber << std::endl;
-    // std::cout << "[DisplayManager.cpp] Time remaining: " << timeRemaining << " seconds" << std::endl;
-    // std::cout << "[DisplayManager.cpp] Cards: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
+    // Debug info about what we're displaying - only if showOutput is true
+    if (showOutput) {
+        std::cout << "[DisplayManager.cpp] Display update called with:" << std::endl;
+        std::cout << "[DisplayManager.cpp] Round: " << roundNumber << std::endl;
+        std::cout << "[DisplayManager.cpp] Time remaining: " << timeRemaining << " seconds" << std::endl;
+        std::cout << "[DisplayManager.cpp] Cards: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
+    }
     
     // Create game info display
     char line1[32];
@@ -51,16 +55,22 @@ void DisplayManager::updateCardAndGameDisplay() {
     // Format countdown timer (both players move simultaneously)
     snprintf(line3, sizeof(line3), "TIME: %d sec", timeRemaining);
     
-    // Debug output before displaying - reduced verbosity
-    // std::cout << "[DisplayManager.cpp] LCD Line 1: " << line1 << std::endl;
-    // std::cout << "[DisplayManager.cpp] LCD Line 2: " << line2 << std::endl;
-    // std::cout << "[DisplayManager.cpp] LCD Line 3: " << line3 << std::endl;
+    // Debug output before displaying - only if showOutput is true
+    if (showOutput) {
+        std::cout << "[DisplayManager.cpp] LCD Line 1: " << line1 << std::endl;
+        std::cout << "[DisplayManager.cpp] LCD Line 2: " << line2 << std::endl;
+        std::cout << "[DisplayManager.cpp] LCD Line 3: " << line3 << std::endl;
+    }
     
     // Display the summary on LCD
-    // std::cout << "[DisplayManager.cpp] Sending to LCD via lcd_place_message..." << std::endl;
+    if (showOutput) {
+        std::cout << "[DisplayManager.cpp] Sending to LCD via lcd_place_message..." << std::endl;
+    }
     char* cardMsg[] = {line1, line2, line3};
     lcd_place_message(cardMsg, 3, lcd_center);
-    // std::cout << "[DisplayManager.cpp] LCD update complete" << std::endl;
+    if (showOutput) {
+        std::cout << "[DisplayManager.cpp] LCD update complete" << std::endl;
+    }
     
     // Also log to console - but limit output to reduce spam
     static int lastTimeRemaining = -1;
@@ -71,8 +81,9 @@ void DisplayManager::updateCardAndGameDisplay() {
     // 2. Time is a multiple of 5 seconds (0, 5, 10, 15, etc.)
     // 3. Time is in final 3 seconds countdown
     // 4. First display after initialization (lastTimeRemaining == -1)
-    bool shouldLog = lastRoundNumber != roundNumber ||             // Round changed
-                    lastTimeRemaining == -1;                      // First display
+    bool shouldLog = (lastRoundNumber != roundNumber ||    // Round changed
+                     lastTimeRemaining == -1) &&          // First display
+                     showOutput;                          // Only if showOutput is true
                     
     if (shouldLog) {
         std::cout << "\n************************************" << std::endl;
@@ -88,7 +99,9 @@ void DisplayManager::updateCardAndGameDisplay() {
     lastTimeRemaining = timeRemaining;
     lastRoundNumber = roundNumber;
     
-    // std::cout << "[DisplayManager.cpp] ====== DISPLAY UPDATE COMPLETE ======\n" << std::endl;
+    if (showOutput) {
+        std::cout << "[DisplayManager.cpp] ====== DISPLAY UPDATE COMPLETE ======\n" << std::endl;
+    }
 }
 
 void DisplayManager::displayRoundStart(int roundNumber, int timeRemaining) {
@@ -245,4 +258,30 @@ void DisplayManager::displayMessage(const std::string& line1, const std::string&
     lcd_place_message(message, 2, lcd_center);
     
     std::cout << line1 << " - " << line2 << std::endl;
+}
+
+void DisplayManager::displayWaitingForNextRound(int completedRound) {
+    char line1[32];
+    char line2[32];
+    
+    snprintf(line1, sizeof(line1), "ROUND %d COMPLETE", completedRound);
+    snprintf(line2, sizeof(line2), "Waiting for next round...");
+    
+    char* waitingMsg[] = {line1, line2};
+    lcd_place_message(waitingMsg, 2, lcd_center);
+    
+    std::cout << "Round " << completedRound << " completed. Waiting for next round to start..." << std::endl;
+}
+
+void DisplayManager::displayGestureConfirmed(const std::string& gesture) {
+    char line1[32];
+    char line2[32];
+    
+    snprintf(line1, sizeof(line1), "GESTURE SENT");
+    snprintf(line2, sizeof(line2), "%s", gesture.c_str());
+    
+    char* gestureMsg[] = {line1, line2};
+    lcd_place_message(gestureMsg, 2, lcd_center);
+    
+    std::cout << "Gesture " << gesture << " confirmed and sent" << std::endl;
 } 

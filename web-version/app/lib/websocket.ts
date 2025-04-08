@@ -176,6 +176,20 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
   });
 };
 
+// A simplified version of sendMessage that doesn't return a Promise
+export const sendWebSocketMessage = (message: {
+  event: string;
+  payload: any;
+}): void => {
+  try {
+    sendMessage(message.event, message.payload).catch((error) => {
+      console.error("Error sending WebSocket message:", error);
+    });
+  } catch (error) {
+    console.error("Error in sendWebSocketMessage:", error);
+  }
+};
+
 // Get WebSocket connection status
 export const getSocketStatus = () => socketStatus;
 

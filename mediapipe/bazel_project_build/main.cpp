@@ -1,20 +1,22 @@
-#include "app/RoomManager.h"
-#include "app/WebSocketClient.h"
-#include "app/WebSocketReceiver.h"
-#include "app/lcd_display.h"
-#include "app/GestureDetector.h"
-#include "app/GameState.h"
-#include "app/DisplayManager.h"
-#include "app/MessageHandler.h"
-#include "hal/rotary_press_statemachine.h"
 #include <iostream>
-#include <thread>
 #include <string>
 #include <sstream>
-#include <exception>
-#include <cstdlib>
 #include <chrono>
+#include <thread>
+#include <cstdlib>
+#include <algorithm>
 #include <fstream>
+
+#include "app/WebSocketClient.h"
+#include "app/WebSocketReceiver.h"
+#include "app/MessageHandler.h"
+#include "app/RoomManager.h"
+#include "app/GameState.h"
+#include "app/DisplayManager.h"
+#include "app/GestureDetector.h"
+#include "app/GestureEventSender.h"
+#include "app/lcd_display.h"
+#include "hal/rotary_press_statemachine.h"
 //bazel build -c opt --crosstool_top=@crosstool//:toolchains --compiler=gcc --cpu=aarch64 --define MEDIAPIPE_DISABLE_GPU=1 //bazel_project_build:gesture_game
 
 // Function to display available commands
@@ -122,6 +124,14 @@ int main(int argc, char* argv[]) {
         
         // Connect gesture detector to room manager for auto-play
         roomManager->setGestureDetector(detector);
+        
+        // Create and initialize gesture event sender
+        std::cout << "Initializing gesture event sender..." << std::endl;
+        roomManager->gestureEventSender = new GestureEventSender(
+            roomManager, 
+            roomManager->getDeviceId(),
+            roomManager->getCurrentRoomId()
+        );
         
         // Test camera access
         std::cout << "Testing camera access..." << std::endl;
