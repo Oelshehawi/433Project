@@ -778,19 +778,11 @@ void RoomManager::setReady(bool isReady) {
     // Set ready status for tracking purposes - will be confirmed by server response
     ready = isReady;
     
-    // TEST CODE: Force a display update to verify LCD is working
-    if (isReady && gameState && displayManager) {
-        std::cout << "\n[RoomManager.cpp] TEST: Forcing a display update to verify LCD..." << std::endl;
-        // Set some example values for testing
-        gameState->setCurrentRoundNumber(1);
-        gameState->setCurrentTurnTimeRemaining(30);
-        // Try to update the display
-        displayManager->updateCardAndGameDisplay();
-        std::cout << "[RoomManager.cpp] TEST: Display update complete\n" << std::endl;
-    }
-    
     // Send the message - no tracking needed as we'll receive room_updated
     client->sendMessage(jsonMessage);
+    
+    // Output message to user
+    std::cout << "Setting status to " << (isReady ? "ready" : "not ready") << "..." << std::endl;
 }
 
 bool RoomManager::sendGestureData(const std::string& gestureData) {

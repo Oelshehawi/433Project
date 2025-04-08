@@ -40,7 +40,7 @@ export function sendToRoom(
       payload: finalPayload,
     });
 
-    // Special debugging for round_start events
+    // Special handling for round_start events
     const isRoundStart = event === "round_start";
     if (isRoundStart) {
       console.log(`\n=========== SENDING ROUND_START EVENT ===========`);
@@ -71,13 +71,13 @@ export function sendToRoom(
       console.log(`Sending gesture event to room ${roomId}:`, finalPayload);
     }
 
-    // Get all clients in the room
+    // FIXED APPROACH: First, get all standard clients in the room
     const roomClients = Array.from(clients.values()).filter(
       (client) => client.roomId === roomId
     );
 
-    // Log the clients for round_start events
     if (isRoundStart) {
+      // Log standard clients
       console.log(`Found ${roomClients.length} clients in room ${roomId}:`);
       roomClients.forEach((client, index) => {
         console.log(
@@ -89,31 +89,42 @@ export function sendToRoom(
         );
       });
 
-      // Debug: check all clients to see if BeagleBoard clients might be missing from room
+      // Directly look for BeagleBoard clients that belong to this room
       console.log(
-        `\nDEBUG: Checking ALL ${clients.size} connected clients for any BeagleBoard clients:`
+        `\nDirectly checking beagleBoards map for clients in room ${roomId}:`
       );
-      let beagleBoardCount = 0;
-      Array.from(clients.values()).forEach((client) => {
-        const isBeagleBoard = client.playerId?.startsWith("bb_") || false;
-        const inThisRoom = client.roomId === roomId;
-        if (isBeagleBoard) {
-          console.log(
-            `  - BeagleBoard client found: ${
-              client.playerId
-            }, In room ${roomId}: ${inThisRoom}, Room ID: ${
-              client.roomId || "none"
-            }`
-          );
-          beagleBoardCount++;
+
+      // Get BeagleBoard clients specifically for this room
+      const roomBeagleClients = Array.from(beagleBoards.values()).filter(
+        (bb) =>
+          bb.roomId === roomId &&
+          bb.client &&
+          bb.client.readyState === WebSocket.OPEN
+      );
+
+      console.log(
+        `Found ${roomBeagleClients.length} BeagleBoard clients specifically for room ${roomId}`
+      );
+
+      roomBeagleClients.forEach((bb, index) => {
+        console.log(
+          `  ${index + 1}. Device ID: ${bb.deviceId}, Room ID: ${
+            bb.roomId
+          }, WebSocket Ready: ${
+            bb.client?.readyState === 1 ? "OPEN" : "NOT OPEN"
+          }`
+        );
+
+        // Make sure these clients are in our roomClients array
+        if (!roomClients.some((client) => client.id === bb.client?.id)) {
+          if (bb.client) {
+            console.log(
+              `  Adding missing BeagleBoard client to roomClients for sending`
+            );
+            roomClients.push(bb.client);
+          }
         }
       });
-
-      if (beagleBoardCount === 0) {
-        console.log(
-          `  WARNING: No BeagleBoard clients found among ALL connections!`
-        );
-      }
     }
 
     // Send to all clients in the room
@@ -155,37 +166,45 @@ export function sendToRoom(
       }
     }
 
-    // Log summary for round_start
+    // For round_start events, do an additional direct check to ensure BeagleBoard clients get their messages
     if (isRoundStart) {
-      console.log(
-        `Round start event sent to ${sentCount}/${roomClients.length} clients in room ${roomId}`
-      );
-
       // Direct check for BeagleBoard clients
-      const bbClients = Array.from(beagleBoards.values());
-      console.log(`BeagleBoard map contains ${bbClients.length} clients`);
-      bbClients.forEach((bb) => {
-        console.log(
-          `  - BB: ${bb.deviceId}, Room: ${bb.roomId || "none"}, Match: ${
-            bb.roomId === roomId
-          }`
-        );
+      console.log(
+        `\nDouble checking BeagleBoard map for clients we need to send to:`
+      );
+      let extraSentCount = 0;
 
-        // Try to find this client in the clients map
-        let found = false;
-        clients.forEach((client) => {
-          if (client.playerId === bb.deviceId) {
-            found = true;
-            console.log(`    ✓ Found matching client with ID ${client.id}`);
+      beagleBoards.forEach((bb, id) => {
+        if (
+          bb.roomId === roomId &&
+          bb.client &&
+          bb.client.readyState === WebSocket.OPEN
+        ) {
+          // Check if we already sent to this client
+          const alreadySent = roomClients.some(
+            (client) => client.id === bb.client?.id
+          );
+
+          if (!alreadySent) {
+            console.log(
+              `  Sending directly to BeagleBoard ${bb.deviceId} that was missed in room clients`
+            );
+            bb.client.send(message);
+            extraSentCount++;
           }
-        });
-
-        if (!found) {
-          console.log(`    ✗ NO MATCHING CLIENT FOUND IN CLIENTS MAP!`);
         }
       });
 
-      console.log(`=========== END OF ROUND_START SENDING ===========\n`);
+      if (extraSentCount > 0) {
+        console.log(
+          `  Sent to ${extraSentCount} additional BeagleBoard clients directly`
+        );
+        sentCount += extraSentCount;
+      }
+
+      console.log(
+        `\nFinal round_start event sent to ${sentCount} total clients for room ${roomId}`
+      );
     }
 
     // Special broadcast for game events to web viewers that might not be in the room
