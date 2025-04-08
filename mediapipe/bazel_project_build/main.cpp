@@ -11,6 +11,7 @@
 #include <exception>
 #include <cstdlib>
 #include <chrono>
+#include <fstream>
 //bazel build -c opt --crosstool_top=@crosstool//:toolchains --compiler=gcc --cpu=aarch64 --define MEDIAPIPE_DISABLE_GPU=1 //bazel_project_build:gesture_game
 
 // Function to display available commands
@@ -32,13 +33,17 @@ void displayHelp() {
 }
 
 int main(int argc, char* argv[]) {
-    // Suppress TensorFlow and MediaPipe verbose logging
-    setenv("TF_CPP_MIN_LOG_LEVEL", "2", 1);  // 0=debug, 1=info, 2=warning, 3=error
-    setenv("GLOG_minloglevel", "2", 1);      // 0=info, 1=warning, 2=error, 3=fatal
+    // Silence output from specific warnings by redirecting stderr temporarily
+    std::freopen("/dev/null", "w", stderr);
     
-    // Suppress specific warnings
+    // Suppress TensorFlow and MediaPipe verbose logging with environment variables
+    setenv("TF_CPP_MIN_LOG_LEVEL", "3", 1);  // 0=debug, 1=info, 2=warning, 3=error
+    setenv("GLOG_minloglevel", "3", 1);      // 0=info, 1=warning, 2=error, 3=fatal
     setenv("GLOG_stderrthreshold", "3", 1);  // Only log errors and fatal messages
     setenv("MEDIAPIPE_DISABLE_VERBOSE_LOGGING", "1", 1);  // Disable verbose MediaPipe logging
+    
+    // After setting environment variables, restore stderr
+    std::freopen("/dev/tty", "w", stderr);
     
     std::cout << "=== Beagle Board Gesture Control Client - Starting up... ===" << std::endl;
     

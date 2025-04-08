@@ -558,7 +558,17 @@ void WebSocketClient::wakeServiceThread() {
         wakeRequested = true;
     }
     wakeCV.notify_all();
-} 
+}
+
+void WebSocketClient::onMessageReceived(const std::string& message) {
+    // Log all incoming messages to debug server communication
+    std::cout << "RAW WEBSOCKET MESSAGE: " << message << std::endl;
+    
+    // Pass to message handlers
+    if (messageCallback) {
+        messageCallback(message);
+    }
+}
 
 int protocol_callback(struct lws *wsi, enum lws_callback_reasons reason, 
                     void *user, void *in, size_t len) {

@@ -369,6 +369,54 @@ export const handlePlayerReady = (
 
         // Also broadcast room_updated to ALL clients for better state synchronization
         broadcastToAll("room_updated", { room });
+
+        // Initialize cards immediately instead of waiting for game_started event
+        console.log(`PRE-INITIALIZING CARDS for room ${effectiveRoomId}`);
+        const cardsInitialized = initializeCardsForRoom(effectiveRoomId);
+        if (!cardsInitialized) {
+          console.error(
+            `Failed to pre-initialize cards for room ${effectiveRoomId}`
+          );
+        } else {
+          console.log(
+            `Cards pre-initialized successfully for room ${effectiveRoomId}`
+          );
+
+          // Send cards directly to all BeagleBoard players
+          const beagleBoardPlayers = room.players.filter(
+            (player) => player.playerType === "beagleboard"
+          );
+
+          console.log(
+            `Sending cards to ${beagleBoardPlayers.length} BeagleBoard players`
+          );
+
+          if (room.playerCards) {
+            beagleBoardPlayers.forEach((player) => {
+              const playerCards = room.playerCards?.get(player.id);
+              if (playerCards) {
+                console.log(
+                  `EARLY SENDING cards to ${player.name} (${player.id})`
+                );
+
+                // Try different methods of sending
+                // Method 1: Send to room with target ID
+                sendToRoom(effectiveRoomId, "beagle_board_command", {
+                  targetPlayerId: player.id,
+                  command: "CARDS",
+                  cards: playerCards.cards,
+                });
+
+                // Method 2: Broadcast to all
+                broadcastToAll("beagle_board_command", {
+                  targetPlayerId: player.id,
+                  command: "CARDS",
+                  cards: playerCards.cards,
+                });
+              }
+            });
+          }
+        }
       }
     }
   } catch (error) {

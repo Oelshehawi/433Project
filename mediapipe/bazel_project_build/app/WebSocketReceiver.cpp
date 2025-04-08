@@ -16,6 +16,16 @@ void WebSocketReceiver::setMessageCallback(std::function<void(const std::string&
 void WebSocketReceiver::onMessageReceived(const std::string& message) {
     // Process the message and forward it to the user-provided callback
     // Don't print raw messages here, let the handlers do any necessary printing
+    
+    // Check for beagle_board_command events and highlight them
+    if (message.find("beagle_board_command") != std::string::npos && 
+        message.find("CARDS") != std::string::npos) {
+        
+        std::cout << "\n\n===========================================\n";
+        std::cout << "BEAGLEBOARD COMMAND RECEIVED: CARDS UPDATE\n";
+        std::cout << "===========================================\n\n";
+    }
+    
     if (messageCallback) {
         messageCallback(message);
     }

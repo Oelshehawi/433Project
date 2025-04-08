@@ -418,13 +418,20 @@ void GestureDetector::detectionLoop() {
 // Display a list of cards on the LCD
 void displayCardsOnLCD(const std::vector<Card>& cards) {
     if (cards.empty()) {
-        char* noCardsMsg[] = {"No cards", "available"};
+        char* noCardsMsg[] = {"NO CARDS", "AVAILABLE!"};
         lcd_place_message(noCardsMsg, 2, lcd_center);
         return;
     }
     
     // Clear the LCD first
     lcd_clear_screen();
+    
+    // Flash the screen once to indicate new cards
+    char* newCardsMsg[] = {"NEW CARDS", "RECEIVED!"};
+    lcd_place_message(newCardsMsg, 2, lcd_center);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    lcd_clear_screen();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
     
     // Create a combined display showing all cards
     char line1[32];
@@ -442,24 +449,30 @@ void displayCardsOnLCD(const std::vector<Card>& cards) {
         else if (card.type == "build") buildCount++;
     }
     
-    // Format the header line
-    snprintf(line1, sizeof(line1), "YOUR CARDS:");
+    // Format the header line with a distinct border
+    snprintf(line1, sizeof(line1), "===YOUR CARDS===");
     
     // Format the card type counts
     snprintf(line2, sizeof(line2), "ATK:%d DEF:%d BLD:%d", attackCount, defendCount, buildCount);
     
     // Info line
-    snprintf(line3, sizeof(line3), "Start to play");
+    snprintf(line3, sizeof(line3), "READY FOR PLAY!");
     
     // Display the summary
     char* cardMsg[] = {line1, line2, line3};
     lcd_place_message(cardMsg, 3, lcd_center);
     
-    // Log what we're displaying
-    std::cout << "LCD now displaying cards:" << std::endl;
-    std::cout << "- Attack cards: " << attackCount << std::endl;
-    std::cout << "- Defend cards: " << defendCount << std::endl;
-    std::cout << "- Build cards: " << buildCount << std::endl;
+    // Make console output very visible
+    std::cout << "\n\n************************************" << std::endl;
+    std::cout << "*       CARDS DISPLAY UPDATE       *" << std::endl;
+    std::cout << "************************************" << std::endl;
+    std::cout << "* ATTACK: " << attackCount << std::endl;
+    std::cout << "* DEFEND: " << defendCount << std::endl;
+    std::cout << "* BUILD:  " << buildCount << std::endl;
+    std::cout << "************************************\n\n" << std::endl;
+    
+    // Also make a sound to alert user
+    std::system("echo -e \"\\a\"");
 }
 
 // Training section
