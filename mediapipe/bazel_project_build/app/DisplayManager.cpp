@@ -14,7 +14,7 @@ DisplayManager::~DisplayManager() {
 
 void DisplayManager::updateCardAndGameDisplay() {
     if (!gameState) {
-        std::cerr << "Error: GameState not set for DisplayManager" << std::endl;
+        std::cerr << "[DisplayManager.cpp] Error: GameState not set for DisplayManager" << std::endl;
         return;
     }
     
@@ -23,6 +23,9 @@ void DisplayManager::updateCardAndGameDisplay() {
     int defendCount = 0;
     int buildCount = 0;
     gameState->getCardCounts(attackCount, defendCount, buildCount);
+    
+    // Get the current timer value
+    int timeRemaining = gameState->getCurrentTurnTimeRemaining();
     
     // Create game info display
     char line1[32];
@@ -36,7 +39,10 @@ void DisplayManager::updateCardAndGameDisplay() {
     snprintf(line2, sizeof(line2), "ATK:%d DEF:%d BLD:%d", attackCount, defendCount, buildCount);
     
     // Format countdown timer (both players move simultaneously)
-    snprintf(line3, sizeof(line3), "TIME: %d sec", gameState->getCurrentTurnTimeRemaining());
+    snprintf(line3, sizeof(line3), "TIME: %d sec", timeRemaining);
+    
+    // Debug print the timer value before displaying
+    std::cout << "[DisplayManager.cpp] Updating display with timer: " << timeRemaining << " seconds" << std::endl;
     
     // Display the summary
     char* cardMsg[] = {line1, line2, line3};
@@ -47,7 +53,7 @@ void DisplayManager::updateCardAndGameDisplay() {
     std::cout << "*       GAME STATE UPDATE        *" << std::endl;
     std::cout << "************************************" << std::endl;
     std::cout << "* ROUND: " << gameState->getCurrentRoundNumber() << std::endl;
-    std::cout << "* TIME:  " << gameState->getCurrentTurnTimeRemaining() << "s" << std::endl;
+    std::cout << "* TIME:  " << timeRemaining << "s" << std::endl;
     std::cout << "* CARDS: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
     std::cout << "************************************\n" << std::endl;
 }

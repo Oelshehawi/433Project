@@ -27,7 +27,7 @@ void GameState::startTimerThread() {
 }
 
 void GameState::updateTimer() {
-    std::cout << "Timer thread started with " << currentTurnTimeRemaining << " seconds" << std::endl;
+    std::cout << "[GameState.cpp] Timer thread started with " << currentTurnTimeRemaining << " seconds" << std::endl;
     
     while (timerThreadRunning && timerActive) {
         // Sleep for 1 second
@@ -40,15 +40,21 @@ void GameState::updateTimer() {
             if (currentTurnTimeRemaining > 0) {
                 currentTurnTimeRemaining--;
                 
+                // Add debug print to verify timer value is decreasing
+                std::cout << "[GameState.cpp] Timer updated: " << currentTurnTimeRemaining << " seconds remaining" << std::endl;
+                
                 // Update the display with the new time
-                if (displayManager && !lastReceivedCards.empty()) {
+                if (displayManager) {
+                    // Ensure display is updated even if no cards are present
                     displayManager->updateCardAndGameDisplay();
+                } else {
+                    std::cerr << "[GameState.cpp] Display manager is NULL, cannot update display" << std::endl;
                 }
             }
             
             // If time has run out, auto-play a card
             if (currentTurnTimeRemaining <= 0 && timerActive) {
-                std::cout << "Time expired, auto-playing a card..." << std::endl;
+                std::cout << "[GameState.cpp] Time expired, auto-playing a card..." << std::endl;
                 
                 // Disable the timer
                 timerActive = false;
@@ -61,7 +67,7 @@ void GameState::updateTimer() {
         }
     }
     
-    std::cout << "Timer thread ended" << std::endl;
+    std::cout << "[GameState.cpp] Timer thread ended" << std::endl;
 }
 
 void GameState::stopTimerThread() {
@@ -89,7 +95,14 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
     lastTimerUpdate = std::chrono::steady_clock::now();
     timerActive = true;
     
-    std::cout << "New round started - setting timer to 30 seconds" << std::endl;
+    std::cout << "[GameState.cpp] New round started - setting timer to " << currentTurnTimeRemaining << " seconds" << std::endl;
+    
+    // Force an immediate display update to show the new timer
+    if (displayManager) {
+        displayManager->updateCardAndGameDisplay();
+    } else {
+        std::cerr << "[GameState.cpp] Display manager is NULL when initializing timer" << std::endl;
+    }
     
     // Start the timer thread
     startTimerThread();
@@ -97,7 +110,7 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
 
 void GameState::processCards(const json& cardsPayload) {
     if (!cardsPayload.contains("cards")) {
-        std::cerr << "Error: Cards payload does not contain cards array" << std::endl;
+        std::cerr << "[GameState.cpp] Error: Cards payload does not contain cards array" << std::endl;
         return;
     }
     
@@ -112,13 +125,17 @@ void GameState::processCards(const json& cardsPayload) {
         card.name = cardJson.contains("name") ? cardJson["name"].get<std::string>() : "";
         card.description = cardJson.contains("description") ? cardJson["description"].get<std::string>() : "";
         
-        std::cout << "  Card: " << card.name << " (" << card.type << ")" << std::endl;
+        std::cout << "[GameState.cpp]   Card: " << card.name << " (" << card.type << ")" << std::endl;
         lastReceivedCards.push_back(card);
     }
     
-    // Display the cards
-    if (displayManager && !lastReceivedCards.empty()) {
+    // Display the cards and current game state
+    if (displayManager) {
+        std::cout << "[GameState.cpp] Updating display after receiving cards - current timer: " 
+                  << currentTurnTimeRemaining << " seconds" << std::endl;
         displayManager->updateCardAndGameDisplay();
+    } else {
+        std::cerr << "[GameState.cpp] Display manager is NULL, cannot update display after receiving cards" << std::endl;
     }
 }
 
