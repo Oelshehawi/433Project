@@ -430,19 +430,57 @@ void GameState::autoPlayCard() {
         
         std::cout << "[GameState.cpp] Auto-playing card: " << cardType << " (Card ID: " << cardId << ")" << std::endl;
         
-        // Send the gesture event
-        if (roomManager && roomManager->gestureEventSender) {
+        // Send the gesture event - with comprehensive safety checks
+        if (roomManager) {
+            // Check if gestureEventSender is properly initialized
+            if (!roomManager->gestureEventSender) {
+                std::cerr << "[GameState.cpp] gestureEventSender is NULL - cannot send gesture event" << std::endl;
+                
+                // Try to fix by creating a new sender if possible
+                if (roomManager->client) {
+                    std::cout << "[GameState.cpp] Attempting to create a new gestureEventSender" << std::endl;
+                    try {
+                        roomManager->gestureEventSender = new GestureEventSender(roomManager->client);
+                    } catch (const std::exception& e) {
+                        std::cerr << "[GameState.cpp] Failed to create gestureEventSender: " << e.what() << std::endl;
+                    }
+                }
+                
+                // If still NULL after fix attempt, end the round without sending gesture
+                if (!roomManager->gestureEventSender) {
+                    std::cerr << "[GameState.cpp] Could not create gestureEventSender, skipping gesture" << std::endl;
+                    sendRoundEndEvent(); // Still send round end
+                    alreadyAutoPlaying = false;
+                    return;
+                }
+            }
+            
+            // Check client connectivity
+            if (!roomManager->client || !roomManager->isConnected()) {
+                std::cerr << "[GameState.cpp] WebSocket client is disconnected, cannot send gesture" << std::endl;
+                sendRoundEndEvent(); // Still send round end
+                alreadyAutoPlaying = false;
+                return;
+            }
+            
             try {
-                roomManager->sendGestureEvent(
+                // Send gesture with double verification
+                bool sendSuccess = roomManager->sendGestureEvent(
                     roomManager->getRoomId(), 
                     deviceId, 
                     cardType, 
                     0.95, // Default confidence value
                     cardId
                 );
+                
+                if (!sendSuccess) {
+                    std::cerr << "[GameState.cpp] Failed to send gesture event, but no exception thrown" << std::endl;
+                }
             } catch (const std::exception& e) {
                 std::cerr << "[GameState.cpp] Error sending gesture event: " << e.what() << std::endl;
             }
+        } else {
+            std::cerr << "[GameState.cpp] RoomManager is NULL - cannot send gesture event" << std::endl;
         }
         
         // Update display back to cards and game info (without console output)

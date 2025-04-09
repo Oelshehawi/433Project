@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <ctime>     // For std::time
 #include <nlohmann/json.hpp>
+#include <thread>
 
 // Forward declarations for LCD functions (from lcd_display.h)
 extern "C" {
@@ -687,42 +688,97 @@ bool RoomManager::sendGestureEvent(const std::string& roomId, const std::string&
             return false;
         }
         
-        // Check if client is valid
+        // Check if client is valid with retry logic
         if (!client) {
             std::cerr << "[RoomManager.cpp] WebSocket client is null, cannot send gesture" << std::endl;
             return false;
         }
         
-        // Ensure we have a valid gesture event sender
-        if (!gestureEventSender) {
-            std::cout << "[RoomManager.cpp] Creating new GestureEventSender" << std::endl;
-            // Create the gesture event sender if it doesn't exist
-            try {
-                gestureEventSender = new GestureEventSender(client);
-            } catch (const std::exception& e) {
-                std::cerr << "[RoomManager.cpp] Failed to create GestureEventSender: " << e.what() << std::endl;
-                return false;
+        // Check connection status with more defensive approach
+        if (!client->isConnected()) {
+            std::cerr << "[RoomManager.cpp] WebSocket client is not connected, cannot send gesture" << std::endl;
+            // Don't attempt to fix connection here - would add too much complexity
+            return false;
+        }
+        
+        // Ensure we have a valid gesture event sender with retry logic
+        int maxRetries = 2;
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            if (!gestureEventSender) {
+                if (attempt < maxRetries) {
+                    std::cout << "[RoomManager.cpp] Creating new GestureEventSender (attempt " << (attempt+1) << ")" << std::endl;
+                    // Create the gesture event sender if it doesn't exist
+                    try {
+                        gestureEventSender = new GestureEventSender(client);
+                    } catch (const std::exception& e) {
+                        std::cerr << "[RoomManager.cpp] Failed to create GestureEventSender: " << e.what() << std::endl;
+                        // Sleep briefly before retry
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        continue; // Try again
+                    }
+                    
+                    if (!gestureEventSender) {
+                        std::cerr << "[RoomManager.cpp] Failed to allocate GestureEventSender" << std::endl;
+                        // Sleep briefly before retry
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        continue; // Try again
+                    }
+                } else {
+                    std::cerr << "[RoomManager.cpp] Failed to create GestureEventSender after " << maxRetries << " attempts" << std::endl;
+                    return false;
+                }
             }
             
-            if (!gestureEventSender) {
-                std::cerr << "[RoomManager.cpp] Failed to allocate GestureEventSender" << std::endl;
-                return false;
-            }
+            // If we got here, we have a valid gestureEventSender
+            break;
+        }
+        
+        // Final safety check - if we still don't have a valid sender, return false
+        if (!gestureEventSender) {
+            std::cerr << "[RoomManager.cpp] GestureEventSender is still null after retry attempts" << std::endl;
+            return false;
         }
         
         std::cout << "[RoomManager.cpp] Sending gesture event: " << gesture << " with card ID: " << cardId << std::endl;
         
-        // Forward the gesture event to the gesture event sender
+        // Forward the gesture event to the gesture event sender with retry logic
         bool result = false;
-        try {
-            result = gestureEventSender->sendGestureEvent(roomId, playerId, gesture, confidence, cardId);
-        } catch (const std::exception& e) {
-            std::cerr << "[RoomManager.cpp] Exception in sendGestureEvent: " << e.what() << std::endl;
-            return false;
+        int sendRetries = 1;
+        
+        for (int attempt = 0; attempt <= sendRetries; attempt++) {
+            try {
+                result = gestureEventSender->sendGestureEvent(roomId, playerId, gesture, confidence, cardId);
+                
+                if (result) {
+                    // Success, break out of retry loop
+                    break;
+                } else if (attempt < sendRetries) {
+                    // Failed but can retry
+                    std::cerr << "[RoomManager.cpp] Send failed, retrying..." << std::endl;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[RoomManager.cpp] Exception in sendGestureEvent: " << e.what() << std::endl;
+                
+                if (attempt < sendRetries) {
+                    // Try to recover sender
+                    try {
+                        if (gestureEventSender) {
+                            delete gestureEventSender;
+                        }
+                        gestureEventSender = new GestureEventSender(client);
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    } catch (...) {
+                        std::cerr << "[RoomManager.cpp] Failed to recover gestureEventSender" << std::endl;
+                    }
+                } else {
+                    return false;
+                }
+            }
         }
         
-        // Ensure message processing
-        if (client) {
+        // Ensure message processing with extra safety
+        if (client && client->isConnected()) {
             try {
                 client->ensureMessageProcessing();
             } catch (const std::exception& e) {

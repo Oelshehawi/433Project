@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <cmath>
 
 
 #include "mediapipe/framework/calculator_framework.h"
@@ -160,22 +161,58 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
         ret->num_fingers_held_up++;
     }
     
-    // Simplify thumb detection logic to work for both left and right hands
-    // Use vertical position or any horizontal movement as indication of thumb up
-    /*
-    if (thumb_tip.y() < THUMB_Y_THRESHOLD || 
-        abs(thumb_high.x() - thumb_tip.x()) > 0.05 || 
-        abs(thumb_low.x() - thumb_tip.x()) > 0.05) {
-        
+    // Replace simple thumb detection with more sophisticated agreement-based approach
+    // Create different detection method for thumb that's less prone to false positives
+    int thumb_agreements = 0;
+    for (int i = THUMB_TIP; i >= THUMB_BOT; i--){
+        for (int j = i-1; j >= THUMB_BOT ; j--){
+            // Check both horizontal and vertical positioning for thumb
+            if (landmark_list.landmark(i).y() > landmark_list.landmark(j).y()){
+                thumb_agreements++;
+            }
+        }
+    }
+
+    // Also check the angle of the thumb relative to the hand
+    float thumb_angle = calculateThumbAngle(thumb_tip, thumb_high, thumb_low, thumb_bot, hand_base);
+
+    // Check for thumb extension by examining agreements and angle
+    // A held up thumb will have few agreements and a distinct angle
+    if (thumb_agreements < 2 && thumb_angle > 0.7) {
         ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
     }
-    */
-    if (fabs(hand_base.x() - thumb_tip.x()) > 0.1 || abs(thumb_tip.y() - hand_base.y()) > THUMB_Y_THRESHOLD){
-        ret->thumb_held_up = true;
-        ret->num_fingers_held_up++;
-   }
     return;
+}
+
+// Helper function to calculate thumb angle relative to hand
+float calculateThumbAngle(
+    const mediapipe::NormalizedLandmark& thumb_tip,
+    const mediapipe::NormalizedLandmark& thumb_high,
+    const mediapipe::NormalizedLandmark& thumb_low,
+    const mediapipe::NormalizedLandmark& thumb_bot,
+    const mediapipe::NormalizedLandmark& hand_base) {
+    
+    // Calculate vectors representing the thumb and palm
+    float thumb_x = thumb_tip.x() - thumb_bot.x();
+    float thumb_y = thumb_tip.y() - thumb_bot.y();
+    
+    // Reference vector approximately aligned with palm (pointing down)
+    float palm_x = 0.0f;
+    float palm_y = 1.0f;
+    
+    // Calculate magnitude of vectors
+    float thumb_mag = sqrt(thumb_x * thumb_x + thumb_y * thumb_y);
+    float palm_mag = 1.0f; // Unit vector
+    
+    // Calculate dot product
+    float dot_product = thumb_x * palm_x + thumb_y * palm_y;
+    
+    // Calculate angle (will be 0 when aligned with palm, higher when extended)
+    float cos_angle = dot_product / (thumb_mag * palm_mag);
+    
+    // Return 1 - cos_angle so the value is higher when thumb is extended
+    return 1.0f - cos_angle;
 }
 
 

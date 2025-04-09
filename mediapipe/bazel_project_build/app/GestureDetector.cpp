@@ -2,6 +2,7 @@
 #include "RoomManager.h"
 #include "GestureEventSender.h"
 #include "GameState.h"
+#include "DisplayManager.h"
 #include <iostream>
 #include <unistd.h>
 #include <cmath>
@@ -87,6 +88,17 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
         detectedMove = "Attack";
         actionType = "attack";
         std::cout << "[GestureDetector.cpp] Detected gesture: Attack" << std::endl;
+        
+        // Display confirmation message if we have a display manager
+        if (roomManager && roomManager->gameState) {
+            DisplayManager* dm = roomManager->gameState->getDisplayManager();
+            if (dm) {
+                dm->displayMessage(
+                    "ATTACK DETECTED",
+                    "Press button to confirm"
+                );
+            }
+        }
         return true;
     } 
     // Defend: All 5 fingers up
@@ -95,6 +107,17 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
         detectedMove = "Defend";
         actionType = "defend";
         std::cout << "[GestureDetector.cpp] Detected gesture: Defend" << std::endl;
+        
+        // Display confirmation message if we have a display manager
+        if (roomManager && roomManager->gameState) {
+            DisplayManager* dm = roomManager->gameState->getDisplayManager();
+            if (dm) {
+                dm->displayMessage(
+                    "DEFEND DETECTED",
+                    "Press button to confirm"
+                );
+            }
+        }
         return true;
     } 
     // Build: 2 fingers (index and middle)
@@ -103,6 +126,17 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
         detectedMove = "Build";
         actionType = "build";
         std::cout << "[GestureDetector.cpp] Detected gesture: Build" << std::endl;
+        
+        // Display confirmation message if we have a display manager
+        if (roomManager && roomManager->gameState) {
+            DisplayManager* dm = roomManager->gameState->getDisplayManager();
+            if (dm) {
+                dm->displayMessage(
+                    "BUILD DETECTED",
+                    "Press button to confirm"
+                );
+            }
+        }
         return true;
     }
     
@@ -167,6 +201,17 @@ void GestureDetector::gestureLoop() {
                 
                 std::cout << "[GestureDetector.cpp] Waiting for gesture confirmation... (press button)" << std::endl;
                 
+                // After initializing wait period, update display with time remaining info
+                if (roomManager && roomManager->gameState) {
+                    DisplayManager* dm = roomManager->gameState->getDisplayManager();
+                    if (dm) {
+                        dm->displayMessage(
+                            detectedMove + " DETECTED",
+                            "Press button to confirm"
+                        );
+                    }
+                }
+                
                 while (runThread.load() && (getTimeInMs() - confirmationStartTime < CONFIRMATION_TIMEOUT_MS)) {
                     // Check if button was pressed
                     int currentValue = rotary_press_statemachine_getValue();
@@ -174,6 +219,24 @@ void GestureDetector::gestureLoop() {
                         gestureConfirmed = true;
                         std::cout << "[GestureDetector.cpp] Gesture confirmed with button press" << std::endl;
                         break;
+                    }
+                    
+                    // Update countdown display every second
+                    static long long lastUpdateTime = 0;
+                    long long currentTime = getTimeInMs();
+                    int remainingSeconds = (CONFIRMATION_TIMEOUT_MS - (currentTime - confirmationStartTime)) / 1000;
+                    
+                    if (currentTime - lastUpdateTime > 1000 && roomManager && roomManager->gameState) {
+                        DisplayManager* dm = roomManager->gameState->getDisplayManager();
+                        if (dm) {
+                            char countdownMessage[32];
+                            snprintf(countdownMessage, sizeof(countdownMessage), "Confirm (%d sec left)", remainingSeconds + 1);
+                            dm->displayMessage(
+                                detectedMove + " DETECTED",
+                                countdownMessage
+                            );
+                            lastUpdateTime = currentTime;
+                        }
                     }
                     
                     // Small delay to prevent high CPU usage
