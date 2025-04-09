@@ -68,57 +68,62 @@ export function isFirstRound(roomId: string): boolean {
   return room.gameState?.roundNumber === 1;
 }
 
-// Add function to handle game_ready event from web client
+// Handler for game ready event from web client
 export function handleGameReady(client: ExtendedWebSocket, payload: any) {
   const { roomId } = payload;
-
   console.log(`Received game_ready signal from web client for room ${roomId}`);
 
   // Verify the room exists
   if (!rooms.has(roomId)) {
-    console.error(`Room ${roomId} not found for game_ready signal`);
+    console.error(`Room ${roomId} not found for game_ready`);
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(
+        JSON.stringify({
+          event: 'error',
+          payload: { message: 'Room not found' },
+        })
+      );
+    }
     return;
   }
 
+  // Get the room
   const room = rooms.get(roomId)!;
 
   // Mark this room as having received the game_ready signal
   webClientReadyRooms.add(roomId);
   console.log(`Room ${roomId} marked as ready to start first round`);
 
-  // Check if the game is in its first round and we're waiting to start
-  if (
-    room.status === 'playing' &&
-    room.gameState &&
-    room.gameState.roundNumber === 1
-  ) {
-    // Check if we have initialized cards but haven't sent the first round_start yet
-    if (room.playerCards && room.playerCards.size > 0) {
-      console.log(
-        `Web client is ready for room ${roomId}. Waiting for round_start event from client.`
-      );
+  // Check if we can start the first round
+  const beagleBoardPlayers = room.players.filter(
+    (p) => p.playerType === 'beagleboard'
+  );
+  const playerCount = beagleBoardPlayers.length;
 
-      // Send game state update to notify clients the server is ready
-      sendToRoom(roomId, 'game_state_update', {
-        roomId,
-        gameState: {
-          towerHeights: Object.fromEntries(room.gameState.towerHeights),
-          goalHeights: Object.fromEntries(room.gameState.goalHeights),
-          roundNumber: room.gameState.roundNumber,
-        },
-        message: 'Server ready and waiting for client to initiate round_start',
-        serverReady: true,
-      });
-
-      // REMOVED: No longer automatically calling startRound here
-    } else {
-      console.error(
-        `Cannot start first round: cards not initialized for room ${roomId}`
-      );
-    }
-  } else {
-    console.log(`Game in room ${roomId} already started or not in first round`);
+  // Normal gameplay requires exactly 2 players
+  if (playerCount < 2) {
+    console.log(
+      `Waiting for more players in room ${roomId}. Currently have ${playerCount}/2 players.`
+    );
+    // Send game state update as notification
+    sendToRoom(roomId, 'game_state_update', {
+      roomId,
+      message: `Waiting for players. Currently have ${playerCount}/2 players.`,
+      needMorePlayers: true,
+    });
+    return;
   }
+
+  console.log(
+    `Web client is ready for room ${roomId}. Waiting for round_start event from client.`
+  );
+
+  // Send game state update as notification
+  sendToRoom(roomId, 'game_state_update', {
+    roomId,
+    message: 'Game is ready. Send round_start to begin.',
+    serverReady: true,
+  });
 }
 
 // New function to handle round_start event from client
@@ -576,16 +581,9 @@ export const handlePlayerReady = (
       // Use the constant for minimum players
       const hasEnoughPlayers = beagleBoardPlayers >= MIN_REQUIRED_PLAYERS;
 
-      // Log test mode status based on the constant
-      if (MIN_REQUIRED_PLAYERS === 1) {
-        console.log(
-          `Room has ${beagleBoardPlayers} BeagleBoard player(s). TEST MODE: Starting with ${MIN_REQUIRED_PLAYERS} player.`
-        );
-      } else {
-        console.log(
-          `Room has ${beagleBoardPlayers} BeagleBoard player(s). Minimum required: ${MIN_REQUIRED_PLAYERS}.`
-        );
-      }
+      console.log(
+        `Room has ${beagleBoardPlayers} BeagleBoard player(s). Minimum required: ${MIN_REQUIRED_PLAYERS}.`
+      );
 
       if (allPlayersReady && hasEnoughPlayers) {
         console.log(
@@ -671,26 +669,6 @@ export const handleGameStart = (
         room.players.filter((p) => p.playerType === 'beagleboard').length
       }`
     );
-
-    if (readyBeagleBoardPlayers.length < MIN_REQUIRED_PLAYERS) {
-      console.error(`Not enough ready BeagleBoard players to start game`);
-      return sendToClient(client, 'error', {
-        error: `At least ${MIN_REQUIRED_PLAYERS} BeagleBoard player(s) must be ready to start${
-          MIN_REQUIRED_PLAYERS === 1 ? ' (TEST MODE)' : ''
-        }`,
-      } as ErrorPayload);
-    }
-
-    // Log mode (test or normal)
-    if (MIN_REQUIRED_PLAYERS === 1) {
-      console.log(
-        `TEST MODE: Starting game with ${readyBeagleBoardPlayers.length} BeagleBoard player(s)`
-      );
-    } else {
-      console.log(
-        `Starting game with ${readyBeagleBoardPlayers.length} BeagleBoard players`
-      );
-    }
 
     // Set room status to playing
     room.status = 'playing';
