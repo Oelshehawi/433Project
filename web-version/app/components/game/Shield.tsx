@@ -12,9 +12,6 @@ export default function Shield({ playerId, isVisible }: ShieldProps) {
 
   return (
     <motion.div
-      className={`absolute bottom-48 ${
-        isPlayer1 ? "left-[25%]" : "right-[25%]"
-      } transform ${isPlayer1 ? "-translate-x-1/2" : "translate-x-1/2"}`}
       initial={{ opacity: 0, scale: 0 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0 }}

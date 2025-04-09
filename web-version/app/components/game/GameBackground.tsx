@@ -1,24 +1,49 @@
 import { motion } from "framer-motion";
+import Image from "next/image";
+import { useState, useEffect } from "react";
 
 interface GameBackgroundProps {
   onAnimationComplete?: () => void;
 }
 
 export default function GameBackground({ onAnimationComplete }: GameBackgroundProps) {
+  // Background options from the public/background folder
+  const backgroundOptions = [
+    "/background/bamboo bridge.png",
+    "/background/castle bridge.png",
+    "/background/forest bridge.png",
+    "/background/sky bridge.png"
+  ];
+  
+  // Randomly select one background on component mount
+  const [selectedBackground, setSelectedBackground] = useState<string>("");
+  
+  useEffect(() => {
+    // Select a random background on component mount
+    const randomIndex = Math.floor(Math.random() * backgroundOptions.length);
+    setSelectedBackground(backgroundOptions[randomIndex]);
+  }, []);
+
   return (
     <motion.div 
-      className="absolute inset-0 z-0 bg-gradient-to-b from-sky-400 to-sky-300 overflow-hidden"
+      className="absolute inset-0 z-0 overflow-hidden"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 1.5, ease: "easeOut" }}
       onAnimationComplete={onAnimationComplete}
     >
-      {/* Grass texture */}
-      <div className="absolute bottom-0 w-full h-1/3 bg-gradient-to-t from-green-600 to-green-500">
-        {/* Subtle grass texture pattern */}
-        <div className="absolute inset-0 opacity-30 bg-repeat-x" 
-             style={{ backgroundImage: "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"20\" viewBox=\"0 0 50 20\"><path d=\"M0,20 Q5,0 10,20 Q15,5 20,20 Q25,0 30,20 Q35,5 40,20 Q45,0 50,20 Z\" fill=\"%23166534\"/></svg>')" }}></div>
-      </div>
+      {/* Main background image - randomly selected */}
+      {selectedBackground && (
+        <div className="absolute inset-0">
+          <Image 
+            src={selectedBackground}
+            alt="Game Background"
+            fill
+            className="object-cover"
+            priority
+          />
+        </div>
+      )}
     </motion.div>
   );
 } 
