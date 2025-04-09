@@ -12,6 +12,8 @@ const MIN_GOAL_HEIGHT = 5;
 const MAX_GOAL_HEIGHT = 10;
 // Set to 2 for normal gameplay (removing test mode)
 export const MIN_REQUIRED_PLAYERS = 1; // Test mode: allowing games with just 1 player
+// Virtual opponent ID for test mode
+export const VIRTUAL_OPPONENT_ID = 'virtual_opponent';
 
 // Track pending gestures for each room and round
 interface PendingGesture {
@@ -23,6 +25,13 @@ interface PendingGesture {
 
 // Map of roomId -> roundNumber -> array of pending gestures
 const pendingGestures = new Map<string, Map<number, PendingGesture[]>>();
+
+// Helper function to generate a random gesture for the virtual opponent
+function generateRandomGesture(): GameActionType {
+  const gestures: GameActionType[] = ['attack', 'defend', 'build'];
+  const randomIndex = Math.floor(Math.random() * gestures.length);
+  return gestures[randomIndex];
+}
 
 // Initialize game state for a room
 export function initializeGameState(roomId: string): boolean {
@@ -87,6 +96,27 @@ export function initializeGameState(roomId: string): boolean {
       `Player ${player.name} (${player.id}) - Initial Tower: 0, Goal: ${goalHeight}`
     );
   });
+
+  // If in test mode with only one player, add a virtual opponent
+  if (MIN_REQUIRED_PLAYERS === 1 && beagleBoardPlayers.length === 1) {
+    console.log(`Adding virtual opponent for test mode in room ${roomId}`);
+
+    // Initialize virtual opponent tower and goal heights
+    gameState.towerHeights.set(VIRTUAL_OPPONENT_ID, 0);
+
+    const goalHeight = Math.floor(
+      Math.random() * (MAX_GOAL_HEIGHT - MIN_GOAL_HEIGHT + 1) + MIN_GOAL_HEIGHT
+    );
+    gameState.goalHeights.set(VIRTUAL_OPPONENT_ID, goalHeight);
+
+    // Initialize shield status to false
+    gameState.playerShields.set(VIRTUAL_OPPONENT_ID, false);
+
+    // Initialize player moves to false
+    gameState.playerMoves.set(VIRTUAL_OPPONENT_ID, false);
+
+    console.log(`Virtual Opponent - Initial Tower: 0, Goal: ${goalHeight}`);
+  }
 
   // Save game state to room
   room.gameState = gameState;
@@ -528,8 +558,40 @@ export function processAction(
     (player) => player.playerType === 'beagleboard'
   );
 
-  // We expect one gesture from each real player
-  const expectedGestures = beagleBoardPlayers.length;
+  // Check if we're in test mode with a single player and if we should add a virtual opponent gesture
+  const isTestMode =
+    MIN_REQUIRED_PLAYERS === 1 && beagleBoardPlayers.length === 1;
+  const virtualOpponentExists =
+    room.gameState.towerHeights.has(VIRTUAL_OPPONENT_ID);
+
+  // If in test mode with a single player and the virtual opponent exists in the game state
+  if (isTestMode && virtualOpponentExists && playerId !== VIRTUAL_OPPONENT_ID) {
+    // Check if virtual opponent already submitted a gesture for this round
+    const virtualOpponentGestureIdx = roundGestures.findIndex(
+      (g) => g.playerId === VIRTUAL_OPPONENT_ID
+    );
+
+    // Only add a virtual opponent gesture if one doesn't exist yet
+    if (virtualOpponentGestureIdx === -1) {
+      // Generate a random gesture for the virtual opponent
+      const virtualGesture = generateRandomGesture();
+      console.log(
+        `[gameManager.ts] Adding virtual opponent gesture: ${virtualGesture} in round ${currentRound}`
+      );
+
+      // Add the virtual opponent gesture to pending gestures
+      roundGestures.push({
+        playerId: VIRTUAL_OPPONENT_ID,
+        gesture: virtualGesture,
+        confidence: 1.0, // Virtual opponent is always confident
+        cardId: undefined, // No card ID for virtual opponent
+      });
+    }
+  }
+
+  // We expect one gesture from each real player plus the virtual opponent if in test mode
+  const expectedGestures =
+    beagleBoardPlayers.length + (isTestMode && virtualOpponentExists ? 1 : 0);
 
   console.log(
     `[gameManager.ts] Have ${roundGestures.length}/${expectedGestures} gestures for round ${currentRound}`
@@ -675,6 +737,15 @@ function applyGestureEffect(
     // Find the opponent (the player that isn't the current player)
     targetPlayerId =
       beagleBoardPlayers.find((p) => p.id !== playerId)?.id || null;
+  } else if (MIN_REQUIRED_PLAYERS === 1 && beagleBoardPlayers.length === 1) {
+    // In test mode with only one real player
+    if (playerId === VIRTUAL_OPPONENT_ID) {
+      // Virtual opponent targets the real player
+      targetPlayerId = beagleBoardPlayers[0].id;
+    } else {
+      // Real player targets the virtual opponent
+      targetPlayerId = VIRTUAL_OPPONENT_ID;
+    }
   }
 
   if (!targetPlayerId) {

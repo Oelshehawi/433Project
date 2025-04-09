@@ -439,7 +439,6 @@ if (typeof window !== 'undefined') {
       const {
         gameState,
         message,
-        waitingForNextRound,
         allGesturesReceived,
         playerGestureSummary,
       } = event.detail || {};
@@ -447,8 +446,6 @@ if (typeof window !== 'undefined') {
       console.log(
         '🟣 [game/store] Message:',
         message,
-        'Waiting for next round:',
-        waitingForNextRound
       );
 
       if (allGesturesReceived) {
@@ -554,27 +551,6 @@ if (typeof window !== 'undefined') {
         // If there's a message, add it to the logs
         if (message) {
           state.addEventLog(message, 'Server');
-        }
-
-        // If waiting for next round, set the pendingRoundNumber
-        if (waitingForNextRound) {
-          console.log(
-            '🟣 [game/store] Server waiting for next round ready signal for round',
-            gameState.roundNumber
-          );
-
-          useGameStore.setState({
-            pendingRoundNumber: gameState.roundNumber,
-          });
-
-          // Immediately try to signal readiness if we're in a non-transitioning state
-          if (!state.roundData.isTransitioning) {
-            console.log(
-              '🟣 [game/store] Not transitioning, immediately signaling ready for round',
-              gameState.roundNumber
-            );
-            state.readyForNextRound(gameState.roundNumber);
-          }
         }
       }
     } catch (error) {
