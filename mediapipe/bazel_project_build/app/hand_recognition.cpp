@@ -98,14 +98,17 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
     const mediapipe::NormalizedLandmark& ring_low = landmark_list.landmark(RING_LOW);
     const mediapipe::NormalizedLandmark& pinky_low = landmark_list.landmark(PINKY_LOW);
     const mediapipe::NormalizedLandmark& thumb_low = landmark_list.landmark(THUMB_LOW);
-    bool is_left_hand = false;
-    if (pinky_tip.x() > index_tip.x()){
-        is_left_hand = false;
-        //std::cout << "Is right hand" << std::endl;
-    }else{
-        is_left_hand = true;
-        //std::cout << "Is left hand" << std::endl;
-    }
+    
+    // Remove hand orientation detection since we don't need it
+    // bool is_left_hand = false;
+    // if (pinky_tip.x() > index_tip.x()){
+    //     is_left_hand = false;
+    //     //std::cout << "Is right hand" << std::endl;
+    // }else{
+    //     is_left_hand = true;
+    //     //std::cout << "Is left hand" << std::endl;
+    // }
+    
     int index_agreements = 0;
     for (int i = INDEX_TIP; i >= INDEX_BOT; i--){
         for (int j = i-1; j >= INDEX_BOT ; j--){
@@ -154,40 +157,16 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
         ret->pinky_held_up = true;
         ret->num_fingers_held_up++;
     }
-    /*
-    if (index_bot.y() > index_tip.y() || index_bot.y() > index_high.y()){
-        ret->index_held_up = true;
-        ret->num_fingers_held_up++;
-    }
-    if (middle_bot.y() > middle_tip.y()|| middle_bot.y() > middle_high.y()){
-        ret->middle_held_up = true;
-        ret->num_fingers_held_up++;
-    }
-    if (ring_bot.y() > ring_tip.y() || ring_bot.y() > ring_high.y()){
-        ret->ring_held_up = true;
-        ret->num_fingers_held_up++;
-    }
-    if (pinky_bot.y() > pinky_tip.y() || pinky_bot.y() > pinky_high.y()){
-        ret->pinky_held_up = true;
-        ret->num_fingers_held_up++;
-    }
-    */
-    /*
-    if (thumb_tip.y() < THUMB_Y_THRESHOLD){
-        ret->thumb_raised = true;
-        ret->num_fingers_held_up++;
-    }*/
-   if (is_left_hand){
-    if (thumb_high.x() < thumb_tip.x() || thumb_low.x() < thumb_tip.x() || thumb_tip.y() < THUMB_Y_THRESHOLD){
+    
+    // Simplify thumb detection logic to work for both left and right hands
+    // Use vertical position or any horizontal movement as indication of thumb up
+    if (thumb_tip.y() < THUMB_Y_THRESHOLD || 
+        abs(thumb_high.x() - thumb_tip.x()) > 0.05 || 
+        abs(thumb_low.x() - thumb_tip.x()) > 0.05) {
+        
         ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
     }
-   }else{
-    if (thumb_high.x() > thumb_tip.x() || thumb_low.x() > thumb_tip.x()|| thumb_tip.y() < THUMB_Y_THRESHOLD){
-        ret->thumb_held_up = true;
-        ret->num_fingers_held_up++;
-    }
-   }
     
     return;
 }
@@ -244,6 +223,9 @@ absl::Status hand_analyze_image(cv::Mat image, handPosition* hand_pos){
             std::cout << "No new landmarks available. Skipping..." << std::endl;
         }
         hand_pos->hand_visible = false;
+        // Clean up before returning
+        graph.CloseInputStream(kInputStream);
+        graph.WaitUntilDone();
         return absl::OkStatus();
     }
     
@@ -254,6 +236,9 @@ absl::Status hand_analyze_image(cv::Mat image, handPosition* hand_pos){
     if (!poller.Next(&detection_packet)) {
       std::cout << "Poller failed. Skipping...\n" << std::endl;
       hand_pos->hand_visible = false;
+      // Clean up before returning
+      graph.CloseInputStream(kInputStream);
+      graph.WaitUntilDone();
       return absl::OkStatus();
     } 
     
@@ -262,8 +247,10 @@ absl::Status hand_analyze_image(cv::Mat image, handPosition* hand_pos){
     if (output_landmarks.empty()) {
         std::cout << "No hand detected. Skipping this frame.\n" << std::endl;
         hand_pos->hand_visible = false;
+        // Clean up before returning
+        graph.CloseInputStream(kInputStream);
+        graph.WaitUntilDone();
         return absl::OkStatus();
-        //continue;  // Go to next countdown/frame if no fingers detected (no landmarks detected)
     }
 
     mediapipe::NormalizedLandmarkList landmarks = output_landmarks[0];
@@ -271,8 +258,10 @@ absl::Status hand_analyze_image(cv::Mat image, handPosition* hand_pos){
     if (landmarks.landmark_size() < 21) {
       std::cout << "Detected hand has insufficient landmarks. Skipping...\n" << std::endl;
       hand_pos->hand_visible = false;
+      // Clean up before returning
+      graph.CloseInputStream(kInputStream);
+      graph.WaitUntilDone();
       return absl::OkStatus();
-      //continue;
     }
     
     // Skip processing if landmarks look invalid (likely no hand)
@@ -282,18 +271,19 @@ absl::Status hand_analyze_image(cv::Mat image, handPosition* hand_pos){
         if (lm.x() > 0.0f && lm.x() < 1.0f &&
             lm.y() > 0.0f && lm.y() < 1.0f) {
             all_landmarks_invalid = false;
-            
             break;
         }
     }
     if (all_landmarks_invalid) {
         std::cout << "No valid hand landmarks detected. Skipping...\n" << std::endl;
         hand_pos->hand_visible = false;
+        // Clean up before returning
+        graph.CloseInputStream(kInputStream);
+        graph.WaitUntilDone();
         return absl::OkStatus();
-        //continue;
     }
+    
     ProcessHandLandmarks(landmarks, hand_pos);
     MP_RETURN_IF_ERROR(graph.CloseInputStream(kInputStream));
     return graph.WaitUntilDone();
-
 }

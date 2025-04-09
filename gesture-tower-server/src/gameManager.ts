@@ -70,8 +70,6 @@ export function initializeGameState(roomId: string): boolean {
     towerHeights: new Map(),
     goalHeights: new Map(),
     roundNumber: 1,
-    roundStartTime: Date.now(), // Keep track of when rounds start, but clients handle timing
-    roundDuration: 0, // Not used by server anymore
     playerShields: new Map(),
     playerMoves: new Map(),
   };
@@ -129,7 +127,6 @@ export function initializeGameState(roomId: string): boolean {
     towerHeights: Object.fromEntries(gameState.towerHeights),
     goalHeights: Object.fromEntries(gameState.goalHeights),
     roundNumber: gameState.roundNumber,
-    roundStartTime: gameState.roundStartTime,
   };
 
   sendToRoom(roomId, 'game_state_update', {
@@ -165,8 +162,6 @@ export function startRound(roomId: string): boolean {
     `\n=========== STARTING ROUND ${room.gameState.roundNumber} IN ROOM ${roomId} ===========`
   );
 
-  // Set round start time
-  room.gameState.roundStartTime = Date.now();
 
   // ENHANCED RESET: Completely reinitialize the playerMoves Map to ensure a clean state
   // First, create a new empty Map
@@ -251,7 +246,6 @@ export function startRound(roomId: string): boolean {
       towerHeights: Object.fromEntries(room.gameState.towerHeights),
       goalHeights: Object.fromEntries(room.gameState.goalHeights),
       roundNumber: room.gameState.roundNumber,
-      roundStartTime: room.gameState.roundStartTime,
     },
   };
 
