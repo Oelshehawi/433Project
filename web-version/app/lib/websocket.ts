@@ -150,6 +150,9 @@ export const initializeSocket = (
 
     socket.onmessage = (event) => {
       try {
+        // Log raw message for debugging
+        console.log(`🔍 [websocket.ts] RAW MESSAGE RECEIVED:`, event.data);
+
         const data = JSON.parse(event.data);
 
         // Handle pong messages separately
@@ -164,6 +167,21 @@ export const initializeSocket = (
         if (data.event === 'game_starting') {
           console.log(
             '[websocket.ts] 🎮 GAME STARTING EVENT RECEIVED:',
+            data.payload
+          );
+        }
+
+        // Special tracking for round events
+        if (data.event === 'round_start') {
+          console.log(
+            '[websocket.ts] 🎮🎮🎮 ROUND START EVENT RECEIVED:',
+            data.payload
+          );
+        }
+
+        if (data.event === 'round_end') {
+          console.log(
+            '[websocket.ts] 🛑🛑🛑 ROUND END EVENT RECEIVED:',
             data.payload
           );
         }
@@ -289,30 +307,53 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
   return new Promise((resolve, reject) => {
     // Initialize if needed
     if (!socket) {
+      console.log(
+        '📝 [websocket.ts] Initializing socket for sendMessage:',
+        type
+      );
       socket = initializeSocket();
     }
 
     if (!socket) {
-      reject(new Error('Could not initialize WebSocket connection'));
+      const error = new Error('Could not initialize WebSocket connection');
+      console.error(
+        '❌ [websocket.ts] Socket initialization failed:',
+        error.message
+      );
+      reject(error);
       return;
     }
 
     if (socket.readyState !== WebSocket.OPEN) {
-      reject(
-        new Error(
-          `WebSocket not ready (${getReadyStateLabel(socket.readyState)})`
-        )
-      );
+      const state = getReadyStateLabel(socket.readyState);
+      const error = new Error(`WebSocket not ready (${state})`);
+      console.error('❌ [websocket.ts] Socket not ready:', error.message);
+      reject(error);
       return;
     }
 
     try {
       const message = { event: type, payload };
-      console.log('Sending WebSocket message:', message);
+      // Important events get special logging
+      if (type === 'next_round_ready' || type === 'game_ready') {
+        console.log(
+          '📢 [websocket.ts] SENDING CRITICAL SIGNAL:',
+          type,
+          payload
+        );
+      } else {
+        console.log('📝 [websocket.ts] Sending WebSocket message:', message);
+      }
       socket.send(JSON.stringify(message));
+
+      // Confirm sent for important messages
+      if (type === 'next_round_ready' || type === 'game_ready') {
+        console.log('✅ [websocket.ts] Successfully sent', type);
+      }
+
       resolve();
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('❌ [websocket.ts] Error sending message:', error);
       reject(error);
     }
   });
@@ -373,19 +414,51 @@ export const signalNextRoundReady = (
   roundNumber: number
 ): void => {
   console.log(
-    `[websocket.ts] Signaling server that web client is ready for round ${roundNumber}`
+    `📢 [websocket.ts] Signaling server that web client is ready for round ${roundNumber}`
   );
 
   try {
+    // Check socket health first
+    if (!isSocketHealthy()) {
+      console.warn(
+        '❌ [websocket.ts] Socket not healthy, refreshing connection'
+      );
+      refreshConnectionStatus();
+
+      // Wait for connection to be established, then try again
+      setTimeout(() => {
+        if (isSocketHealthy()) {
+          console.log(
+            `📢 [websocket.ts] Retrying next_round_ready for round ${roundNumber} after refresh`
+          );
+          sendMessage('next_round_ready', { roomId, roundNumber }).catch(
+            (error) => {
+              console.error(
+                '❌ [websocket.ts] Error sending next_round_ready after refresh:',
+                error
+              );
+            }
+          );
+        } else {
+          console.error(
+            '❌ [websocket.ts] Still not healthy after refresh, cannot send next_round_ready'
+          );
+        }
+      }, 500);
+
+      return;
+    }
+
+    // Send with normal flow if socket is healthy
     sendMessage('next_round_ready', { roomId, roundNumber }).catch((error) => {
       console.error(
-        '[websocket.ts] Error sending next_round_ready signal:',
+        '❌ [websocket.ts] Error sending next_round_ready signal:',
         error
       );
     });
   } catch (error) {
     console.error(
-      '[websocket.ts] Exception sending next_round_ready signal:',
+      '❌ [websocket.ts] Exception sending next_round_ready signal:',
       error
     );
   }

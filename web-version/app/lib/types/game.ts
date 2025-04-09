@@ -134,6 +134,7 @@ export interface AnimationState {
   rulesAnimationComplete: boolean;
   animationComplete: boolean;
   isAnimating: boolean;
+  gameReadySent: boolean; // Flag to track if game_ready signal has been sent
 }
 
 // Player move information

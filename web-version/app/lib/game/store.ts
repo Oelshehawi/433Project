@@ -43,6 +43,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     rulesAnimationComplete: false,
     animationComplete: false,
     isAnimating: false,
+    gameReadySent: false,
   },
   moveAnimations: [],
   pendingRoundNumber: null,
@@ -158,6 +159,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           rulesAnimationComplete: false,
           animationComplete: false,
           isAnimating: false,
+          gameReadySent: false,
         },
       });
 
@@ -190,29 +192,42 @@ export const useGameStore = create<GameStore>((set, get) => ({
       animationState.showRulesAnimation = false;
       animationState.animationComplete = true;
 
-      // If we're in a room, signal to the server that we're ready
-      if (state.currentRoom) {
+      // Only send game_ready signal if game state is still in waiting mode
+      if (
+        state.currentRoom &&
+        state.gameStatus === 'waiting' &&
+        !animationState.gameReadySent
+      ) {
         console.log(
           '[game/store] Rules animation completed, sending game_ready signal'
         );
 
+        // Set flag to prevent multiple sends
+        animationState.gameReadySent = true;
+
         // Make multiple attempts to send game_ready signal
         const sendGameReady = () => {
-          sendMessage('game_ready', { roomId: state.currentRoom }).catch(
-            (error) => {
-              console.error('[game/store] Error sending game_ready:', error);
-            }
-          );
+          if (state.gameStatus !== 'playing') {
+            // Only send if not already playing
+            sendMessage('game_ready', { roomId: state.currentRoom }).catch(
+              (error) => {
+                console.error('[game/store] Error sending game_ready:', error);
+              }
+            );
+          }
         };
 
         // First attempt
         sendGameReady();
 
         // Second attempt after 1 second
-        setTimeout(sendGameReady, 1000);
-
-        // Third attempt after 3 seconds
-        setTimeout(sendGameReady, 3000);
+        setTimeout(() => {
+          // Check if we're already in playing state before sending again
+          if (get().gameStatus !== 'playing') {
+            console.log('[game/store] Second attempt to send game_ready');
+            sendGameReady();
+          }
+        }, 1000);
 
         get().addEventLog('Sent game_ready signal to server', 'Animation');
       }
@@ -336,6 +351,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         rulesAnimationComplete: false,
         animationComplete: false,
         isAnimating: false,
+        gameReadySent: false,
       },
       moveAnimations: [],
       pendingRoundNumber: null,
@@ -394,7 +410,13 @@ if (typeof window !== 'undefined') {
   window.addEventListener('game_state_update', (event: CustomEventInit) => {
     try {
       const { gameState, message, waitingForNextRound } = event.detail || {};
-      console.log('[game/store] Game state update received:', gameState);
+      console.log('🟣 [game/store] Game state update received:', gameState);
+      console.log(
+        '🟣 [game/store] Message:',
+        message,
+        'Waiting for next round:',
+        waitingForNextRound
+      );
 
       if (gameState) {
         const state = useGameStore.getState();
@@ -462,13 +484,30 @@ if (typeof window !== 'undefined') {
 
         // If waiting for next round, set the pendingRoundNumber
         if (waitingForNextRound) {
+          console.log(
+            '🟣 [game/store] Server waiting for next round ready signal for round',
+            gameState.roundNumber
+          );
+
           useGameStore.setState({
             pendingRoundNumber: gameState.roundNumber,
           });
+
+          // Immediately try to signal readiness if we're in a non-transitioning state
+          if (!state.roundData.isTransitioning) {
+            console.log(
+              '🟣 [game/store] Not transitioning, immediately signaling ready for round',
+              gameState.roundNumber
+            );
+            state.readyForNextRound(gameState.roundNumber);
+          }
         }
       }
     } catch (error) {
-      console.error('[game/store] Error processing game state update:', error);
+      console.error(
+        '🔴 [game/store] Error processing game state update:',
+        error
+      );
     }
   });
 
@@ -476,9 +515,26 @@ if (typeof window !== 'undefined') {
   window.addEventListener('round_start', (event: CustomEventInit) => {
     try {
       const { roundNumber, gameState } = event.detail || {};
-      console.log('[game/store] Round start event received:', event.detail);
+      console.log(
+        '🔵 [game/store] ===== ROUND START EVENT RECEIVED =====',
+        event.detail
+      );
+      console.log(
+        '🔵 [game/store] Round number:',
+        roundNumber,
+        'Current game status:',
+        useGameStore.getState().gameStatus
+      );
 
       const state = useGameStore.getState();
+      const currentStatus = state.gameStatus;
+
+      // CRITICAL FIX: Force transition to playing state
+      console.log(
+        '🔵 [game/store] 🚨 TRANSITIONING FROM',
+        currentStatus,
+        'TO "playing" STATE 🚨'
+      );
 
       // Update round data
       useGameStore.setState({
@@ -488,6 +544,7 @@ if (typeof window !== 'undefined') {
           isTransitioning: false,
         },
         pendingRoundNumber: null, // Clear pending round since we're starting it
+        gameStatus: 'playing', // FORCE playing state
       });
 
       // If game state is provided, update it
@@ -521,8 +578,25 @@ if (typeof window !== 'undefined') {
       });
 
       state.addEventLog(`Round ${roundNumber} started`, 'Server');
+
+      // Verify state was updated correctly
+      setTimeout(() => {
+        const newState = useGameStore.getState();
+        console.log('🔵 [game/store] STATE AFTER ROUND START:', {
+          gameStatus: newState.gameStatus,
+          roundNumber: newState.roundData.roundNumber,
+          isTransitioning: newState.roundData.isTransitioning,
+        });
+      }, 100);
+
+      console.log(
+        '🔵 [game/store] ===== ROUND START PROCESSING COMPLETE ====='
+      );
     } catch (error) {
-      console.error('[game/store] Error processing round start event:', error);
+      console.error(
+        '🔴 [game/store] Error processing round start event:',
+        error
+      );
     }
   });
 
@@ -570,7 +644,18 @@ if (typeof window !== 'undefined') {
     try {
       const { roundNumber, gameState, winnerId, shouldContinue } =
         event.detail || {};
-      console.log('[game/store] Round end event received:', event.detail);
+      console.log(
+        '🟠 [game/store] ===== ROUND END EVENT RECEIVED =====',
+        event.detail
+      );
+      console.log(
+        '🟠 [game/store] Round:',
+        roundNumber,
+        'Continue:',
+        shouldContinue,
+        'Winner:',
+        winnerId
+      );
 
       const state = useGameStore.getState();
 
@@ -632,7 +717,7 @@ if (typeof window !== 'undefined') {
       // If game should continue, prepare for next round immediately
       if (shouldContinue) {
         const nextRound = (roundNumber || 1) + 1;
-        console.log(`[game/store] Preparing for round ${nextRound}`);
+        console.log(`🟠 [game/store] Preparing for round ${nextRound}`);
 
         useGameStore.setState({
           pendingRoundNumber: nextRound,
@@ -641,10 +726,22 @@ if (typeof window !== 'undefined') {
         // Signal ready for next round immediately and with retries
         const signalReady = () => {
           console.log(
-            `[game/store] Signaling ready for round ${nextRound} from round_end handler`
+            `🟠 [game/store] Signaling ready for round ${nextRound} from round_end handler`
           );
           if (state.currentRoom && isSocketHealthy()) {
-            signalNextRoundReady(state.currentRoom, nextRound);
+            // Use direct import to ensure we get the fresh version
+            import('../websocket').then(({ signalNextRoundReady }) => {
+              console.log(
+                `🟠 [game/store] Calling signalNextRoundReady for round ${nextRound}`
+              );
+              signalNextRoundReady(state.currentRoom!, nextRound);
+            });
+          } else {
+            console.warn(
+              `🟠 [game/store] Cannot signal ready: room=${
+                state.currentRoom
+              }, socketHealthy=${isSocketHealthy()}`
+            );
           }
         };
 
@@ -658,6 +755,9 @@ if (typeof window !== 'undefined') {
 
         // Reset transition state after all retries
         setTimeout(() => {
+          console.log(
+            `🟠 [game/store] Resetting transition state after 6 seconds`
+          );
           useGameStore.setState({
             roundData: {
               ...useGameStore.getState().roundData,
@@ -666,8 +766,10 @@ if (typeof window !== 'undefined') {
           });
         }, 6000);
       }
+
+      console.log('🟠 [game/store] ===== ROUND END PROCESSING COMPLETE =====');
     } catch (error) {
-      console.error('[game/store] Error processing round end event:', error);
+      console.error('🔴 [game/store] Error processing round end event:', error);
     }
   });
 

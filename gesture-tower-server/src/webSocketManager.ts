@@ -20,6 +20,8 @@ import {
   handleGetRoom,
   getRoomList,
   rooms,
+  handleRoundStartEvent,
+  webClientNextRoundReadyRooms,
 } from './roomManager';
 import { clients, beagleBoards, broadcastToAll, sendToRoom } from './messaging';
 import { initializeGameState, processAction } from './gameManager';
@@ -168,6 +170,9 @@ function handleMessage(client: ExtendedWebSocket, message: WebSocketMessage) {
       break;
     case 'game_ready':
       handleGameReady(client, payload);
+      break;
+    case 'round_start':
+      handleRoundStartEvent(client, payload);
       break;
     case 'beagleboard_command':
       // Handle BeagleBoard specific commands
@@ -1218,7 +1223,7 @@ function handleGetGameState(client: ExtendedWebSocket, payload: any) {
 function handleNextRoundReady(client: ExtendedWebSocket, payload: any) {
   const { roomId, roundNumber } = payload;
   console.log(
-    `[webSocketManager.ts] Received next_round_ready for room ${roomId}, round ${roundNumber}`
+    `[webSocketManager.ts] Received next_round_ready signal from web client for room ${roomId}, round ${roundNumber}`
   );
 
   if (!roomId) {
@@ -1228,21 +1233,17 @@ function handleNextRoundReady(client: ExtendedWebSocket, payload: any) {
     return;
   }
 
-  // Import required functions from gameManager
-  const { startRound } = require('./gameManager');
-  const { webClientNextRoundReadyRooms } = require('./roomManager');
-
   // Check if the room exists
   if (!rooms.has(roomId)) {
     console.error(
-      `[webSocketManager.ts] Room ${roomId} not found for next_round_ready`
+      `[webSocketManager.ts] Room ${roomId} not found for next_round_ready signal`
     );
     return;
   }
 
   const room = rooms.get(roomId)!;
 
-  // Check if the room has a game state
+  // Verify the game state exists
   if (!room.gameState) {
     console.error(
       `[webSocketManager.ts] Game state not found for room ${roomId}`
@@ -1250,35 +1251,44 @@ function handleNextRoundReady(client: ExtendedWebSocket, payload: any) {
     return;
   }
 
-  // Check if the round number matches
-  if (roundNumber !== room.gameState.roundNumber) {
-    console.warn(
-      `[webSocketManager.ts] Round number mismatch: client ${roundNumber}, server ${room.gameState.roundNumber}`
+  // Check if this is for the current round or the next round
+  // If current round number + 1 = payload round number, client is ready for next round
+  if (room.gameState.roundNumber + 1 === roundNumber) {
+    console.log(
+      `[webSocketManager.ts] Web client ready for next round ${roundNumber} in room ${roomId}`
     );
 
-    // If client is behind, send current game state
-    if (roundNumber < room.gameState.roundNumber) {
-      sendToRoom(roomId, 'game_state_update', {
-        roomId,
-        gameState: {
-          towerHeights: Object.fromEntries(room.gameState.towerHeights),
-          goalHeights: Object.fromEntries(room.gameState.goalHeights),
-          roundNumber: room.gameState.roundNumber,
-        },
-        message: `Server is already at round ${room.gameState.roundNumber}`,
-      });
-    }
-    return;
+    // Store that this room's web client is ready for the next round
+    webClientNextRoundReadyRooms.set(roomId, roundNumber);
+
+    // UPDATED: Don't automatically start the next round
+    // Just notify that server is waiting for round_start event
+    console.log(
+      `[webSocketManager.ts] Waiting for explicit round_start event from client for round ${roundNumber}`
+    );
+
+    // Send notification that server is waiting for explicit round_start
+    sendToRoom(roomId, 'game_state_update', {
+      roomId,
+      gameState: {
+        towerHeights: Object.fromEntries(room.gameState.towerHeights),
+        goalHeights: Object.fromEntries(room.gameState.goalHeights),
+        roundNumber: room.gameState.roundNumber,
+      },
+      message: `Server ready for round ${roundNumber}, waiting for client to send round_start`,
+      serverReady: true,
+      nextRoundReady: true,
+    });
+  } else if (room.gameState.roundNumber === roundNumber) {
+    // Client is confirming it's ready for current round (could happen if client reloads)
+    console.log(
+      `[webSocketManager.ts] Web client confirming readiness for current round ${roundNumber}`
+    );
+  } else {
+    console.warn(
+      `[webSocketManager.ts] Round number mismatch: web client requested round ${roundNumber} but current round is ${room.gameState.roundNumber}`
+    );
   }
-
-  // Mark this room as ready for the next round
-  webClientNextRoundReadyRooms.set(roomId, roundNumber);
-  console.log(
-    `[webSocketManager.ts] Room ${roomId} marked ready for round ${roundNumber}`
-  );
-
-  // Start the next round
-  startRound(roomId);
 }
 
 // Function to handle game_ready event from web client
@@ -1309,18 +1319,14 @@ function handleGameReady(client: ExtendedWebSocket, payload: any) {
     return;
   }
 
-  // Import required functions from gameManager
-  const { startRound } = require('./gameManager');
+  // Import the handleGameReady function from roomManager
+  const { handleGameReady: rmHandleGameReady } = require('./roomManager');
 
   console.log(
-    `[webSocketManager.ts] Web client ready to start game in room ${roomId}`
+    `[webSocketManager.ts] Web client ready for game in room ${roomId}`
   );
   console.log(`Received game_ready signal from web client for room ${roomId}`);
-  console.log(`Room ${roomId} marked as ready to start first round`);
-  console.log(
-    `Starting first round for room ${roomId} now that web client is ready`
-  );
 
-  // Start the first round
-  startRound(roomId);
+  // Delegate to roomManager's implementation
+  rmHandleGameReady(client, payload);
 }

@@ -150,9 +150,9 @@ export default function GamePage() {
   // Initialize game when component mounts
   useEffect(() => {
     if (roomId) {
-      console.log('GamePage: Initializing game for room:', roomId);
+      console.log('🔵 [GamePage] Initializing game for room:', roomId);
       initialize(roomId).catch((error) => {
-        console.error('[GamePage] Error initializing game:', error);
+        console.error('🔴 [GamePage] Error initializing game:', error);
         setConnectionRetries((prev) => prev + 1);
       });
     }
@@ -180,10 +180,44 @@ export default function GamePage() {
   // Handle pending round transitions
   useEffect(() => {
     if (pendingRoundNumber && !roundData.isTransitioning) {
-      console.log(`GamePage: Ready for round ${pendingRoundNumber}`);
+      console.log(
+        `🟢 [GamePage] Ready for round ${pendingRoundNumber}, signaling to server`
+      );
       readyForNextRound(pendingRoundNumber);
+    } else if (pendingRoundNumber && roundData.isTransitioning) {
+      console.log(
+        `🟡 [GamePage] Pending round ${pendingRoundNumber} but still transitioning, waiting...`
+      );
     }
   }, [pendingRoundNumber, roundData.isTransitioning, readyForNextRound]);
+
+  // Log all game state changes
+  useEffect(() => {
+    console.log(
+      `🌟 [GamePage] Game status: ${gameStatus}, Round: ${roundData.roundNumber}`
+    );
+    console.log(
+      `🌟 [GamePage] Transition state: ${roundData.isTransitioning}, Pending round: ${pendingRoundNumber}`
+    );
+
+    // When animation completes, ensure we send game_ready
+    if (gameStatus === 'waiting' && animationState.rulesAnimationComplete) {
+      console.log(
+        '🚀 [GamePage] Rules animation completed, ensuring game_ready signal sent'
+      );
+      import('../../lib/websocket').then(({ sendMessage }) => {
+        sendMessage('game_ready', { roomId }).catch((err) =>
+          console.error('🔴 [GamePage] Error sending game_ready:', err)
+        );
+      });
+    }
+  }, [
+    gameStatus,
+    roundData,
+    pendingRoundNumber,
+    animationState.rulesAnimationComplete,
+    roomId,
+  ]);
 
   // Add automatic connection retry
   useEffect(() => {
