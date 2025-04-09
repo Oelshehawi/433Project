@@ -977,14 +977,23 @@ export function startRoomGame(roomId: string) {
 }
 
 // Add function to handle next_round_ready event from web client
-export function handleNextRoundReady(client: ExtendedWebSocket, payload: any) {
+export function handleNextRoundReady(
+  client: ExtendedWebSocket,
+  payload: any
+) {
   const { roomId, roundNumber } = payload;
-
   console.log(
     `[roomManager.ts] Received next_round_ready signal from web client for room ${roomId}, round ${roundNumber}`
   );
 
-  // Verify the room exists
+  if (!roomId) {
+    console.error(
+      `[roomManager.ts] Missing roomId in next_round_ready event`
+    );
+    return;
+  }
+
+  // Check if the room exists
   if (!rooms.has(roomId)) {
     console.error(
       `[roomManager.ts] Room ${roomId} not found for next_round_ready signal`
@@ -996,7 +1005,9 @@ export function handleNextRoundReady(client: ExtendedWebSocket, payload: any) {
 
   // Verify the game state exists
   if (!room.gameState) {
-    console.error(`[roomManager.ts] Game state not found for room ${roomId}`);
+    console.error(
+      `[roomManager.ts] Game state not found for room ${roomId}`
+    );
     return;
   }
 
@@ -1010,28 +1021,19 @@ export function handleNextRoundReady(client: ExtendedWebSocket, payload: any) {
     // Store that this room's web client is ready for the next round
     webClientNextRoundReadyRooms.set(roomId, roundNumber);
 
-    // Check if all players have completed their moves in the current round
-    const allPlayersCompleted = Array.from(
-      room.gameState.playerMoves.values()
-    ).every((moved) => moved);
+    // UPDATED: Don't automatically start the next round
+    // Just notify that server is waiting for round_start event
+    console.log(
+      `[roomManager.ts] Waiting for explicit round_start event from client for round ${roundNumber}`
+    );
 
-    // If all players have completed their moves and all BeagleBoards have acknowledged
-    // Now we can start the next round since the web client is also ready
-    if (allPlayersCompleted) {
-      console.log(
-        `[roomManager.ts] All conditions met to start round ${roundNumber} in room ${roomId}:`
-      );
-      console.log(
-        `  - All players completed their moves for round ${room.gameState.roundNumber}`
-      );
-      console.log(`  - Web client animation ready for round ${roundNumber}`);
 
-      // Start the next round
-      startRound(roomId);
+    sendToRoom(roomId, 'round_end', {
+      roomId,
+      roundNumber: room.gameState.roundNumber,
+    });
 
-      // Remove from ready map since we've started the round
-      webClientNextRoundReadyRooms.delete(roomId);
-    }
+    //next_round_ready ----->send round_end to beagleboard ---> beagleboard --> handleRoundEnd function needs to, update lcd and send round_end_ack (waiting for next round to start) ---> that goes to server (need to edit handleroundendack server side) then in that function send to web client round_end_ack--> add event listenr for round_end_ack to web client which then upon reciept sends round_start event
   } else if (room.gameState.roundNumber === roundNumber) {
     // Client is confirming it's ready for current round (could happen if client reloads)
     console.log(

@@ -22,6 +22,7 @@ import {
   rooms,
   handleRoundStartEvent,
   webClientNextRoundReadyRooms,
+  handleNextRoundReady,
 } from './roomManager';
 import { clients, beagleBoards, broadcastToAll, sendToRoom } from './messaging';
 import { initializeGameState } from './gameManager';
@@ -166,6 +167,9 @@ function handleMessage(client: ExtendedWebSocket, message: WebSocketMessage) {
       handleGetGameState(client, payload);
       break;
     case 'next_round_ready':
+      console.log(
+        `[webSocketManager.ts] Forwarding next_round_ready to roomManager for ${client.id}`
+      );
       handleNextRoundReady(client, payload);
       break;
     case 'game_ready':
@@ -776,57 +780,6 @@ function setBeagleBoardReady(
   }
 }
 
-// Helper function to handle gesture processing with extra details
-function handleGestureData(
-  deviceId: string,
-  roomId: string,
-  gestureData: string,
-  confidence: number,
-  cardId?: string
-) {
-  try {
-    // Find the BeagleBoard client
-    const beagleBoard = Array.from(beagleBoards.values()).find(
-      (bb) => bb.deviceId === deviceId && bb.roomId === roomId
-    );
-
-    // If device is not registered, we can't process its gesture
-    if (!beagleBoard || !beagleBoard.client) {
-      console.error(
-        `[webSocketManager.ts] Cannot process gesture - BeagleBoard ${deviceId} not found or not connected`
-      );
-      return;
-    }
-
-    // Get the round number from the room if available
-    let roundNumber: number | undefined;
-    if (rooms.has(roomId)) {
-      const room = rooms.get(roomId)!;
-      if (room.gameState) {
-        roundNumber = room.gameState.roundNumber;
-      }
-    }
-
-    // Create a gesture event payload
-    const gestureEvent: GestureEventPayload = {
-      playerId: deviceId,
-      gesture: gestureData as GestureType,
-      confidence,
-      cardId,
-      roomId,
-      roundNumber,
-    };
-
-    // Process the gesture through the room manager
-    handleGestureEvent(beagleBoard.client, gestureEvent);
-  } catch (error) {
-    console.error(
-      `[webSocketManager.ts] Error processing gesture data:`,
-      error
-    );
-  }
-}
-
 // Helper function to parse Beagle board command messages
 function parseBeagleBoardCommand(message: string): {
   command: string;
@@ -1223,85 +1176,6 @@ function handleGetGameState(client: ExtendedWebSocket, payload: any) {
     );
     console.log(
       `[webSocketManager.ts] Game state sent to client for room ${roomId}`
-    );
-  }
-}
-
-// Function to handle next_round_ready event
-function handleNextRoundReady(client: ExtendedWebSocket, payload: any) {
-  const { roomId, roundNumber } = payload;
-  console.log(
-    `[webSocketManager.ts] Received next_round_ready signal from web client for room ${roomId}, round ${roundNumber}`
-  );
-
-  if (!roomId) {
-    console.error(
-      `[webSocketManager.ts] Missing roomId in next_round_ready event`
-    );
-    return;
-  }
-
-  // Check if the room exists
-  if (!rooms.has(roomId)) {
-    console.error(
-      `[webSocketManager.ts] Room ${roomId} not found for next_round_ready signal`
-    );
-    return;
-  }
-
-  const room = rooms.get(roomId)!;
-
-  // Verify the game state exists
-  if (!room.gameState) {
-    console.error(
-      `[webSocketManager.ts] Game state not found for room ${roomId}`
-    );
-    return;
-  }
-
-  // Check if this is for the current round or the next round
-  // If current round number + 1 = payload round number, client is ready for next round
-  if (room.gameState.roundNumber + 1 === roundNumber) {
-    console.log(
-      `[webSocketManager.ts] Web client ready for next round ${roundNumber} in room ${roomId}`
-    );
-
-    // Store that this room's web client is ready for the next round
-    webClientNextRoundReadyRooms.set(roomId, roundNumber);
-
-    // UPDATED: Don't automatically start the next round
-    // Just notify that server is waiting for round_start event
-    console.log(
-      `[webSocketManager.ts] Waiting for explicit round_start event from client for round ${roundNumber}`
-    );
-
-    // Send notification that server is waiting for explicit round_start
-    // sendToRoom(roomId, 'game_state_update', {
-    //   roomId,
-    //   gameState: {
-    //     towerHeights: Object.fromEntries(room.gameState.towerHeights),
-    //     goalHeights: Object.fromEntries(room.gameState.goalHeights),
-    //     roundNumber: room.gameState.roundNumber,
-    //   },
-    //   message: `Server ready for round ${roundNumber}, waiting for client to send round_start`,
-    //   serverReady: true,
-    //   nextRoundReady: true,
-    // });
-
-    sendToRoom(roomId, 'round_end', {
-      roomId,
-      roundNumber: room.gameState.roundNumber,
-    });
-
-    //next_round_ready ----->send round_end to beagleboard ---> beagleboard --> handleRoundEnd function needs to, update lcd and send round_end_ack (waiting for next round to start) ---> that goes to server (need to edit handleroundendack server side) then in that function send to web client round_end_ack--> add event listenr for round_end_ack to web client which then upon reciept sends round_start event
-  } else if (room.gameState.roundNumber === roundNumber) {
-    // Client is confirming it's ready for current round (could happen if client reloads)
-    console.log(
-      `[webSocketManager.ts] Web client confirming readiness for current round ${roundNumber}`
-    );
-  } else {
-    console.warn(
-      `[webSocketManager.ts] Round number mismatch: web client requested round ${roundNumber} but current round is ${room.gameState.roundNumber}`
     );
   }
 }
