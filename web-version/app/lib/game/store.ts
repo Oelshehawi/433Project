@@ -1,5 +1,10 @@
 import { create } from 'zustand';
-import { GameStore, AnimationState, PlayerMove } from '../types/game';
+import {
+  GameStore,
+  AnimationState,
+  PlayerMove,
+  PlayerAnimationState,
+} from '../types/game';
 import {
   initializeSocket,
   sendMessage,
@@ -50,6 +55,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   moveAnimations: [],
   pendingRoundNumber: null,
+
+  // Player character animation states
+  player1Animation: 'idle',
+  player2Animation: 'idle',
+  player1JumpHeight: 0,
+  player2JumpHeight: 0,
 
   // Event logs
   eventLogs: [],
@@ -224,6 +235,101 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     set({ animationState });
+  },
+
+  // Set player animation states
+  setPlayerAnimation: (
+    player: 'player1' | 'player2',
+    animation: PlayerAnimationState
+  ) => {
+    if (player === 'player1') {
+      set({ player1Animation: animation });
+    } else {
+      set({ player2Animation: animation });
+    }
+
+    // Define animation durations
+    const duration: Record<PlayerAnimationState, number> = {
+      idle: 0, // No duration for idle
+      jump: 800,
+      hurt: 600,
+      die: 1000,
+    };
+
+    // If not a permanent animation (like die), reset to idle after animation
+    if (animation !== 'die') {
+      setTimeout(() => {
+        if (player === 'player1') {
+          set({ player1Animation: 'idle' });
+        } else {
+          set({ player2Animation: 'idle' });
+        }
+      }, duration[animation]);
+    }
+  },
+
+  // Handle attack animations
+  animateAttack: (attackingPlayer: 'player1' | 'player2') => {
+    const state = get();
+    const defendingPlayer =
+      attackingPlayer === 'player1' ? 'player2' : 'player1';
+    const defenderShieldActive =
+      attackingPlayer === 'player1'
+        ? state.player2ShieldActive
+        : state.player1ShieldActive;
+
+    // Set attacker to jump animation
+    get().setPlayerAnimation(attackingPlayer, 'jump');
+
+    // Animate jump height
+    if (attackingPlayer === 'player1') {
+      // Jump up
+      set({ player1JumpHeight: 30 });
+
+      // After 400ms, start coming down
+      setTimeout(() => {
+        set({ player1JumpHeight: 15 });
+
+        // Land completely after another 400ms
+        setTimeout(() => {
+          set({ player1JumpHeight: 0 });
+        }, 400);
+      }, 400);
+    } else {
+      // Jump up
+      set({ player2JumpHeight: 30 });
+
+      // After 400ms, start coming down
+      setTimeout(() => {
+        set({ player2JumpHeight: 15 });
+
+        // Land completely after another 400ms
+        setTimeout(() => {
+          set({ player2JumpHeight: 0 });
+        }, 400);
+      }, 400);
+    }
+
+    // After 1 second, check if defender should be hurt (no shield)
+    setTimeout(() => {
+      if (!defenderShieldActive) {
+        // Set defender to hurt animation
+        get().setPlayerAnimation(defendingPlayer, 'hurt');
+
+        // If tower height is now 0, change to die animation
+        const defenderTowerHeight =
+          defendingPlayer === 'player1'
+            ? state.player1TowerHeight
+            : state.player2TowerHeight;
+
+        if (defenderTowerHeight <= 1) {
+          // 1 because we haven't decremented yet
+          setTimeout(() => {
+            get().setPlayerAnimation(defendingPlayer, 'die');
+          }, 600); // Wait for hurt animation to finish
+        }
+      }
+    }, 1000);
   },
 
   // Start the game
@@ -721,8 +827,82 @@ if (typeof window !== 'undefined') {
 
     if (isPlayer1) {
       useGameStore.setState({ player1CardPlayed: gesture });
+
+      // Set appropriate animation based on gesture
+      if (gesture === 'Attack') {
+        // Trigger attack animation with AttackAnimation component
+        state.setPlayerAnimation('player1', 'jump'); // Use 'jump' for attack
+
+        // Trigger the attack animation after a short delay
+        setTimeout(() => {
+          // Set attack animation visible flag
+          useGameStore.setState((prevState) => ({
+            ...prevState,
+            player1AttackVisible: true,
+          }));
+
+          // Animation will be handled by AttackAnimation component
+        }, 200);
+      } else if (gesture === 'Defend') {
+        state.setPlayerAnimation('player1', 'idle'); // No special animation for defend
+
+        // Activate shield
+        useGameStore.setState({ player1ShieldActive: true });
+
+        // Shield will be rendered by ShieldEffect component
+      } else if (gesture === 'Build') {
+        state.setPlayerAnimation('player1', 'jump'); // Use jump animation for build
+
+        // Add jump effect for building
+        useGameStore.setState({ player1JumpHeight: 20 });
+
+        // After a delay, reset jump height and increase tower height
+        setTimeout(() => {
+          useGameStore.setState({
+            player1JumpHeight: 0,
+            // Tower height increase will be handled by game state update
+          });
+        }, 500);
+      }
     } else {
       useGameStore.setState({ player2CardPlayed: gesture });
+
+      // Set appropriate animation based on gesture
+      if (gesture === 'Attack') {
+        // Trigger attack animation with AttackAnimation component
+        state.setPlayerAnimation('player2', 'jump'); // Use 'jump' for attack
+
+        // Trigger the attack animation after a short delay
+        setTimeout(() => {
+          // Set attack animation visible flag
+          useGameStore.setState((prevState) => ({
+            ...prevState,
+            player2AttackVisible: true,
+          }));
+
+          // Animation will be handled by AttackAnimation component
+        }, 200);
+      } else if (gesture === 'Defend') {
+        state.setPlayerAnimation('player2', 'idle'); // No special animation for defend
+
+        // Activate shield
+        useGameStore.setState({ player2ShieldActive: true });
+
+        // Shield will be rendered by ShieldEffect component
+      } else if (gesture === 'Build') {
+        state.setPlayerAnimation('player2', 'jump'); // Use jump animation for build
+
+        // Add jump effect for building
+        useGameStore.setState({ player2JumpHeight: 20 });
+
+        // After a delay, reset jump height and increase tower height
+        setTimeout(() => {
+          useGameStore.setState({
+            player2JumpHeight: 0,
+            // Tower height increase will be handled by game state update
+          });
+        }, 500);
+      }
     }
 
     // Add the move to animations

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useRoomStore } from '../../lib/room/store';
 import { useGameStore } from '../../lib/game/store';
@@ -9,6 +9,9 @@ import {
   isSocketHealthy,
   sendMessage,
 } from '../../lib/websocket';
+
+// Import CSS animations
+import '../../styles/animations.css';
 
 // Import game components
 import GameBackground from '../../components/game/GameBackground';
@@ -26,6 +29,17 @@ import Player from '../../components/game/Player';
 import GameStateDisplay from '../../components/game/GameStateDisplay';
 import GameControls from '../../components/game/GameControls';
 
+// Define the animation state types that Player component can accept
+type PlayerAnimationState =
+  | 'idle'
+  | 'attack'
+  | 'damaged'
+  | 'win'
+  | 'lose'
+  | 'jump'
+  | 'hurt'
+  | 'die';
+
 export default function GamePage() {
   const params = useParams();
   const roomId = params.id as string;
@@ -34,13 +48,13 @@ export default function GamePage() {
   const [forceLoader, setForceLoader] = useState(false);
   const [roundStartSent, setRoundStartSent] = useState(false);
 
-  // Add refs to track when game_ready should be sent
-  const gameReadySent = useRef(false);
-  const userClickedX = useRef(false);
+  // Add objects to track when game_ready should be sent
+  const gameReadySent = { current: false };
+  const userClickedX = { current: false };
 
-  // Add these new refs to track round state
-  const roundStartMap = useRef(new Map()); // Map to track which rounds we've already sent start events for
-  const processingRoundStart = useRef(false); // Flag to prevent concurrent round_start processing
+  // Add these to track round state
+  const roundStartMap = { current: new Map() }; // Map to track which rounds we've already sent start events for
+  const processingRoundStart = { current: false }; // Flag to prevent concurrent round_start processing
 
   // Use the game store
   const {
@@ -68,6 +82,11 @@ export default function GamePage() {
     clearEventLogs,
     pendingRoundNumber,
     requestGameState,
+    // Get animation states from the store
+    player1Animation,
+    player2Animation,
+    player1JumpHeight,
+    player2JumpHeight,
   } = useGameStore();
 
   // Create a centralized function to send round_start events
@@ -414,9 +433,21 @@ export default function GamePage() {
             {/* Center Divider */}
             <CenterDivider />
 
-            {/* Always show players regardless of game state */}
-            <Player playerId='player1' name={player1Name} isVisible={true} />
-            <Player playerId='player2' name={player2Name} isVisible={true} />
+            {/* Always show players regardless of game state - with animations from store */}
+            <Player
+              playerId='player1'
+              name={player1Name}
+              isVisible={true}
+              animationState={player1Animation as PlayerAnimationState}
+              jumpHeight={player1JumpHeight}
+            />
+            <Player
+              playerId='player2'
+              name={player2Name}
+              isVisible={true}
+              animationState={player2Animation as PlayerAnimationState}
+              jumpHeight={player2JumpHeight}
+            />
 
             {/* Add Rules button outside the game state conditional so it's always visible */}
             <RulesButton />

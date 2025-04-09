@@ -144,6 +144,9 @@ export interface PlayerMove {
   cardId?: string;
 }
 
+// Animation types for player characters
+export type PlayerAnimationState = 'idle' | 'jump' | 'hurt' | 'die';
+
 // Game store interface for Zustand
 export interface GameStore {
   // Game state
@@ -174,6 +177,12 @@ export interface GameStore {
   moveAnimations: PlayerMove[];
   pendingRoundNumber: number | null;
 
+  // Character animation states
+  player1Animation: PlayerAnimationState;
+  player2Animation: PlayerAnimationState;
+  player1JumpHeight: number;
+  player2JumpHeight: number;
+
   // Event logs for debugging
   eventLogs: string[];
 
@@ -185,6 +194,11 @@ export interface GameStore {
   // Game actions
   initialize: (roomId: string) => Promise<boolean>;
   setAnimationComplete: (type: keyof AnimationState, value: boolean) => void;
+  setPlayerAnimation: (
+    player: 'player1' | 'player2',
+    animation: PlayerAnimationState
+  ) => void;
+  animateAttack: (attackingPlayer: 'player1' | 'player2') => void;
   startGame: () => Promise<void>;
   acknowledgeMoves: () => Promise<void>;
   readyForNextRound: (roundNumber: number) => Promise<void>;

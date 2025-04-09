@@ -1,5 +1,5 @@
-import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState } from 'react';
 
 interface TowerBlocksProps {
   player1Blocks: number;
@@ -19,128 +19,193 @@ export default function TowerBlocks({
   // Use state to track animation
   const [player1Rendered, setPlayer1Rendered] = useState(0);
   const [player2Rendered, setPlayer2Rendered] = useState(0);
+  const [recentlyAdded1, setRecentlyAdded1] = useState<number | null>(null);
+  const [recentlyAdded2, setRecentlyAdded2] = useState<number | null>(null);
 
   // Animate tower height changes
   useEffect(() => {
     if (player1Rendered !== player1Blocks) {
+      if (player1Rendered < player1Blocks) {
+        // Block added
+        setRecentlyAdded1(player1Rendered);
+      }
+
       const timeout = setTimeout(() => {
         setPlayer1Rendered((prev) =>
           prev < player1Blocks ? prev + 1 : prev - 1
         );
+
+        // Clear the recently added marker after animation
+        if (recentlyAdded1 !== null) {
+          setTimeout(() => setRecentlyAdded1(null), 800);
+        }
       }, 150);
       return () => clearTimeout(timeout);
     }
-  }, [player1Rendered, player1Blocks]);
+  }, [player1Rendered, player1Blocks, recentlyAdded1]);
 
   useEffect(() => {
     if (player2Rendered !== player2Blocks) {
+      if (player2Rendered < player2Blocks) {
+        // Block added
+        setRecentlyAdded2(player2Rendered);
+      }
+
       const timeout = setTimeout(() => {
         setPlayer2Rendered((prev) =>
           prev < player2Blocks ? prev + 1 : prev - 1
         );
+
+        // Clear the recently added marker after animation
+        if (recentlyAdded2 !== null) {
+          setTimeout(() => setRecentlyAdded2(null), 800);
+        }
       }, 150);
       return () => clearTimeout(timeout);
     }
-  }, [player2Rendered, player2Blocks]);
+  }, [player2Rendered, player2Blocks, recentlyAdded2]);
 
   if (!isVisible) return null;
 
-  // Maximum tower height for scaling (use the larger of the two goals)
-  const maxTowerHeight = Math.max(player1Goal, player2Goal) + 1;
-
-  // Calculate block height based on max tower height
-  const blockHeight = 40; // pixels per block
-  const towerHeight = maxTowerHeight * blockHeight;
+  // Constants for tower and player dimensions
+  const BLOCK_HEIGHT = 40; // pixels
+  const BASE_HEIGHT = 15; // pixels
 
   return (
-    <div className="absolute bottom-12 left-0 right-0 flex justify-between px-24">
-      {/* Player 1 Tower */}
-      <div className="flex flex-col items-center">
-        <div className="mb-2 text-sm font-bold text-blue-300">
-          Player 1 Tower
-        </div>
+    <div className='absolute bottom-0 left-0 right-0 flex justify-around'>
+      {/* Player 1 Tower - fixed position left side */}
+      <div className='absolute bottom-10 left-[25%] -translate-x-1/2 w-40'>
+        <div className='flex flex-col items-center'>
+          {/* Tower Structure */}
+          <div className='flex flex-col items-center'>
+            {/* Tower blocks */}
+            <div className='flex flex-col relative'>
+              <AnimatePresence>
+                {Array.from({ length: player1Rendered }).map((_, i) => {
+                  // Calculate offset based on index - more extreme
+                  const offsetX = i % 3 === 0 ? -8 : i % 3 === 1 ? 10 : 0;
+                  // Add slight rotation for more Jenga-like appearance
+                  const rotation = i % 3 === 0 ? -1 : i % 3 === 1 ? 1 : 0;
+                  // Is this the recently added block?
+                  const isNewBlock = i === recentlyAdded1;
 
-        {/* Goal Line */}
-        <div
-          className="w-40 border-t-4 border-yellow-400 absolute z-10"
-          style={{
-            bottom: `${player1Goal * blockHeight + 20}px`,
-            left: "15%",
-            width: "100px",
-          }}
-        >
-          <span className="text-yellow-400 text-sm font-bold absolute -top-5 right-0">
-            GOAL
-          </span>
-        </div>
+                  return (
+                    <motion.div
+                      key={`p1-block-${i}`}
+                      className={`w-30 h-[40px] border-b border-blue-700 ${
+                        isNewBlock ? 'bg-blue-400' : 'bg-blue-500'
+                      }`}
+                      initial={{ opacity: 0, scale: 0.9, y: -20 }}
+                      animate={{
+                        opacity: 1,
+                        scale: isNewBlock ? [0.9, 1.1, 1] : 1,
+                        y: 0,
+                        backgroundColor: isNewBlock
+                          ? ['#60a5fa', '#3b82f6']
+                          : '#3b82f6',
+                      }}
+                      exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                      transition={{
+                        duration: isNewBlock ? 0.5 : 0.2,
+                        backgroundColor: { duration: 0.8 },
+                      }}
+                      style={{
+                        borderTopLeftRadius: i === 0 ? '4px' : '0',
+                        borderTopRightRadius: i === 0 ? '4px' : '0',
+                        transform: `translateX(${offsetX}px) rotate(${rotation}deg)`,
+                        marginTop: '-1px',
+                        zIndex: player1Rendered - i,
+                      }}
+                    />
+                  );
+                })}
+              </AnimatePresence>
+            </div>
 
-        {/* Tower Container */}
-        <div
-          className="relative w-32 bg-gray-800/30 rounded-t-md border-l-2 border-r-2 border-t-2 border-gray-700/50 overflow-hidden"
-          style={{ height: `${towerHeight}px` }}
-        >
-          {/* Tower Blocks */}
-          <div className="absolute bottom-0 w-full flex flex-col-reverse">
-            {Array.from({ length: player1Rendered }).map((_, index) => (
-              <motion.div
-                key={`p1-block-${index}`}
-                initial={{ opacity: 0, scaleX: 0.8 }}
-                animate={{ opacity: 1, scaleX: 1 }}
-                transition={{ duration: 0.2 }}
-                className="w-full h-10 bg-blue-600 border-t-2 border-blue-400"
-              />
-            ))}
+            {/* Base platform - always present */}
+            <div className='w-36 h-[15px] bg-gray-800 rounded-b-md'></div>
           </div>
-        </div>
-
-        {/* Block Counter */}
-        <div className="mt-2 text-lg font-bold text-white bg-blue-900/50 px-3 py-1 rounded-md">
-          {player1Rendered} / {player1Goal}
         </div>
       </div>
 
-      {/* Player 2 Tower */}
-      <div className="flex flex-col items-center">
-        <div className="mb-2 text-sm font-bold text-red-300">
-          Player 2 Tower
+      {/* Goal indicators - Player 1 */}
+      <div
+        className='absolute left-24 z-20'
+        style={{
+          bottom: `${player1Goal * BLOCK_HEIGHT + BASE_HEIGHT + 120}px`,
+        }}
+      >
+        <div className='flex items-center'>
+          <div className='h-1 w-12 bg-yellow-400'></div>
+          <span className='text-yellow-400 text-xs font-bold ml-1'>GOAL</span>
         </div>
+      </div>
 
-        {/* Goal Line */}
-        <div
-          className="w-40 border-t-4 border-yellow-400 absolute z-10"
-          style={{
-            bottom: `${player2Goal * blockHeight + 20}px`,
-            right: "15%",
-            width: "100px",
-          }}
-        >
-          <span className="text-yellow-400 text-sm font-bold absolute -top-5 left-0">
-            GOAL
-          </span>
-        </div>
+      {/* Player 2 Tower - fixed position right side */}
+      <div className='absolute bottom-10 right-[25%] translate-x-1/2 w-40'>
+        <div className='flex flex-col items-center'>
+          {/* Tower Structure */}
+          <div className='flex flex-col items-center'>
+            {/* Tower blocks */}
+            <div className='flex flex-col relative'>
+              <AnimatePresence>
+                {Array.from({ length: player2Rendered }).map((_, i) => {
+                  // Calculate offset based on index (opposite of player 1) - more extreme
+                  const offsetX = i % 3 === 0 ? 8 : i % 3 === 1 ? -10 : 0;
+                  // Add slight rotation for more Jenga-like appearance (opposite direction)
+                  const rotation = i % 3 === 0 ? 1 : i % 3 === 1 ? -1 : 0;
+                  // Is this the recently added block?
+                  const isNewBlock = i === recentlyAdded2;
 
-        {/* Tower Container */}
-        <div
-          className="relative w-32 bg-gray-800/30 rounded-t-md border-l-2 border-r-2 border-t-2 border-gray-700/50 overflow-hidden"
-          style={{ height: `${towerHeight}px` }}
-        >
-          {/* Tower Blocks */}
-          <div className="absolute bottom-0 w-full flex flex-col-reverse">
-            {Array.from({ length: player2Rendered }).map((_, index) => (
-              <motion.div
-                key={`p2-block-${index}`}
-                initial={{ opacity: 0, scaleX: 0.8 }}
-                animate={{ opacity: 1, scaleX: 1 }}
-                transition={{ duration: 0.2 }}
-                className="w-full h-10 bg-red-600 border-t-2 border-red-400"
-              />
-            ))}
+                  return (
+                    <motion.div
+                      key={`p2-block-${i}`}
+                      className={`w-30 h-[40px] border-b border-red-700 ${
+                        isNewBlock ? 'bg-red-400' : 'bg-red-500'
+                      }`}
+                      initial={{ opacity: 0, scale: 0.9, y: -20 }}
+                      animate={{
+                        opacity: 1,
+                        scale: isNewBlock ? [0.9, 1.1, 1] : 1,
+                        y: 0,
+                        backgroundColor: isNewBlock
+                          ? ['#f87171', '#ef4444']
+                          : '#ef4444',
+                      }}
+                      exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                      transition={{
+                        duration: isNewBlock ? 0.5 : 0.2,
+                        backgroundColor: { duration: 0.8 },
+                      }}
+                      style={{
+                        borderTopLeftRadius: i === 0 ? '4px' : '0',
+                        borderTopRightRadius: i === 0 ? '4px' : '0',
+                        transform: `translateX(${offsetX}px) rotate(${rotation}deg)`,
+                        marginTop: '-1px',
+                        zIndex: player2Rendered - i,
+                      }}
+                    />
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+
+            {/* Base platform - always present */}
+            <div className='w-36 h-[15px] bg-gray-800 rounded-b-md'></div>
           </div>
         </div>
+      </div>
 
-        {/* Block Counter */}
-        <div className="mt-2 text-lg font-bold text-white bg-red-900/50 px-3 py-1 rounded-md">
-          {player2Rendered} / {player2Goal}
+      {/* Goal indicators - Player 2 */}
+      <div
+        className='absolute right-24 z-20'
+        style={{
+          bottom: `${player2Goal * BLOCK_HEIGHT + BASE_HEIGHT + 120}px`,
+        }}
+      >
+        <div className='flex items-center'>
+          <span className='text-yellow-400 text-xs font-bold mr-1'>GOAL</span>
+          <div className='h-1 w-12 bg-yellow-400'></div>
         </div>
       </div>
     </div>

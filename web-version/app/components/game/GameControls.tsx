@@ -11,7 +11,6 @@ const GameControls: React.FC = () => {
     gameStatus,
     roundData,
     startGame,
-    acknowledgeMoves,
     resetGame,
     pendingRoundNumber,
     readyForNextRound,
@@ -50,16 +49,6 @@ const GameControls: React.FC = () => {
               Ready for Round {pendingRoundNumber}
             </motion.button>
           )}
-
-          {/* Acknowledge Moves Button - Always available during gameplay */}
-          <motion.button
-            onClick={() => acknowledgeMoves()}
-            className='px-4 py-2 bg-blue-600 text-white rounded-md shadow-lg hover:bg-blue-700 transition-colors'
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Acknowledge Moves
-          </motion.button>
         </div>
       )}
 
