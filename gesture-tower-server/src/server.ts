@@ -1,9 +1,9 @@
-import WebSocket from "ws";
-import express from "express";
-import { createServer } from "http";
-import { v4 as uuidv4 } from "uuid";
-import cors from "cors";
-import { ExtendedWebSocket, WebSocketMessage, ServerEventType } from "./types";
+import WebSocket from 'ws';
+import express from 'express';
+import { createServer } from 'http';
+import { v4 as uuidv4 } from 'uuid';
+import cors from 'cors';
+import { ExtendedWebSocket, WebSocketMessage, ServerEventType } from './types';
 import {
   handleCreateRoom,
   handleJoinRoom,
@@ -16,13 +16,14 @@ import {
   handleRoundEndAck,
   handleGameReady,
   handleNextRoundReady,
-} from "./roomManager";
-import { clients } from "./messaging";
+  handleRoundStartEvent,
+} from './roomManager';
+import { clients } from './messaging';
 import {
   setupPingHandler,
   setPingTimeout,
   resetPingTimeoutOnMessage,
-} from "./webSocketManager";
+} from './webSocketManager';
 
 // Initialize Express app
 const app = express();
@@ -49,7 +50,7 @@ export const broadcastToAllClients = (message: WebSocketMessage) => {
 };
 
 // Handle WebSocket connections
-wss.on("connection", (ws: WebSocket) => {
+wss.on('connection', (ws: WebSocket) => {
   const clientId = uuidv4();
   console.log(`Client connected: ${clientId}`);
 
@@ -68,13 +69,13 @@ wss.on("connection", (ws: WebSocket) => {
   setPingTimeout(client);
 
   // Handle messages
-  client.on("message", (message: WebSocket.Data) => {
+  client.on('message', (message: WebSocket.Data) => {
     try {
       const data = JSON.parse(message.toString());
       console.log(`Received event: ${data.event}`);
 
       // Fix payload logging for ping events and add null check
-      if (data.event === "ping") {
+      if (data.event === 'ping') {
         // Add a default empty payload if none exists
         data.payload = data.payload || { timestamp: Date.now() };
         console.log(`Payload for ${data.event}:`, JSON.stringify(data.payload));
@@ -87,45 +88,49 @@ wss.on("connection", (ws: WebSocket) => {
 
       // Route to appropriate handler based on event type
       switch (data.event) {
-        case "create_room":
-          console.log("Processing create_room event");
+        case 'create_room':
+          console.log('Processing create_room event');
           handleCreateRoom(client, data.payload);
           break;
-        case "join_room":
+        case 'join_room':
           handleJoinRoom(client, data.payload);
           break;
-        case "leave_room":
+        case 'leave_room':
           handleLeaveRoom(client, data.payload);
           break;
-        case "player_ready":
+        case 'player_ready':
           handlePlayerReady(client, data.payload);
           break;
-        case "game_start":
+        case 'game_start':
           handleGameStart(client, data.payload);
           break;
-        case "gesture_event":
+        case 'gesture_event':
           handleGestureEvent(client, data.payload);
           break;
-        case "room_list":
+        case 'room_list':
           handleRoomList(client);
           break;
-        case "get_room":
+        case 'get_room':
           handleGetRoom(client, data.payload);
           break;
-        case "round_end_ack":
+        case 'round_end_ack':
           handleRoundEndAck(client, data.payload);
           break;
-        case "game_ready":
+        case 'game_ready':
           handleGameReady(client, data.payload);
           break;
-        case "next_round_ready":
+        case 'round_start':
+          console.log('Processing round_start event');
+          handleRoundStartEvent(client, data.payload);
+          break;
+        case 'next_round_ready':
           handleNextRoundReady(client, data.payload);
           break;
-        case "ping":
+        case 'ping':
           // Handle ping explicitly here as well as in setupPingHandler
           client.send(
             JSON.stringify({
-              event: "pong",
+              event: 'pong',
               payload: { timestamp: Date.now() },
             })
           );
@@ -134,7 +139,7 @@ wss.on("connection", (ws: WebSocket) => {
           console.log(`Unknown event type: ${data.event}`);
       }
     } catch (error) {
-      console.error("Error processing message:", error);
+      console.error('Error processing message:', error);
     }
   });
 });

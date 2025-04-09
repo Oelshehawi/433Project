@@ -4,7 +4,11 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useRoomStore } from '../../lib/room/store';
 import { useGameStore } from '../../lib/game/store';
-import { refreshConnectionStatus, isSocketHealthy } from '../../lib/websocket';
+import {
+  refreshConnectionStatus,
+  isSocketHealthy,
+  sendMessage,
+} from '../../lib/websocket';
 
 // Import game components
 import GameBackground from '../../components/game/GameBackground';
@@ -28,6 +32,7 @@ export default function GamePage() {
   const { currentRoom, error: roomError } = useRoomStore();
   const [connectionRetries, setConnectionRetries] = useState(0);
   const [forceLoader, setForceLoader] = useState(false);
+  const [roundStartSent, setRoundStartSent] = useState(false);
 
   // Use the game store
   const {
@@ -205,10 +210,36 @@ export default function GamePage() {
       console.log(
         '🚀 [GamePage] Rules animation completed, ensuring game_ready signal sent'
       );
+
       import('../../lib/websocket').then(({ sendMessage }) => {
-        sendMessage('game_ready', { roomId }).catch((err) =>
-          console.error('🔴 [GamePage] Error sending game_ready:', err)
-        );
+        // First send game_ready event
+        console.log('🚀 [GamePage] Sending game_ready event');
+        sendMessage('game_ready', { roomId })
+          .then(() => {
+            console.log('✅ [GamePage] game_ready sent successfully');
+
+            // Then send round_start event, but only if we haven't sent it yet
+            if (!roundStartSent) {
+              // Add a small delay to ensure game_ready is processed first
+              setTimeout(() => {
+                console.log('🚀 [GamePage] Sending initial round_start event');
+                sendMessage('round_start', { roomId, roundNumber: 1 })
+                  .then(() => {
+                    console.log('✅ [GamePage] round_start sent successfully');
+                    setRoundStartSent(true);
+                  })
+                  .catch((err) => {
+                    console.error(
+                      '🔴 [GamePage] Error sending round_start:',
+                      err
+                    );
+                  });
+              }, 500);
+            }
+          })
+          .catch((err) => {
+            console.error('🔴 [GamePage] Error sending game_ready:', err);
+          });
       });
     }
   }, [
@@ -217,6 +248,7 @@ export default function GamePage() {
     pendingRoundNumber,
     animationState.rulesAnimationComplete,
     roomId,
+    roundStartSent,
   ]);
 
   // Add automatic connection retry
