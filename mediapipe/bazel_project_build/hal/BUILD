@@ -29,3 +29,13 @@ cc_library(
     deps = [":gpio"],
 )
 
+cc_library(
+    name = "joystick_press",
+    srcs = ["joystick_press.cpp"],
+    hdrs = ["joystick_press.h"],
+    deps = [
+        ":gpio",
+        "//bazel_project_build/app:periodTimer",  
+    ],
+    includes = ["hal"],
+)

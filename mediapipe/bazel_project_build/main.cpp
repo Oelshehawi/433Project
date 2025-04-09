@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <algorithm>
 #include <fstream>
+#include <atomic>
+#include <thread>
 
 #include "app/WebSocketClient.h"
 #include "app/WebSocketReceiver.h"
@@ -17,7 +19,11 @@
 #include "app/GestureEventSender.h"
 #include "app/lcd_display.h"
 #include "hal/rotary_press_statemachine.h"
+#include "hal/joystick_press.h"
 //bazel build -c opt --crosstool_top=@crosstool//:toolchains --compiler=gcc --cpu=aarch64 --define MEDIAPIPE_DISABLE_GPU=1 //bazel_project_build:gesture_game
+
+std::atomic<bool> joystickRunning = false;
+
 
 // Function to display available commands
 void displayHelp() {
@@ -62,6 +68,9 @@ int main(int argc, char* argv[]) {
     std::ofstream logFile("/tmp/mediapipe.log", std::ios::out | std::ios::app);
     std::streambuf* stderr_buf = std::cerr.rdbuf();
     std::cerr.rdbuf(logFile.rdbuf());
+
+    std::thread joystickThread;
+
     
     try {
         // Initialize WebSocket client
@@ -146,9 +155,10 @@ int main(int argc, char* argv[]) {
         std::cout << "Initializing LCD display..." << std::endl;
         lcd_init();
         
-        // Initialize rotary encoder
+        // Initialize rotary encoder and joystick
         std::cout << "Initializing input controls..." << std::endl;
         rotary_press_statemachine_init();
+        joystick_press_init();
         
         // Display welcome message
         char* welcomeMsg[] = {"Gesture Tower", "Game", "Ready!"};
@@ -156,6 +166,32 @@ int main(int argc, char* argv[]) {
         
         bool detectionRunning = false;
         bool inputLocked = false;
+
+        // Start background joystick thread for instant activation
+        joystickThread = std::thread([&]() {
+            while (true) {
+                if (joystick_is_detecting() && !joystickRunning.load()) {
+                    joystickRunning = true;  // prevent retriggering
+
+                    std::cout << "\n[JOYSTICK] Press detected — starting gesture detection...\n";
+
+                    if (!detector->isRunning()) {
+                        detector->start();
+                        detectionRunning = true;
+                        std::cout << "[JOYSTICK] Gesture detection started.\n";
+                    } else {
+                        std::cout << "[JOYSTICK] Already running.\n";
+                    }
+
+                    joystick_toggle_detection();  // Reset toggle state
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Debounce
+                    joystickRunning = false;
+                }
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        });
+
         
         std::cout << "=== Beagle Board Gesture Control Client ===" << std::endl;
         std::cout << "Device ID: " << roomManager->getDeviceId() << std::endl;
@@ -163,6 +199,7 @@ int main(int argc, char* argv[]) {
         
         while (true) {
             // Display prompt and get input
+
             std::cout << "> ";
             std::string line;
             if (!std::getline(std::cin, line)) {
@@ -265,20 +302,30 @@ int main(int argc, char* argv[]) {
                         std::cout << "Not connected to a room." << std::endl;
                     }
                 }
-                else if (command == "start") {
-                    // Check the actual running state from the detector, not just our local flag
-                    if (!detector->isRunning()) {
-                        if (!roomManager->isConnected()) {
-                            std::cout << "Warning: Not connected to a room. Gestures will not be sent to a game." << std::endl;
-                        }
+                // else if (command == "start") {
+                //     // Check the actual running state from the detector, not just our local flag
+                //     if (!detector->isRunning()) {
+                //         if (!roomManager->isConnected()) {
+                //             std::cout << "Warning: Not connected to a room. Gestures will not be sent to a game." << std::endl;
+                //         }
                         
+                //         detector->start();
+                //         detectionRunning = true;
+                //         std::cout << "Gesture detection started." << std::endl;
+                //     } else {
+                //         std::cout << "Gesture detection is already running." << std::endl;
+                //     }
+                // }
+                else if (command == "start") {
+                    if (!detector->isRunning()) {
                         detector->start();
                         detectionRunning = true;
-                        std::cout << "Gesture detection started." << std::endl;
+                        std::cout << "Gesture detection started (via " 
+                                  << (command == "start" ? "command" : "joystick") << ")." << std::endl;
                     } else {
                         std::cout << "Gesture detection is already running." << std::endl;
                     }
-                }
+                }                               
                 else if (command == "stop") {
                     // Check the actual running state from the detector, not just our local flag
                     if (detector->isRunning()) {
@@ -381,5 +428,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
+    joystickThread.detach();  
+
     return 0;
 }
