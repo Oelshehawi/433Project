@@ -279,7 +279,6 @@ if (typeof window !== 'undefined') {
   // Handle room data from get_room request
   window.addEventListener('room_data', (event: CustomEventInit) => {
     const { room } = event.detail || {};
-    console.log('Room data event received in store:', room);
 
     if (room) {
       // Update store with the returned room data

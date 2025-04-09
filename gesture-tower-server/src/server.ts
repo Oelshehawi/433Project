@@ -17,6 +17,7 @@ import {
   handleGameReady,
   handleNextRoundReady,
   handleRoundStartEvent,
+  handleWebClientRoundEnd,
 } from './roomManager';
 import { clients } from './messaging';
 import {
@@ -122,6 +123,10 @@ wss.on('connection', (ws: WebSocket) => {
         case 'round_start':
           console.log('Processing round_start event');
           handleRoundStartEvent(client, data.payload);
+          break;
+        case 'round_end':
+          console.log('Processing round_end event from web client');
+          handleWebClientRoundEnd(client, data.payload);
           break;
         case 'next_round_ready':
           handleNextRoundReady(client, data.payload);

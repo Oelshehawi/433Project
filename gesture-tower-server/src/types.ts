@@ -34,7 +34,13 @@ export type ServerEventType =
   | 'round_end'
   | 'game_state_update'
   | 'beagle_board_command'
-  | 'move_status';
+  | 'move_status'
+  | 'round_end_ack'
+  | 'next_round_ready'
+  | 'room_created'
+  | 'room_joined'
+  | 'room_left'
+  | 'pong';
 
 // WebSocket client extended with custom properties
 export interface ExtendedWebSocket extends WebSocket {
@@ -235,4 +241,11 @@ export interface MoveStatusPayload {
 export interface NextRoundReadyPayload {
   roomId: string;
   roundNumber: number; // To ensure we're talking about the correct round
+}
+
+// Add new payload type
+export interface RoundEndAckPayload {
+  roomId: string;
+  playerId: string;
+  roundNumber: number;
 }

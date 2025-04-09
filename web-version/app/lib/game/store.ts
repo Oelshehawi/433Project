@@ -634,6 +634,74 @@ if (typeof window !== 'undefined') {
       });
 
       state.addEventLog(`Player ${playerId} played ${gesture}`, 'Gesture');
+
+      // NEW: Check if both players have submitted gestures
+      // Get updated state after setting the current player's gesture
+      const updatedState = useGameStore.getState();
+      if (updatedState.player1CardPlayed && updatedState.player2CardPlayed) {
+        console.log(
+          '🎮 [game/store] Both players have submitted gestures, will signal round_end'
+        );
+
+        // Send round_end signal to server with short delay for animations
+        if (updatedState.currentRoom) {
+          state.addEventLog(
+            'Both players have moved, preparing to end round',
+            'System'
+          );
+
+          setTimeout(() => {
+            if (!isSocketHealthy()) {
+              console.error(
+                '🔴 [game/store] Socket not healthy when trying to send round_end'
+              );
+              return;
+            }
+
+            // Make sure we're still in the same round and haven't already transitioned
+            const currentState = useGameStore.getState();
+            if (currentState.roundData.isTransitioning) {
+              console.log(
+                '🎮 [game/store] Already transitioning, not sending round_end'
+              );
+              return;
+            }
+
+            console.log('🎮 [game/store] Sending round_end signal to server');
+            import('../websocket').then(({ sendMessage }) => {
+              sendMessage('round_end', {
+                roomId: currentState.currentRoom,
+                roundNumber: currentState.roundData.roundNumber,
+                fromWebClient: true, // Flag to indicate this is from web client
+              })
+                .then(() => {
+                  console.log(
+                    '✅ [game/store] round_end successfully sent to server'
+                  );
+                  state.addEventLog(
+                    'Round end signal sent to server',
+                    'System'
+                  );
+
+                  // Mark as transitioning to prevent duplicate signals
+                  useGameStore.setState({
+                    roundData: {
+                      ...currentState.roundData,
+                      isTransitioning: true,
+                    },
+                  });
+                })
+                .catch((err) => {
+                  console.error(
+                    '🔴 [game/store] Failed to send round_end:',
+                    err
+                  );
+                  state.addEventLog('Failed to send round end signal', 'Error');
+                });
+            });
+          }, 2000); // Delay to allow animations to complete
+        }
+      }
     } catch (error) {
       console.error('[game/store] Error processing gesture event:', error);
     }
@@ -835,6 +903,94 @@ if (typeof window !== 'undefined') {
       state.addEventLog(`Game ended - Winner: ${winnerId || 'None'}`, 'Server');
     } catch (error) {
       console.error('[game/store] Error processing game ended event:', error);
+    }
+  });
+
+  // Round end acknowledgment event
+  window.addEventListener('round_end_ack', (event: CustomEventInit) => {
+    try {
+      const { roundNumber, roomId, playerId, nextRoundNumber } =
+        event.detail || {};
+      console.log(
+        '🟣 [game/store] Round end acknowledgment received:',
+        event.detail
+      );
+
+      const state = useGameStore.getState();
+
+      // Check if this matches our current room
+      if (roomId === state.currentRoom) {
+        console.log(
+          `🟣 [game/store] Round ${roundNumber} acknowledged by server from player ${playerId}`
+        );
+
+        // Determine next round - either use nextRoundNumber from server or calculate
+        const nextRound = nextRoundNumber || roundNumber + 1;
+        console.log(`🟣 [game/store] Preparing for next round ${nextRound}`);
+
+        // Update state for next round if not already set
+        if (state.pendingRoundNumber !== nextRound) {
+          useGameStore.setState({
+            pendingRoundNumber: nextRound,
+            roundData: {
+              ...state.roundData,
+              roundNumber: nextRound,
+              isTransitioning: true,
+            },
+          });
+        }
+
+        // Signal ready for next round with small delay
+        setTimeout(() => {
+          const currentState = useGameStore.getState();
+
+          if (currentState.currentRoom && isSocketHealthy()) {
+            console.log(
+              `🟣 [game/store] Signaling ready for round ${nextRound}`
+            );
+
+            // Use direct approach rather than through a wrapper function
+            import('../websocket').then(({ sendMessage }) => {
+              sendMessage('next_round_ready', {
+                roomId: currentState.currentRoom,
+                roundNumber: nextRound,
+              })
+                .then(() => {
+                  console.log(
+                    `✅ [game/store] Successfully sent next_round_ready for round ${nextRound}`
+                  );
+                  state.addEventLog(
+                    `Signal sent for round ${nextRound}`,
+                    'System'
+                  );
+                })
+                .catch((error) => {
+                  console.error(
+                    `🔴 [game/store] Failed to send next_round_ready: ${error}`
+                  );
+                  state.addEventLog(
+                    `Failed to signal for round ${nextRound}`,
+                    'Error'
+                  );
+                });
+            });
+          } else {
+            console.warn(
+              `🟣 [game/store] Cannot signal ready: room=${!!currentState.currentRoom}, socketHealthy=${isSocketHealthy()}`
+            );
+          }
+        }, 1000);
+      }
+
+      state.addEventLog(
+        `Round ${roundNumber} acknowledged by ${playerId}, preparing for next round`,
+        'Server'
+      );
+    } catch (error) {
+      console.error(
+        '🔴 [game/store] Error processing round end ack event:',
+        error
+      );
     }
   });
 

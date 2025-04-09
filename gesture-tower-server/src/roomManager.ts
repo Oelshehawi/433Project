@@ -14,6 +14,7 @@ import {
   BeagleBoard,
   GameState,
   MoveStatusPayload,
+  RoundEndAckPayload,
 } from './types';
 import {
   broadcastToAll,
@@ -30,6 +31,8 @@ import {
   endRound,
   MIN_REQUIRED_PLAYERS, // Import the constant
   startRound,
+  checkWinCondition,
+  endGame,
 } from './gameManager';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -900,8 +903,11 @@ export const handleGetRoom = (
   }
 };
 
-// Handle round end acknowledgment from beagleboard
-export function handleRoundEndAck(client: ExtendedWebSocket, payload: any) {
+// Handle round_end_ack events from players
+export const handleRoundEndAck = (
+  client: ExtendedWebSocket,
+  payload: RoundEndAckPayload
+) => {
   const { roomId, playerId, roundNumber } = payload;
 
   console.log(
@@ -918,42 +924,32 @@ export function handleRoundEndAck(client: ExtendedWebSocket, payload: any) {
 
   const room = rooms.get(roomId)!;
 
-  // Check if we have a game state
-  if (!room.gameState) {
-    console.error(`Game state not found for room ${roomId}`);
-    return;
-  }
+  // Get the current round number
+  const currentRoundNumber = room.gameState?.roundNumber || 0;
 
-  // Check if this acknowledgment is for the current round
-  if (room.gameState.roundNumber !== roundNumber) {
+  // Check if the round number matches
+  if (roundNumber !== currentRoundNumber - 1) {
     console.warn(
-      `Round number mismatch: got ack for round ${roundNumber} but current round is ${room.gameState.roundNumber}`
+      `Round number mismatch: got ack for round ${roundNumber} but current round is ${currentRoundNumber}`
     );
-    return;
+    // We'll still process the ack because it's coming from the BeagleBoard
   }
 
-  // Mark this player as having completed their move
-  console.log(`Marking ${playerId} as having completed round ${roundNumber}`);
-  room.gameState.playerMoves.set(playerId, true);
+  // Forward ack to web client with next round info
+  const forwardPayload = {
+    roomId,
+    playerId,
+    roundNumber,
+    nextRoundNumber: currentRoundNumber,
+  };
 
-  // Check if all players have completed their moves
-  const allPlayersCompleted = Array.from(
-    room.gameState.playerMoves.values()
-  ).every((moved) => moved);
+  console.log(`Forwarding round_end_ack to web client for room ${roomId}`);
 
-  console.log(`Player move status for round ${roundNumber}:`);
-  room.gameState.playerMoves.forEach((moved, id) => {
-    console.log(`  - ${id}: ${moved ? 'completed' : 'not completed'}`);
-  });
+  // Send to all clients in the room (including web client)
+  sendToRoom(roomId, 'round_end_ack', forwardPayload);
 
-  // If all players have completed their moves, end the round
-  if (allPlayersCompleted) {
-    console.log(
-      `All players have completed their moves for round ${roundNumber}. Ending round.`
-    );
-    endRound(roomId);
-  }
-}
+  // Old code handlers would go here
+};
 
 // Modify existing startRoomGame to delay first round until web client is ready
 export function startRoomGame(roomId: string) {
@@ -1068,4 +1064,124 @@ export function handleNextRoundReady(client: ExtendedWebSocket, payload: any) {
       `[roomManager.ts] Round number mismatch: web client requested round ${roundNumber} but current round is ${room.gameState.roundNumber}`
     );
   }
+}
+
+// Add a new function to handle round_end event from web client
+export function handleWebClientRoundEnd(
+  client: ExtendedWebSocket,
+  payload: any
+) {
+  const { roomId, roundNumber, fromWebClient } = payload;
+
+  // Verify this is coming from web client
+  if (!fromWebClient) {
+    console.log(`[roomManager.ts] Ignoring non-web client round_end event`);
+    return;
+  }
+
+  console.log(
+    `[roomManager.ts] Received round_end from web client for room ${roomId}, round ${roundNumber}`
+  );
+
+  // Verify room exists and game state is valid
+  if (!rooms.has(roomId)) {
+    console.error(`[roomManager.ts] Room ${roomId} not found for round_end`);
+    return;
+  }
+
+  const room = rooms.get(roomId)!;
+
+  if (!room.gameState) {
+    console.error(`[roomManager.ts] No game state found for room ${roomId}`);
+    return;
+  }
+
+  // Verify round number matches
+  if (room.gameState.roundNumber !== roundNumber) {
+    console.warn(
+      `[roomManager.ts] Round number mismatch: got ${roundNumber}, current is ${room.gameState.roundNumber}`
+    );
+    // Continue anyway as we want to process the round end
+  }
+
+  // Check win condition and prepare round end message
+  const { winningPlayerId, shouldContinue } = checkWinCondition(roomId);
+
+  // Prepare round end event
+  const roundEndEvent = {
+    event: 'round_end',
+    payload: {
+      roomId,
+      roundNumber: room.gameState.roundNumber,
+      gameState: {
+        towerHeights: Object.fromEntries(room.gameState.towerHeights),
+        goalHeights: Object.fromEntries(room.gameState.goalHeights),
+        roundNumber: room.gameState.roundNumber,
+      },
+      winnerId: winningPlayerId,
+      roundComplete: true,
+      shouldContinue,
+    },
+  };
+
+  console.log(
+    `[roomManager.ts] Forwarding round_end to BeagleBoard clients for room ${roomId}, round ${roundNumber}`
+  );
+
+  // Get all BeagleBoard clients in this room
+  const beagleBoardPlayers = room.players.filter(
+    (p) => p.playerType === 'beagleboard'
+  );
+
+  // Send round_end to each BeagleBoard client
+  beagleBoardPlayers.forEach((player) => {
+    // Find the client associated with this player
+    const playerClient = findClientByPlayerId(player.id);
+    if (playerClient && playerClient.readyState === WebSocket.OPEN) {
+      playerClient.send(JSON.stringify(roundEndEvent));
+      console.log(
+        `[roomManager.ts] Sent round_end to BeagleBoard player ${player.name} (${player.id})`
+      );
+    }
+  });
+
+  // If game should continue, prepare for next round
+  if (shouldContinue) {
+    // Increment round number in preparation for next round
+    room.gameState.roundNumber++;
+    console.log(
+      `[roomManager.ts] Incremented round number to ${room.gameState.roundNumber} for next round`
+    );
+  } else {
+    // Game has ended with a winner
+    console.log(
+      `[roomManager.ts] Game ended with winner: ${winningPlayerId || 'none'}`
+    );
+    endGame(roomId, winningPlayerId || '');
+  }
+
+  console.log(
+    `[roomManager.ts] Round end processing complete for room ${roomId}`
+  );
+}
+
+// Helper function to find a client by player ID
+function findClientByPlayerId(playerId: string): ExtendedWebSocket | undefined {
+  // Check all clients to find one associated with this player
+  for (const [clientId, client] of clients.entries()) {
+    if (client.playerId === playerId) {
+      return client;
+    }
+  }
+
+  // Also check beagleBoards map if it exists
+  if (typeof beagleBoards !== 'undefined') {
+    for (const [deviceId, device] of beagleBoards.entries()) {
+      if (deviceId === playerId) {
+        return device.client;
+      }
+    }
+  }
+
+  return undefined;
 }

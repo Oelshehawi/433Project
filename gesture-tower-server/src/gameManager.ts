@@ -158,7 +158,6 @@ export function startRound(roomId: string): boolean {
     `\n=========== STARTING ROUND ${room.gameState.roundNumber} IN ROOM ${roomId} ===========`
   );
 
-
   // ENHANCED RESET: Completely reinitialize the playerMoves Map to ensure a clean state
   // First, create a new empty Map
   room.gameState.playerMoves = new Map();
@@ -712,8 +711,10 @@ export function processAction(
         towerHeights: Object.fromEntries(room.gameState.towerHeights),
         goalHeights: Object.fromEntries(room.gameState.goalHeights),
         roundNumber: room.gameState.roundNumber,
+        playerShields: Object.fromEntries(room.gameState.playerShields),
       },
       message: 'All players have submitted their gestures',
+      allGesturesReceived: true,
     });
 
     // Check if all players have moved
@@ -721,16 +722,20 @@ export function processAction(
       room.gameState.playerMoves.values()
     ).every((moved) => moved);
 
-    // If all players have completed their moves, end the round
+    // IMPORTANT: We no longer automatically end the round
+    // Instead, we wait for the web client to send the round_end event
+    // The web client will send round_end after receiving and processing all gestures
     if (allPlayersCompleted) {
       console.log(
-        `[gameManager.ts] All players have moved in round ${currentRound}, ending round`
+        `[gameManager.ts] All players have moved in round ${currentRound}, waiting for web client to signal round_end`
       );
 
+      // NOTE: The following code is commented out since we now wait for web client to end the round
       // Clear pending gestures for this round
-      roomGestures.delete(currentRound);
+      // roomGestures.delete(currentRound);
 
-      endRound(roomId);
+      // Don't call endRound here anymore
+      // endRound(roomId);
     }
 
     return true;
