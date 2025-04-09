@@ -28,17 +28,7 @@ import PlayerGestureDisplay from '../../components/game/PlayerGestureDisplay';
 import Player from '../../components/game/Player';
 import GameStateDisplay from '../../components/game/GameStateDisplay';
 import GameControls from '../../components/game/GameControls';
-
-// Define the animation state types that Player component can accept
-type PlayerAnimationState =
-  | 'idle'
-  | 'attack'
-  | 'damaged'
-  | 'win'
-  | 'lose'
-  | 'jump'
-  | 'hurt'
-  | 'die';
+import DebugControls from '../../components/game/DebugControls';
 
 export default function GamePage() {
   const params = useParams();
@@ -87,6 +77,9 @@ export default function GamePage() {
     player2Animation,
     player1JumpHeight,
     player2JumpHeight,
+    // Get debug state from game store
+    showDebugLogs,
+    toggleDebugLogs,
   } = useGameStore();
 
   // Create a centralized function to send round_start events
@@ -438,19 +431,25 @@ export default function GamePage() {
               playerId='player1'
               name={player1Name}
               isVisible={true}
-              animationState={player1Animation as PlayerAnimationState}
+              animationState={player1Animation}
               jumpHeight={player1JumpHeight}
             />
             <Player
               playerId='player2'
               name={player2Name}
               isVisible={true}
-              animationState={player2Animation as PlayerAnimationState}
+              animationState={player2Animation}
               jumpHeight={player2JumpHeight}
             />
 
             {/* Add Rules button outside the game state conditional so it's always visible */}
             <RulesButton />
+
+            {/* Add Debug Controls next to the Rules button */}
+            <DebugControls
+              isVisible={showDebugLogs}
+              onToggleVisibility={toggleDebugLogs}
+            />
 
             {/* Game state display */}
             {gameStatus === 'playing' && (
@@ -467,11 +466,13 @@ export default function GamePage() {
                   roundEndMessage={roundEndMessage}
                 />
 
-                {/* Debug event logs */}
-                <EventLogger
-                  eventLogs={eventLogs}
-                  onClearLogs={clearEventLogs}
-                />
+                {/* Debug event logs - only show when toggled on */}
+                {showDebugLogs && (
+                  <EventLogger
+                    eventLogs={eventLogs}
+                    onClearLogs={clearEventLogs}
+                  />
+                )}
 
                 {/* Tower blocks for both players */}
                 <TowerBlocks

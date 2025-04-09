@@ -177,14 +177,29 @@ export interface GameStore {
   moveAnimations: PlayerMove[];
   pendingRoundNumber: number | null;
 
+  // Track animations played in current round to prevent duplicates
+  animationsPlayedInCurrentRound: {
+    player1: {
+      attack: boolean;
+      shield: boolean;
+      build: boolean;
+    };
+    player2: {
+      attack: boolean;
+      shield: boolean;
+      build: boolean;
+    };
+  };
+
   // Character animation states
   player1Animation: PlayerAnimationState;
   player2Animation: PlayerAnimationState;
   player1JumpHeight: number;
   player2JumpHeight: number;
 
-  // Event logs for debugging
+  // Debug state
   eventLogs: string[];
+  showDebugLogs: boolean; // New property to toggle debug logs visibility
 
   // Loading state
   loading: boolean;
@@ -206,6 +221,24 @@ export interface GameStore {
   resetNotification: () => void;
   debugCheckEventListeners: () => void;
   requestGameState: () => Promise<void>;
+
+  // New method to check if an animation has already been played
+  hasAnimationPlayedInCurrentRound: (
+    player: 'player1' | 'player2',
+    animationType: 'attack' | 'shield' | 'build'
+  ) => boolean;
+
+  // New method to mark an animation as played
+  markAnimationAsPlayed: (
+    player: 'player1' | 'player2',
+    animationType: 'attack' | 'shield' | 'build'
+  ) => void;
+
+  // New method to reset animations played in a round
+  resetAnimationsPlayedInRound: () => void;
+
+  // Method to toggle debug logs visibility
+  toggleDebugLogs: () => void;
 
   // Utility functions
   addEventLog: (message: string, source?: string) => void;
