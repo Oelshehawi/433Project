@@ -6,11 +6,12 @@
 #include <iostream>
 #include <algorithm>
 #include <random>
+#include <atomic>
 
 GameState::GameState(RoomManager* roomManager, DisplayManager* displayManager, const std::string& deviceId)
     : roomManager(roomManager), displayManager(displayManager), deviceId(deviceId),
       gameInProgress(false), currentRoundNumber(1), currentTurnTimeRemaining(0),
-      timerActive(false), timerThreadRunning(false) {
+      roundEndReceived(false), timerActive(false), timerThreadRunning(false), needDisplayUpdate(false) {
 }
 
 GameState::~GameState() {
@@ -18,114 +19,103 @@ GameState::~GameState() {
 }
 
 void GameState::startTimerThread() {
-    // Check if timer thread is marked as running but not joinable
-    {
-        std::lock_guard<std::mutex> checkLock(timerMutex);
-        if (timerThreadRunning && !timerThread.joinable()) {
-            timerThreadRunning = false;
-            timerActive = false;
-        }
-    }
+    // ONLY call this from the updateTimerFromEvent method (round_start event)
+    std::cout << "[GameState.cpp] *** STARTING TIMER THREAD (should only happen on round_start) ***" << std::endl;
     
-    // Stop any existing timer thread - do this outside the lock to avoid deadlock
-    bool needToStop = false;
-    {
-        std::lock_guard<std::mutex> checkLock(timerMutex);
-        needToStop = timerThreadRunning;
-    }
+    // Kill any existing timer thread first
+    stopTimerThread();
     
-    if (needToStop) {
-        stopTimerThread();
-    }
-    
-    // Now set up the new timer thread
-    std::lock_guard<std::mutex> lock(timerMutex);
-    
-    // Ensure both flags are set properly
-    timerThreadRunning = true;
+    // Set flags
     timerActive = true;
+    timerThreadRunning = true;
     
-    // Detach any previous thread if it's still joinable
-    if (timerThread.joinable()) {
-        timerThread.join();
-    }
-    
+    // Create new thread
+    std::lock_guard<std::mutex> lock(timerMutex);
     timerThread = std::thread(&GameState::updateTimer, this);
-}
-
-void GameState::updateTimer() {
-    int debugCounter = 0;
-    while (timerThreadRunning && timerActive) {
-        // Debug counter to track iterations
-        debugCounter++;
-        
-        // Sleep for 1 second
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        
-        // Update the timer
-        {
-            std::lock_guard<std::mutex> lock(timerMutex);
-            
-            if (currentTurnTimeRemaining > 0) {
-                currentTurnTimeRemaining--;
-                
-                // Update the display with the new time
-                if (displayManager) {
-                    // Force a display update every second to show timer changing
-                    displayManager->updateCardAndGameDisplay(false);
-                }
-            }
-            
-            // If time has run out, auto-play a card
-            if (currentTurnTimeRemaining <= 0 && timerActive) {
-                // Disable the timer
-                timerActive = false;
-                
-                // Auto-play a card - this will send the gesture to server
-                autoPlayCard();
-                
-                break;
-            }
-        }
-    }
     
-    // IMPORTANT: Reset the flags when the thread exits
-    {
-        std::lock_guard<std::mutex> lock(timerMutex);
-        timerThreadRunning = false;
-        timerActive = false;
-    }
+    std::cout << "[GameState.cpp] Timer thread started successfully" << std::endl;
 }
 
 void GameState::stopTimerThread() {
-    std::lock_guard<std::mutex> lock(timerMutex);
+    std::cout << "[GameState.cpp] *** STOPPING TIMER THREAD ***" << std::endl;
     
-    if (timerThreadRunning) {
-        timerThreadRunning = false;
-        timerActive = false;
-        
-        // Wait for thread to finish if it's joinable
+    // Set both flags to false first
+    timerActive = false;
+    timerThreadRunning = false;
+    
+    // Join thread if it exists
+    {
+        std::lock_guard<std::mutex> lock(timerMutex);
         if (timerThread.joinable()) {
+            std::cout << "[GameState.cpp] Joining timer thread..." << std::endl;
             timerThread.join();
+            std::cout << "[GameState.cpp] Timer thread joined successfully" << std::endl;
         }
     }
+    
+    // Update display to show timer stopped
+    if (displayManager) {
+        displayManager->updateCardAndGameDisplay(false);
+    }
+    
+    std::cout << "[GameState.cpp] Timer thread fully stopped" << std::endl;
+}
+
+void GameState::updateTimer() {
+    std::cout << "[GameState.cpp] Timer thread running" << std::endl;
+    
+    while (timerThreadRunning && timerActive) {
+        // Sleep for 1 second
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        
+        // Check if we should exit
+        if (!timerActive || !timerThreadRunning) {
+            break;
+        }
+        
+        // Decrement timer
+        if (currentTurnTimeRemaining > 0) {
+            currentTurnTimeRemaining--;
+            
+            // Update display
+            if (displayManager) {
+                displayManager->updateCardAndGameDisplay(false);
+            }
+        }
+        
+        // Check if timer expired
+        if (currentTurnTimeRemaining <= 0) {
+            std::cout << "[GameState.cpp] Timer expired - auto-playing card" << std::endl;
+            
+            // Stop timer explicitly
+            timerActive = false;
+            timerThreadRunning = false;
+            
+            // Auto-play card
+            autoPlayCard();
+            break;
+        }
+    }
+    
+    std::cout << "[GameState.cpp] Timer thread exiting" << std::endl;
 }
 
 void GameState::updateTimerFromEvent(const json& roundStartPayload) {
+    std::cout << "[GameState.cpp] Received round_start event - initializing timer" << std::endl;
+    
     // Update round number
     if (roundStartPayload.contains("roundNumber")) {
         int newRoundNumber = roundStartPayload["roundNumber"];
         currentRoundNumber = newRoundNumber;
     }
     
-    // Always set the timer first to ensure we have a proper countdown
+    // Set timer to fixed 30 seconds
     currentTurnTimeRemaining = 30; // Fixed 30 seconds per round
     lastTimerUpdate = std::chrono::steady_clock::now();
-    timerActive = true;
     
     // Handle cards if they're included in round_start payload (new format)
     bool foundCards = false;
-    std::cout << "roundStartPayload: " << roundStartPayload.dump() << std::endl;
+    std::cout << "[GameState.cpp] roundStartPayload: " << roundStartPayload.dump() << std::endl;
     if (roundStartPayload.contains("playerCards") && roundStartPayload["playerCards"].is_object()) {
         // Look for our device ID in the payload
         std::string ourDeviceId = deviceId;
@@ -163,42 +153,14 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
         }
     }
     
-    
     // Force a display update to show the new round and cards
     if (displayManager) {
         displayManager->updateCardAndGameDisplay(true);
     }
     
-    // Start the timer thread
+    // CRITICAL: This is the ONLY place where we should start the timer thread
+    std::cout << "[GameState.cpp] Starting timer thread in response to round_start event" << std::endl;
     startTimerThread();
-}
-
-void GameState::processCardsDirectly(const json& cardsPayload) {
-    if (!cardsPayload.contains("cards")) {
-        return;
-    }
-    
-    // Clear the current cards
-    lastReceivedCards.clear();
-    
-    // Also clear the playerCards map
-    playerCards.clear();
-    
-    // Parse the cards
-    for (const auto& cardJson : cardsPayload["cards"]) {
-        Card card;
-        card.id = cardJson.contains("id") ? cardJson["id"].get<std::string>() : "";
-        card.type = cardJson.contains("type") ? cardJson["type"].get<std::string>() : "";
-        card.name = cardJson.contains("name") ? cardJson["name"].get<std::string>() : "";
-        card.description = cardJson.contains("description") ? cardJson["description"].get<std::string>() : "";
-        
-        lastReceivedCards.push_back(card);
-        
-        // Add to playerCards map if we have valid type and ID
-        if (!card.type.empty() && !card.id.empty()) {
-            playerCards[card.type] = card.id;
-        }
-    }
 }
 
 void GameState::processCards(const json& cardsPayload) {
@@ -210,6 +172,7 @@ void GameState::processCards(const json& cardsPayload) {
     if (currentTurnTimeRemaining <= 0) {
         currentTurnTimeRemaining = 30; // Default 30 seconds
         timerActive = true;
+        needDisplayUpdate = true; // Set flag to trigger display update
         
         // Start the timer thread if needed
         if (!timerThreadRunning) {
@@ -242,6 +205,35 @@ void GameState::processCards(const json& cardsPayload) {
     // Display the cards and current game state
     if (displayManager) {
         displayManager->updateCardAndGameDisplay(false);
+        needDisplayUpdate = false; // Reset flag after update
+    }
+}
+
+void GameState::processCardsDirectly(const json& cardsPayload) {
+    if (!cardsPayload.contains("cards")) {
+        return;
+    }
+    
+    // Clear the current cards
+    lastReceivedCards.clear();
+    
+    // Also clear the playerCards map
+    playerCards.clear();
+    
+    // Parse the cards
+    for (const auto& cardJson : cardsPayload["cards"]) {
+        Card card;
+        card.id = cardJson.contains("id") ? cardJson["id"].get<std::string>() : "";
+        card.type = cardJson.contains("type") ? cardJson["type"].get<std::string>() : "";
+        card.name = cardJson.contains("name") ? cardJson["name"].get<std::string>() : "";
+        card.description = cardJson.contains("description") ? cardJson["description"].get<std::string>() : "";
+        
+        lastReceivedCards.push_back(card);
+        
+        // Add to playerCards map if we have valid type and ID
+        if (!card.type.empty() && !card.id.empty()) {
+            playerCards[card.type] = card.id;
+        }
     }
 }
 
@@ -260,16 +252,20 @@ void GameState::getCardCounts(int& attackCount, int& defendCount, int& buildCoun
 }
 
 void GameState::sendRoundEndEvent() {
-    if (!roomManager || !roomManager->client) {
-        if (!roomManager) {
-        }
-        if (roomManager && !roomManager->client) {
-        }
+    // Only send round_end_ack if we actually received a round_end event
+    if (!roundEndReceived) {
+        std::cout << "[GameState.cpp] Not sending round_end_ack because no round_end was received" << std::endl;
         return;
     }
-    
-    // Check the playerCards map state
-    if (!playerCards.empty()) {
+
+    if (!roomManager || !roomManager->client) {
+        if (!roomManager) {
+            std::cerr << "[GameState.cpp] ERROR: Cannot send round_end_ack - roomManager not set" << std::endl;
+        }
+        if (roomManager && !roomManager->client) {
+            std::cerr << "[GameState.cpp] ERROR: Cannot send round_end_ack - websocket client not initialized" << std::endl;
+        }
+        return;
     }
     
     // Stop gesture detection if it's running
@@ -292,8 +288,12 @@ void GameState::sendRoundEndEvent() {
     
     std::string messageStr = message.dump();
     
+    std::cout << "[GameState.cpp] Sending round_end_ack for round " << currentRoundNumber << std::endl;
     bool sendResult = roomManager->client->sendMessage(messageStr);
     roomManager->client->ensureMessageProcessing();
+    
+    // Reset the roundEndReceived flag after sending the ack
+    roundEndReceived = false;
     
     // Update display to show "Waiting for next round" message
     if (displayManager) {
@@ -302,47 +302,94 @@ void GameState::sendRoundEndEvent() {
 }
 
 void GameState::autoPlayCard() {
-    // Ensure we have cards to play
-    if (playerCards.empty()) {
-        sendRoundEndEvent(); // Still send round end even if no cards
+    // Add a static flag to track if we're already auto-playing
+    static std::atomic<bool> alreadyAutoPlaying{false};
+    
+    // Double-check timer has actually stopped to avoid race conditions
+    if (timerActive || timerThreadRunning) {
+        std::cout << "[GameState.cpp] WARNING: Timer still active during auto-play attempt, stopping it..." << std::endl;
+        stopTimerThread();
+    }
+    
+    // If we're already in the process of auto-playing, don't do it again
+    if (alreadyAutoPlaying) {
+        std::cout << "[GameState.cpp] Prevented duplicate auto-play attempt" << std::endl;
         return;
     }
     
-    // Choose a card randomly from the available cards
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> distrib(0, playerCards.size() - 1);
-    size_t cardIndex = distrib(gen);
-    
-    // Get an iterator to the selected card
-    auto it = playerCards.begin();
-    std::advance(it, cardIndex);
-    
-    // Extract card information
-    std::string cardType = it->first;
-    std::string cardId = it->second;
-    
-    // Send the gesture event
-    if (roomManager && roomManager->gestureEventSender) {
-        roomManager->sendGestureEvent(
-            roomManager->getRoomId(), 
-            deviceId, 
-            cardType, 
-            0.95, // Default confidence value
-            cardId
-        );
+    // Set flag to indicate we're processing an auto-play
+    if (!alreadyAutoPlaying.exchange(true)) {
+        std::cout << "[GameState.cpp] Starting auto-play sequence..." << std::endl;
+    } else {
+        std::cout << "[GameState.cpp] Another thread already started auto-play" << std::endl;
+        return;
     }
     
-    // Update display back to cards and game info (without console output)
-    if (displayManager) {
-        displayManager->updateCardAndGameDisplay(false);
+    // Ensure we have cards to play
+    if (playerCards.empty()) {
+        std::cout << "[GameState.cpp] No cards available for auto-play" << std::endl;
+        sendRoundEndEvent(); // Still send round end even if no cards
+        alreadyAutoPlaying = false; // Reset flag before returning
+        return;
     }
     
-    // Send round end event after auto-playing
-    sendRoundEndEvent();
+    try {
+        // Choose a card randomly from the available cards
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> distrib(0, playerCards.size() - 1);
+        size_t cardIndex = distrib(gen);
+        
+        // Get an iterator to the selected card
+        auto it = playerCards.begin();
+        std::advance(it, cardIndex);
+        
+        // Extract card information
+        std::string cardType = it->first;
+        std::string cardId = it->second;
+        
+        std::cout << "[GameState.cpp] Auto-playing card: " << cardType << " (Card ID: " << cardId << ")" << std::endl;
+        
+        // Send the gesture event
+        if (roomManager && roomManager->gestureEventSender) {
+            roomManager->sendGestureEvent(
+                roomManager->getRoomId(), 
+                deviceId, 
+                cardType, 
+                0.95, // Default confidence value
+                cardId
+            );
+        }
+        
+        // Update display back to cards and game info (without console output)
+        if (displayManager) {
+            displayManager->updateCardAndGameDisplay(false);
+        }
+        
+        // Send round end event after auto-playing
+        sendRoundEndEvent();
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[GameState.cpp] Error during auto-play: " << e.what() << std::endl;
+    }
+    
+    // Reset auto-play flag
+    alreadyAutoPlaying = false;
+    std::cout << "[GameState.cpp] Auto-play sequence completed" << std::endl;
 }
 
 void GameState::handleConfirmedGesture(const std::string& gesture, float confidence, const std::string& cardId) {
+    // CRITICAL: Stop timer immediately when rotary encoder is pressed (BEFORE anything else)
+    std::cout << "[GameState.cpp] ROTARY BUTTON PRESSED - STOPPING TIMER IMMEDIATELY" << std::endl;
+    
+    // Double-safety - set flags directly AND call the stop method
+    timerActive = false;
+    timerThreadRunning = false;
+    currentTurnTimeRemaining = 0;
+    stopTimerThread();
+    
+    std::cout << "[GameState.cpp] Handling confirmed gesture: " << gesture << std::endl;
+    
     // Send the gesture to the server
     if (roomManager && roomManager->gestureEventSender) {
         roomManager->sendGestureEvent(
@@ -354,7 +401,7 @@ void GameState::handleConfirmedGesture(const std::string& gesture, float confide
         );
     }
     
-    // Update display if needed
+    // Update display to show confirmed gesture
     if (displayManager) {
         displayManager->displayGestureConfirmed(gesture);
     }

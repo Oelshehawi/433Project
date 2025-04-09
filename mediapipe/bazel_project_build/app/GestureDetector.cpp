@@ -1,6 +1,7 @@
 #include "GestureDetector.h"
 #include "RoomManager.h"
 #include "GestureEventSender.h"
+#include "GameState.h"
 #include <iostream>
 #include <unistd.h>
 #include <cmath>
@@ -275,7 +276,17 @@ void GestureDetector::runTestingMode() {
 }
 
 void GestureDetector::confirmGesture(const std::string& actionType) {
-    // Try to send the gesture via the event sender first
+    std::cout << "[GestureDetector.cpp] ROTARY ENCODER PRESSED - STOPPING TIMER IMMEDIATELY" << std::endl;
+    
+    // FIRST PRIORITY: Stop the timer immediately when rotary encoder is pressed
+    if (roomManager && roomManager->gameState) {
+        // Direct access to atomic values for instant stopping
+        roomManager->gameState->setCurrentTurnTimeRemaining(0);
+        roomManager->gameState->stopTimerThread();
+        std::cout << "[GestureDetector.cpp] Timer forcibly stopped by rotary encoder press" << std::endl;
+    }
+    
+    // Try to send the gesture via the event sender
     bool sent = false;
     if (eventSender && roomManager) {
         sent = eventSender->sendGestureEvent(
@@ -306,5 +317,12 @@ void GestureDetector::confirmGesture(const std::string& actionType) {
                 roomManager->getClient()->ensureMessageProcessing();
             }
         }
+    }
+    
+    // Verify timer is definitely stopped
+    if (roomManager && roomManager->gameState) {
+        // Double-check timer is fully stopped
+        roomManager->gameState->stopTimerThread();
+        std::cout << "[GestureDetector.cpp] Stopped timer after confirming gesture" << std::endl;
     }
 } 

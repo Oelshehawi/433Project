@@ -120,6 +120,14 @@ void MessageHandler::handleRoundEnd(const json& payload) {
         roomManager->gestureDetector->stop();
     }
     
+    // Set the roundEndReceived flag to true
+    if (gameState) {
+        gameState->setRoundEndReceived(true);
+        
+        // Also stop the timer when round end is received
+        gameState->stopTimerThread();
+    }
+    
     // Use DisplayManager to show results
     if (roomManager->displayManager) {
         roomManager->displayManager->displayRoundEnd(roundNumber, isWinner);
@@ -290,20 +298,27 @@ void MessageHandler::handleMoveStatus(const json& payload) {
     int roundNumber = payload.contains("roundNumber") ? payload["roundNumber"].get<int>() : 0;
     
     if (status == "accepted") {
+        std::cout << "[MessageHandler.cpp] Move was accepted by server for round " << roundNumber << std::endl;
+        
         // If the gesture detector is still running, stop it
         if (roomManager && roomManager->gestureDetector && roomManager->gestureDetector->isRunning()) {
             roomManager->gestureDetector->stop();
         }
         
-        // Send round_end_ack since our move was accepted
-        if (gameState) {
+        // Only send round_end_ack if we actually received a round_end event from the server
+        if (gameState && gameState->wasRoundEndReceived()) {
             gameState->sendRoundEndEvent();
+        } else {
+            std::cout << "[MessageHandler.cpp] Move accepted but waiting for round_end event before sending ack" << std::endl;
         }
     } 
     else if (status == "rejected") {
+        std::cout << "[MessageHandler.cpp] Move was rejected by server: " << reason << std::endl;
         if (reason == "already_moved") {
+            std::cout << "[MessageHandler.cpp] Already moved this round" << std::endl;
         }
         else if (reason == "invalid_round") {
+            std::cout << "[MessageHandler.cpp] Invalid round number" << std::endl;
         }
     }
 }
