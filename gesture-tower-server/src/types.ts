@@ -28,6 +28,7 @@ export type ServerEventType =
   | 'game_ended'
   | 'error'
   | 'gesture_event'
+  | 'gesture_batch'
   | 'turn_start'
   | 'turn_end'
   | 'round_start'
@@ -187,6 +188,20 @@ export interface GestureEventPayload {
   roomId: string; // Add roomId property
   roundNumber?: number; // Add optional roundNumber property
   timestamp?: number; // Add optional timestamp property
+}
+
+// New gesture batch payload
+export interface GestureBatchPayload {
+  roomId: string;
+  roundNumber: number;
+  gestures: {
+    playerId: string;
+    gesture: GameActionType | GestureType;
+    confidence: number;
+    cardId?: string;
+    timestamp: number;
+  }[];
+  timestamp: number;
 }
 
 export interface ErrorPayload {

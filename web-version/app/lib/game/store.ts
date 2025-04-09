@@ -405,19 +405,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // Debug function to check event listeners
   debugCheckEventListeners: () => {
-    // Access the external socket variable from the websocket module
-    import('../websocket').then(() => {
-      // Check socket health using the imported function
-      if (!isSocketHealthy()) {
-        console.log('No socket connection available');
-        return;
-      }
-
-      console.log('Current socket:', 'WebSocket Available');
-      console.log('Event listeners:', 'Available');
-      console.log('Current room:', get().currentRoom);
-      console.log('Current round:', get().gameState?.roundNumber || 0);
-    });
+    const state = useGameStore.getState();
+    console.log('Debug - Event Listeners:');
+    console.log('Current room:', state.currentRoom);
+    console.log('Current round:', state.gameState?.roundNumber);
   },
 }));
 
@@ -445,14 +436,58 @@ if (typeof window !== 'undefined') {
   // Game state update event
   window.addEventListener('game_state_update', (event: CustomEventInit) => {
     try {
-      const { gameState, message, waitingForNextRound } = event.detail || {};
+      const {
+        gameState,
+        message,
+        allGesturesReceived,
+        playerGestureSummary,
+      } = event.detail || {};
       console.log('🟣 [game/store] Game state update received:', gameState);
       console.log(
         '🟣 [game/store] Message:',
         message,
-        'Waiting for next round:',
-        waitingForNextRound
       );
+
+      if (allGesturesReceived) {
+        console.log(
+          '🟣 [game/store] All gestures received:',
+          playerGestureSummary
+        );
+
+        // If we've received all gestures in a game state update, we can proceed with sending next_round_ready
+        // after a short delay to allow animations to complete
+        if (playerGestureSummary && playerGestureSummary.length >= 2) {
+          const state = useGameStore.getState();
+
+          if (state.currentRoom && !state.roundData.isTransitioning) {
+            // Send next_round_ready signal to server after animations have completed
+            setTimeout(() => {
+              console.log(
+                '🟣 [game/store] Sending next_round_ready signal after receiving all gestures'
+              );
+              import('../websocket').then(({ sendMessage }) => {
+                sendMessage('next_round_ready', {
+                  roomId: state.currentRoom,
+                  roundNumber: state.roundData.roundNumber,
+                }).catch((err) => {
+                  console.error(
+                    '🔴 [game/store] Failed to send next_round_ready:',
+                    err
+                  );
+                });
+              });
+
+              // Mark as transitioning to prevent duplicate signals
+              useGameStore.setState({
+                roundData: {
+                  ...state.roundData,
+                  isTransitioning: true,
+                },
+              });
+            }, 3000); // Delay to allow animations to complete
+          }
+        }
+      }
 
       if (gameState) {
         const state = useGameStore.getState();
@@ -516,27 +551,6 @@ if (typeof window !== 'undefined') {
         // If there's a message, add it to the logs
         if (message) {
           state.addEventLog(message, 'Server');
-        }
-
-        // If waiting for next round, set the pendingRoundNumber
-        if (waitingForNextRound) {
-          console.log(
-            '🟣 [game/store] Server waiting for next round ready signal for round',
-            gameState.roundNumber
-          );
-
-          useGameStore.setState({
-            pendingRoundNumber: gameState.roundNumber,
-          });
-
-          // Immediately try to signal readiness if we're in a non-transitioning state
-          if (!state.roundData.isTransitioning) {
-            console.log(
-              '🟣 [game/store] Not transitioning, immediately signaling ready for round',
-              gameState.roundNumber
-            );
-            state.readyForNextRound(gameState.roundNumber);
-          }
         }
       }
     } catch (error) {
@@ -636,283 +650,93 @@ if (typeof window !== 'undefined') {
     }
   });
 
-  // Gesture event
+  // Gesture event (keep for backward compatibility, but most gestures will now come as batch)
   window.addEventListener('gesture_event', (event: CustomEventInit) => {
     try {
       const { playerId, gesture, cardId } = event.detail || {};
-      console.log('[game/store] Gesture event received:', event.detail);
+      console.log(
+        '🎮 [game/store] Individual gesture event received:',
+        event.detail
+      );
 
-      const state = useGameStore.getState();
-
-      // Update the player's card played state
-      const isPlayer1 =
-        Object.keys(state.gameState?.towerHeights || {})[0] === playerId;
-
-      if (isPlayer1) {
-        useGameStore.setState({ player1CardPlayed: gesture });
-      } else {
-        useGameStore.setState({ player2CardPlayed: gesture });
-      }
-
-      // Add the move to animations
-      const newMove: PlayerMove = {
-        playerId,
-        gesture,
-        cardId,
-      };
-
-      useGameStore.setState({
-        moveAnimations: [...state.moveAnimations, newMove],
-        animationState: {
-          ...state.animationState,
-          isAnimating: true,
-        },
-      });
-
-      state.addEventLog(`Player ${playerId} played ${gesture}`, 'Gesture');
-
-      // NEW: Check if both players have submitted gestures
-      // Get updated state after setting the current player's gesture
-      const updatedState = useGameStore.getState();
-      if (updatedState.player1CardPlayed && updatedState.player2CardPlayed) {
-        console.log(
-          '🎮 [game/store] Both players have submitted gestures, will signal round_end'
-        );
-
-        // Send round_end signal to server with short delay for animations
-        if (updatedState.currentRoom) {
-          state.addEventLog(
-            'Both players have moved, preparing to end round',
-            'System'
-          );
-
-          setTimeout(() => {
-            if (!isSocketHealthy()) {
-              console.error(
-                '🔴 [game/store] Socket not healthy when trying to send round_end'
-              );
-              return;
-            }
-
-            // Make sure we're still in the same round and haven't already transitioned
-            const currentState = useGameStore.getState();
-            if (currentState.roundData.isTransitioning) {
-              console.log(
-                '🎮 [game/store] Already transitioning, not sending round_end'
-              );
-              return;
-            }
-
-            console.log('🎮 [game/store] Sending round_end signal to server');
-            import('../websocket').then(({ sendMessage }) => {
-              sendMessage('round_end', {
-                roomId: currentState.currentRoom,
-                roundNumber: currentState.roundData.roundNumber,
-                fromWebClient: true, // Flag to indicate this is from web client
-              })
-                .then(() => {
-                  console.log(
-                    '✅ [game/store] round_end successfully sent to server'
-                  );
-                  state.addEventLog(
-                    'Round end signal sent to server',
-                    'System'
-                  );
-
-                  // Mark as transitioning to prevent duplicate signals
-                  useGameStore.setState({
-                    roundData: {
-                      ...currentState.roundData,
-                      isTransitioning: true,
-                    },
-                  });
-                })
-                .catch((err) => {
-                  console.error(
-                    '🔴 [game/store] Failed to send round_end:',
-                    err
-                  );
-                  state.addEventLog('Failed to send round end signal', 'Error');
-                });
-            });
-          }, 2000); // Delay to allow animations to complete
-        }
-      }
+      // Process single gesture (reuse existing code)
+      processGesture(playerId, gesture, cardId);
     } catch (error) {
-      console.error('[game/store] Error processing gesture event:', error);
+      console.error('🔴 [game/store] Error processing gesture event:', error);
     }
   });
 
-  // Round end event
-  window.addEventListener('round_end', (event: CustomEventInit) => {
+  // New batch gesture event handler
+  window.addEventListener('gesture_batch', (event: CustomEventInit) => {
     try {
-      const { roundNumber, gameState, winnerId, shouldContinue } =
-        event.detail || {};
-      console.log(
-        '🟠 [game/store] ===== ROUND END EVENT RECEIVED =====',
-        event.detail
-      );
-      console.log(
-        '🟠 [game/store] Round:',
-        roundNumber,
-        'Continue:',
-        shouldContinue,
-        'Winner:',
-        winnerId
-      );
+      const { gestures, roundNumber } = event.detail || {};
+      console.log('🎮 [game/store] Gesture batch received:', gestures);
 
       const state = useGameStore.getState();
 
-      // Update game state
-      if (gameState) {
-        useGameStore.setState({ gameState });
-
-        // Extract player tower heights and goal heights
-        if (gameState.towerHeights && gameState.goalHeights) {
-          const playerIds = Object.keys(gameState.towerHeights);
-
-          if (playerIds.length >= 1) {
-            useGameStore.setState({
-              player1TowerHeight: gameState.towerHeights[playerIds[0]] || 0,
-              player1GoalHeight: gameState.goalHeights[playerIds[0]] || 5,
-            });
-          }
-
-          if (playerIds.length >= 2) {
-            useGameStore.setState({
-              player2TowerHeight: gameState.towerHeights[playerIds[1]] || 0,
-              player2GoalHeight: gameState.goalHeights[playerIds[1]] || 5,
-            });
-          }
-        }
+      // Verify we're processing the right round
+      if (state.roundData.roundNumber !== roundNumber) {
+        console.warn(
+          `🎮 [game/store] Round mismatch: received gestures for round ${roundNumber} but current round is ${state.roundData.roundNumber}`
+        );
+        return;
       }
 
-      // Set round transition state
-      useGameStore.setState({
-        roundData: {
-          ...state.roundData,
-          isTransitioning: true,
-        },
-      });
-
-      // Update winner if provided
-      if (winnerId) {
+      // Process each gesture in the batch
+      if (Array.isArray(gestures)) {
+        // Reset animation state before processing batch
         useGameStore.setState({
-          winner: winnerId,
-          isGameEnded: !shouldContinue,
-          roundEndMessage: `Round ${roundNumber} complete. ${
-            winnerId === Object.keys(state.gameState?.towerHeights || {})[0]
-              ? state.player1Name
-              : state.player2Name
-          } wins!`,
-        });
-      } else {
-        useGameStore.setState({
-          roundEndMessage: `Round ${roundNumber} complete. No winner yet.`,
-        });
-      }
-
-      // Log the round end
-      state.addEventLog(
-        `Round ${roundNumber} ended${winnerId ? ` - Winner: ${winnerId}` : ''}`,
-        'Server'
-      );
-
-      // If game should continue, prepare for next round immediately
-      if (shouldContinue) {
-        const nextRound = (roundNumber || 1) + 1;
-        console.log(`🟠 [game/store] Preparing for round ${nextRound}`);
-
-        // IMPORTANT: Update the pendingRoundNumber to the next round
-        useGameStore.setState({
-          pendingRoundNumber: nextRound,
-          roundData: {
-            ...state.roundData,
-            roundNumber: nextRound, // Ensure roundNumber is updated
-            isTransitioning: true,
+          moveAnimations: [],
+          animationState: {
+            ...state.animationState,
+            isAnimating: true,
           },
         });
 
-        // Make sure we have a current room
-        if (!state.currentRoom) {
-          console.error(
-            '🔴 [game/store] No current room found for next round signal'
-          );
-          return;
-        }
+        // Process each gesture
+        gestures.forEach(({ playerId, gesture, cardId }) => {
+          processGesture(playerId, gesture, cardId);
+        });
 
-        // Signal ready for next round immediately and with retries
-        const signalReady = () => {
-          console.log(
-            `🟠 [game/store] Signaling ready for round ${nextRound} from round_end handler`
-          );
-
-          // Check if socket is healthy and we have a room
-          if (state.currentRoom && isSocketHealthy()) {
-            // Use dynamically imported function to ensure we get fresh version
-            import('../websocket').then(({ sendMessage }) => {
-              console.log(
-                `🟠 [game/store] Sending next_round_ready for round ${nextRound}`
-              );
-
-              // Send the signal with extensive error handling
-              sendMessage('next_round_ready', {
-                roomId: state.currentRoom, // The currentRoom is the roomId string
-                roundNumber: nextRound,
-              })
-                .then(() => {
-                  console.log(
-                    `✅ [game/store] Successfully sent next_round_ready for round ${nextRound}`
-                  );
-                  state.addEventLog(
-                    `Signal sent for round ${nextRound}`,
-                    'System'
-                  );
-                })
-                .catch((error) => {
-                  console.error(
-                    `🔴 [game/store] Failed to send next_round_ready: ${error}`
-                  );
-                  state.addEventLog(
-                    `Failed to signal for round ${nextRound}`,
-                    'Error'
-                  );
-                });
-            });
-          } else {
-            console.warn(
-              `🟠 [game/store] Cannot signal ready: room=${!!state.currentRoom}, socketHealthy=${isSocketHealthy()}`
-            );
-          }
-        };
-
-        // First attempt - immediate
-        signalReady();
-
-        // Retry after 1s, 3s, and 5s to ensure server receives the signal
-        setTimeout(signalReady, 1000);
-        setTimeout(signalReady, 3000);
-        setTimeout(signalReady, 5000);
-
-        // Reset transition state after all retries
-        setTimeout(() => {
-          console.log(
-            `🟠 [game/store] Resetting transition state after 6 seconds`
-          );
-          useGameStore.setState({
-            roundData: {
-              ...useGameStore.getState().roundData,
-              isTransitioning: false,
-            },
-          });
-        }, 6000);
+        // No need to trigger round transition here - it will be handled by the game_state_update handler
+        // that includes allGesturesReceived flag
       }
-
-      console.log('🟠 [game/store] ===== ROUND END PROCESSING COMPLETE =====');
     } catch (error) {
-      console.error('🔴 [game/store] Error processing round end event:', error);
+      console.error('🔴 [game/store] Error processing gesture batch:', error);
     }
   });
+
+  // Helper function to process a single gesture
+  function processGesture(playerId: string, gesture: string, cardId?: string) {
+    const state = useGameStore.getState();
+
+    // Update the player's card played state
+    const isPlayer1 =
+      Object.keys(state.gameState?.towerHeights || {})[0] === playerId;
+
+    if (isPlayer1) {
+      useGameStore.setState({ player1CardPlayed: gesture });
+    } else {
+      useGameStore.setState({ player2CardPlayed: gesture });
+    }
+
+    // Add the move to animations
+    const newMove: PlayerMove = {
+      playerId,
+      gesture,
+      cardId,
+    };
+
+    useGameStore.setState((state) => ({
+      moveAnimations: [...state.moveAnimations, newMove],
+      animationState: {
+        ...state.animationState,
+        isAnimating: true,
+      },
+    }));
+
+    state.addEventLog(`Player ${playerId} played ${gesture}`, 'Gesture');
+  }
 
   // Game ended event
   window.addEventListener('game_ended', (event: CustomEventInit) => {
@@ -945,86 +769,87 @@ if (typeof window !== 'undefined') {
   // Round end acknowledgment event
   window.addEventListener('round_end_ack', (event: CustomEventInit) => {
     try {
-      const { roundNumber, roomId, playerId, nextRoundNumber } =
+      const { roomId, playerId, roundNumber, nextRoundNumber } =
         event.detail || {};
-      console.log(
-        '🟣 [game/store] Round end acknowledgment received:',
-        event.detail
-      );
+      console.log('🔄 [game/store] Round end acknowledgment received:', {
+        roomId,
+        playerId,
+        roundNumber,
+        nextRoundNumber,
+        timestamp: new Date().toISOString(),
+      });
 
       const state = useGameStore.getState();
 
-      // Check if this matches our current room
-      if (roomId === state.currentRoom) {
-        console.log(
-          `🟣 [game/store] Round ${roundNumber} acknowledged by server from player ${playerId}`
+      // Check if this is for our current room
+      if (roomId !== state.currentRoom) {
+        console.warn(
+          '🔶 [game/store] Received round_end_ack for different room, ignoring'
         );
+        return;
+      }
 
-        // Determine next round - either use nextRoundNumber from server or calculate
-        const nextRound = nextRoundNumber || roundNumber + 1;
-        console.log(`🟣 [game/store] Preparing for next round ${nextRound}`);
-
-        // Update state for next round if not already set
-        if (state.pendingRoundNumber !== nextRound) {
-          useGameStore.setState({
-            pendingRoundNumber: nextRound,
-            roundData: {
-              ...state.roundData,
-              roundNumber: nextRound,
-              isTransitioning: true,
-            },
-          });
-        }
-
-        // Signal ready for next round with small delay
-        setTimeout(() => {
-          const currentState = useGameStore.getState();
-
-          if (currentState.currentRoom && isSocketHealthy()) {
-            console.log(
-              `🟣 [game/store] Signaling ready for round ${nextRound}`
-            );
-
-            // Use direct approach rather than through a wrapper function
-            import('../websocket').then(({ sendMessage }) => {
-              sendMessage('next_round_ready', {
-                roomId: currentState.currentRoom,
-                roundNumber: nextRound,
-              })
-                .then(() => {
-                  console.log(
-                    `✅ [game/store] Successfully sent next_round_ready for round ${nextRound}`
-                  );
-                  state.addEventLog(
-                    `Signal sent for round ${nextRound}`,
-                    'System'
-                  );
-                })
-                .catch((error) => {
-                  console.error(
-                    `🔴 [game/store] Failed to send next_round_ready: ${error}`
-                  );
-                  state.addEventLog(
-                    `Failed to signal for round ${nextRound}`,
-                    'Error'
-                  );
-                });
-            });
-          } else {
-            console.warn(
-              `🟣 [game/store] Cannot signal ready: room=${!!currentState.currentRoom}, socketHealthy=${isSocketHealthy()}`
-            );
-          }
-        }, 1000);
+      // Check if we're in the correct round
+      if (roundNumber !== state.roundData.roundNumber) {
+        console.warn(
+          `🔶 [game/store] Round number mismatch: received ${roundNumber}, current is ${state.roundData.roundNumber}`
+        );
+        return;
       }
 
       state.addEventLog(
-        `Round ${roundNumber} acknowledged by ${playerId}, preparing for next round`,
-        'Server'
+        `Player ${playerId} acknowledged round ${roundNumber} end`,
+        'System'
       );
+
+      // If nextRoundNumber is provided, we should prepare for that round
+      if (nextRoundNumber) {
+        console.log(`🎮 [game/store] Preparing for round ${nextRoundNumber}`);
+
+        // Reset card played states for next round
+        useGameStore.setState({
+          player1CardPlayed: undefined,
+          player2CardPlayed: undefined,
+          roundData: {
+            ...state.roundData,
+            roundNumber: nextRoundNumber,
+            isTransitioning: false,
+          },
+        });
+
+        // Send round_start event to server after a short delay
+        setTimeout(() => {
+          console.log(
+            `🎮 [game/store] Sending round_start for round ${nextRoundNumber}`
+          );
+
+          import('../websocket').then(({ sendMessage }) => {
+            sendMessage('round_start', {
+              roomId: state.currentRoom,
+              roundNumber: nextRoundNumber,
+            })
+              .then(() => {
+                console.log(
+                  `✅ [game/store] round_start for round ${nextRoundNumber} successfully sent`
+                );
+                state.addEventLog(
+                  `Starting round ${nextRoundNumber}`,
+                  'System'
+                );
+              })
+              .catch((err) => {
+                console.error(
+                  '🔴 [game/store] Failed to send round_start:',
+                  err
+                );
+                state.addEventLog('Failed to start next round', 'Error');
+              });
+          });
+        }, 1000);
+      }
     } catch (error) {
       console.error(
-        '🔴 [game/store] Error processing round end ack event:',
+        '🔴 [game/store] Error processing round end acknowledgment:',
         error
       );
     }
