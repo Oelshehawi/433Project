@@ -33,14 +33,12 @@ private:
     
     // Flag to track if round_end was received from server
     std::atomic<bool> roundEndReceived{false};
-
-    // Timer management
-    std::atomic<bool> timerActive{false};
+    
+    // Simplified timer management
+    std::atomic<bool> timerRunning{false};
     std::chrono::steady_clock::time_point lastTimerUpdate;
     std::thread timerThread;
     std::mutex timerMutex;
-    std::atomic<bool> timerThreadRunning{false};
-    std::atomic<bool> needDisplayUpdate{false}; // Flag to indicate display needs update
 
     // Auto-play when timer expires
     void autoPlayCard();
@@ -56,10 +54,11 @@ public:
     // Getter for displayManager
     DisplayManager* getDisplayManager() const { return displayManager; }
 
-    // Timer management
-    void startTimerThread();
+    // Simplified timer management
+    void startTimer(int seconds = 30);
     void updateTimer();
-    void stopTimerThread();
+    void stopTimer();
+    bool isTimerRunning() const { return timerRunning; }
 
     // Getters and setters
     int getCurrentRoundNumber() const { return currentRoundNumber; }

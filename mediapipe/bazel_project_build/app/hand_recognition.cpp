@@ -176,9 +176,14 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
     // Also check the angle of the thumb relative to the hand
     float thumb_angle = calculateThumbAngle(thumb_tip, thumb_high, thumb_low, thumb_bot, hand_base);
 
-    // Check for thumb extension by examining agreements and angle
-    // A held up thumb will have few agreements and a distinct angle
-    if (thumb_agreements < 2 && thumb_angle > 0.7) {
+    // Additional check for thumb extension - measure horizontal distance from palm
+    float horizontal_distance = fabs(thumb_tip.x() - hand_base.x());
+    
+    // Stricter threshold - require all three conditions:
+    // 1. Few agreements in vertical positioning (thumb not pointing down)
+    // 2. Distinct angle away from the palm direction
+    // 3. Significant horizontal extension from palm
+    if (thumb_agreements < 2 && thumb_angle > 0.8 && horizontal_distance > 0.15) {
         ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
     }

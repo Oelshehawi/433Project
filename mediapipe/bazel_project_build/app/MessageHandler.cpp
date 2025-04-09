@@ -107,22 +107,33 @@ void MessageHandler::handleRoundEnd(const json& payload) {
         roundNumber = payload["roundNumber"];
     }
     
+    std::cout << "[MessageHandler.cpp] *** ROUND_END EVENT RECEIVED from server for round " << roundNumber << " ***" << std::endl;
+    
     // Stop gesture detection if it's running
     if (roomManager && roomManager->gestureDetector && roomManager->gestureDetector->isRunning()) {
+        std::cout << "[MessageHandler.cpp] Round ended - stopping gesture detection (was running)" << std::endl;
         roomManager->gestureDetector->stop();
+        std::cout << "[MessageHandler.cpp] Gesture detection stopped, new state: " 
+                  << (roomManager->gestureDetector->isRunning() ? "still running (error)" : "stopped successfully") << std::endl;
+    } else {
+        std::cout << "[MessageHandler.cpp] Round ended - gesture detection was not running" << std::endl;
     }
     
-    // Set the roundEndReceived flag to true
+    // Stop the timer
     if (gameState) {
+        gameState->stopTimer();
         gameState->setRoundEndReceived(true);
-        
-        // Also stop the timer when round end is received
-        gameState->stopTimerThread();
     }
     
     // Use DisplayManager to show results
     if (roomManager->displayManager) {
         roomManager->displayManager->displayRoundEndConfirmation(roundNumber);
+    }
+    
+    // Immediately send round_end_ack after handling round_end event
+    if (gameState) {
+        std::cout << "[MessageHandler.cpp] Calling sendRoundEndEvent to acknowledge round end" << std::endl;
+        gameState->sendRoundEndEvent();
     }
 }
 
@@ -282,7 +293,7 @@ void MessageHandler::handlePlayerReady(const json& payload) {
     }
 }
 
-// Handle move status response from server (new handler)
+// Handle move status response from server
 void MessageHandler::handleMoveStatus(const json& payload) {
     // Extract status and reason
     std::string status = payload.contains("status") ? payload["status"].get<std::string>() : "unknown";
@@ -294,7 +305,17 @@ void MessageHandler::handleMoveStatus(const json& payload) {
         
         // If the gesture detector is still running, stop it
         if (roomManager && roomManager->gestureDetector && roomManager->gestureDetector->isRunning()) {
+            std::cout << "[MessageHandler.cpp] Move accepted - stopping gesture detection (was running)" << std::endl;
             roomManager->gestureDetector->stop();
+            std::cout << "[MessageHandler.cpp] Gesture detection stopped, new state: " 
+                      << (roomManager->gestureDetector->isRunning() ? "still running (error)" : "stopped successfully") << std::endl;
+        } else {
+            std::cout << "[MessageHandler.cpp] Move accepted - gesture detection was not running" << std::endl;
+        }
+        
+        // Stop the timer
+        if (gameState) {
+            gameState->stopTimer();
         }
         
         // Update the display with accepted status
@@ -302,11 +323,13 @@ void MessageHandler::handleMoveStatus(const json& payload) {
             roomManager->displayManager->displayRoundEndConfirmation(roundNumber, "accepted");
         }
         
-        // Only send round_end_ack if we actually received a round_end event from the server
+        // Check if we already received a round_end event
         if (gameState && gameState->wasRoundEndReceived()) {
+            std::cout << "[MessageHandler.cpp] Round end was already received, sending round_end_ack" << std::endl;
             gameState->sendRoundEndEvent();
         } else {
-            std::cout << "[MessageHandler.cpp] Move accepted but waiting for round_end event before sending ack" << std::endl;
+            std::cout << "[MessageHandler.cpp] Move accepted but waiting for round_end event before sending ack. "
+                      << "This is normal - server will send round_end next." << std::endl;
         }
     } 
     else if (status == "rejected") {
@@ -324,6 +347,23 @@ void MessageHandler::handleMoveStatus(const json& payload) {
             std::cout << "[MessageHandler.cpp] Invalid round number" << std::endl;
         }
     }
+}
+
+void MessageHandler::handleMoveAccepted(const json& payload) {
+    std::cout << "[MessageHandler.cpp] Move was accepted by server for round " << payload["roundNumber"] << std::endl;
+    
+    // Only update display to show accepted move, but don't send another gesture
+    if (roomManager->displayManager) {
+        // Use the displayRoundEndConfirmation method which we know exists
+        int roundNumber = payload.contains("roundNumber") ? payload["roundNumber"].get<int>() : 1;
+        roomManager->displayManager->displayRoundEndConfirmation(roundNumber, "accepted");
+    }
+    
+    // Note: We're waiting for round_end event before sending acknowledgment
+    std::cout << "[MessageHandler.cpp] Move accepted but waiting for round_end event before sending ack" << std::endl;
+    
+    // IMPORTANT: Do NOT send another gesture here, we already sent one
+    // Remove any code that might be sending gestures at this point
 }
 
 // The implementations for the specific event handlers will go here when we finish the full refactoring 

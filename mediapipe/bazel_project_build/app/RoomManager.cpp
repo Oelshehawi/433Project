@@ -280,7 +280,7 @@ void RoomManager::handleMessage(const std::string& message) {
                 
                 // Stop any active timer since the round has ended
                 if (gameState) {
-                    gameState->stopTimerThread();
+                    gameState->stopTimer();
                 }
             }
             resetLoadingState();

@@ -40,4 +40,5 @@ public:
     void handleBeagleBoardCommand(const json& payload);
     void handleGestureEvent(const json& payload);
     void handleMoveStatus(const json& payload);
+    void handleMoveAccepted(const json& payload);
 }; 

@@ -34,6 +34,10 @@ void displayHelp() {
     std::cout << "  start               - Start gesture detection" << std::endl;
     std::cout << "  stop                - Stop gesture detection" << std::endl;
     std::cout << "  webcamtest          - Test Your Webcam to see if it works" << std::endl;
+    // Testing commands - to be removed in final version
+    std::cout << "  starttimer [seconds]  - Test: Start timer (default 30s)" << std::endl;
+    std::cout << "  stoptimer             - Test: Stop timer" << std::endl;
+    std::cout << "  displaytimer          - Test: Display timer on LCD" << std::endl;
     std::cout << "  exit                - Exit the application" << std::endl;
 }
 
@@ -157,135 +161,189 @@ int main(int argc, char* argv[]) {
         std::cout << "Device ID: " << roomManager->getDeviceId() << std::endl;
         displayHelp();
         
-        std::string line;
         while (true) {
-            // Simple prompt
+            // Display prompt and get input
             std::cout << "> ";
-            std::getline(std::cin, line);
-            
-            // Skip empty lines
-            if (line.empty()) {
-                continue;
-            }
-            
-            // Parse command
-            std::istringstream iss(line);
-            std::string command;
-            iss >> command;
-            
-            if (command == "help") {
-                displayHelp();
-            }
-            else if (command == "setname") {
-                std::string name;
-                std::getline(iss >> std::ws, name);
-                
-                if (name.empty()) {
-                    std::cout << "Usage: setname <n>" << std::endl;
-                } else {
-                    roomManager->setPlayerName(name);
-                    std::cout << "Player name set to: " << name << std::endl;
-                }
-            }
-            else if (command == "listrooms") {
-                std::cout << "Fetching rooms (may take a moment)..." << std::endl;
-                roomManager->fetchAvailableRooms();
-            }
-            else if (command == "joinroom") {
-                std::string roomId;
-                iss >> roomId;
-                
-                if (roomId.empty()) {
-                    std::cout << "Usage: joinroom <room_id>" << std::endl;
-                } else if (roomManager->getPlayerName().empty()) {
-                    std::cout << "Please set your player name first using 'setname <n>'" << std::endl;
-                } else {
-                    roomManager->joinRoom(roomId);
-                    std::cout << "Sending join request for room: " << roomId << std::endl;
-                }
-            }
-            else if (command == "createroom") {
-                std::string roomName;
-                std::getline(iss >> std::ws, roomName);
-                
-                if (roomName.empty()) {
-                    std::cout << "Usage: createroom <n>" << std::endl;
-                } else if (roomManager->getPlayerName().empty()) {
-                    std::cout << "Please set your player name first using 'setname <n>'" << std::endl;
-                } else {
-                    roomManager->createRoom(roomName);
-                    std::cout << "Sending create room request for: " << roomName << std::endl;
-                }
-            }
-            else if (command == "leaveroom") {
-                if (roomManager->isConnected()) {
-                    roomManager->leaveRoom();
-                    std::cout << "Sending leave request..." << std::endl;
-                } else {
-                    std::cout << "Not currently in a room." << std::endl;
-                }
-            }
-            else if (command == "status") {
-                std::cout << "Device ID: " << roomManager->getDeviceId() << std::endl;
-                std::cout << "Player name: " << 
-                    (roomManager->getPlayerName().empty() ? "(not set)" : roomManager->getPlayerName()) << std::endl;
-                std::cout << "Room status: " << 
-                    (roomManager->isConnected() ? ("Connected to room " + roomManager->getCurrentRoomId()) : "Not connected") << std::endl;
-                std::cout << "Ready status: " << (roomManager->isReady() ? "Ready" : "Not ready") << std::endl;
-                std::cout << "Gesture detection: " << (detectionRunning ? "Running" : "Stopped") << std::endl;
-            }
-            else if (command == "ready") {
-                if (roomManager->isConnected()) {
-                    roomManager->setReady(true);
-                    std::cout << "Setting status to ready..." << std::endl;
-                } else {
-                    std::cout << "Not connected to a room." << std::endl;
-                }
-            }
-            else if (command == "notready") {
-                if (roomManager->isConnected()) {
-                    roomManager->setReady(false);
-                    std::cout << "Setting status to not ready..." << std::endl;
-                } else {
-                    std::cout << "Not connected to a room." << std::endl;
-                }
-            }
-            else if (command == "start") {
-                if (!detectionRunning) {
-                    if (!roomManager->isConnected()) {
-                        std::cout << "Warning: Not connected to a room. Gestures will not be sent to a game." << std::endl;
-                    }
-                    
-                    detector->start();
-                    detectionRunning = true;
-                    std::cout << "Gesture detection started." << std::endl;
-                } else {
-                    std::cout << "Gesture detection is already running." << std::endl;
-                }
-            }
-            else if (command == "stop") {
-                if (detectionRunning) {
-                    detector->stop();
-                    detectionRunning = false;
-                    std::cout << "Gesture detection stopped." << std::endl;
-                } else {
-                    std::cout << "Gesture detection is already stopped." << std::endl;
-                }
-            }
-            else if (command == "webcamtest") {
-                detector->runTestingMode();
-            }
-            else if (command == "exit") {
-                if (detectionRunning) {
-                    detector->stop();
-                }
-                
-                std::cout << "Exiting application..." << std::endl;
+            std::string line;
+            if (!std::getline(std::cin, line)) {
                 break;
             }
-            else {
-                std::cout << "Unknown command: " << command << std::endl;
-                std::cout << "Type 'help' for a list of commands." << std::endl;
+            
+            // Sync the detectionRunning flag with the actual detector state
+            // This ensures that if gesture detection was stopped elsewhere (via MessageHandler, etc.),
+            // our UI state stays synchronized
+            if (detector) {
+                bool actualRunning = detector->isRunning();
+                if (detectionRunning != actualRunning) {
+                    std::cout << "Note: Gesture detection state changed externally. "
+                              << "Updating from " << (detectionRunning ? "running" : "stopped") 
+                              << " to " << (actualRunning ? "running" : "stopped") << std::endl;
+                    detectionRunning = actualRunning;
+                }
+            }
+            
+            // Process input
+            if (!line.empty()) {
+                std::istringstream iss(line);
+                std::string command;
+                iss >> command;
+                
+                if (command == "help") {
+                    displayHelp();
+                }
+                else if (command == "setname") {
+                    std::string name;
+                    std::getline(iss >> std::ws, name);
+                    
+                    if (name.empty()) {
+                        std::cout << "Usage: setname <n>" << std::endl;
+                    } else {
+                        roomManager->setPlayerName(name);
+                        std::cout << "Player name set to: " << name << std::endl;
+                    }
+                }
+                else if (command == "listrooms") {
+                    std::cout << "Fetching rooms (may take a moment)..." << std::endl;
+                    roomManager->fetchAvailableRooms();
+                }
+                else if (command == "joinroom") {
+                    std::string roomId;
+                    iss >> roomId;
+                    
+                    if (roomId.empty()) {
+                        std::cout << "Usage: joinroom <room_id>" << std::endl;
+                    } else if (roomManager->getPlayerName().empty()) {
+                        std::cout << "Please set your player name first using 'setname <n>'" << std::endl;
+                    } else {
+                        roomManager->joinRoom(roomId);
+                        std::cout << "Sending join request for room: " << roomId << std::endl;
+                    }
+                }
+                else if (command == "createroom") {
+                    std::string roomName;
+                    std::getline(iss >> std::ws, roomName);
+                    
+                    if (roomName.empty()) {
+                        std::cout << "Usage: createroom <n>" << std::endl;
+                    } else if (roomManager->getPlayerName().empty()) {
+                        std::cout << "Please set your player name first using 'setname <n>'" << std::endl;
+                    } else {
+                        roomManager->createRoom(roomName);
+                        std::cout << "Sending create room request for: " << roomName << std::endl;
+                    }
+                }
+                else if (command == "leaveroom") {
+                    if (roomManager->isConnected()) {
+                        roomManager->leaveRoom();
+                        std::cout << "Sending leave request..." << std::endl;
+                    } else {
+                        std::cout << "Not currently in a room." << std::endl;
+                    }
+                }
+                else if (command == "status") {
+                    std::cout << "Device ID: " << roomManager->getDeviceId() << std::endl;
+                    std::cout << "Player name: " << 
+                        (roomManager->getPlayerName().empty() ? "(not set)" : roomManager->getPlayerName()) << std::endl;
+                    std::cout << "Room status: " << 
+                        (roomManager->isConnected() ? ("Connected to room " + roomManager->getCurrentRoomId()) : "Not connected") << std::endl;
+                    std::cout << "Ready status: " << (roomManager->isReady() ? "Ready" : "Not ready") << std::endl;
+                    std::cout << "Gesture detection: " << (detectionRunning ? "Running" : "Stopped") << std::endl;
+                }
+                else if (command == "ready") {
+                    if (roomManager->isConnected()) {
+                        roomManager->setReady(true);
+                        std::cout << "Setting status to ready..." << std::endl;
+                    } else {
+                        std::cout << "Not connected to a room." << std::endl;
+                    }
+                }
+                else if (command == "notready") {
+                    if (roomManager->isConnected()) {
+                        roomManager->setReady(false);
+                        std::cout << "Setting status to not ready..." << std::endl;
+                    } else {
+                        std::cout << "Not connected to a room." << std::endl;
+                    }
+                }
+                else if (command == "start") {
+                    // Check the actual running state from the detector, not just our local flag
+                    if (!detector->isRunning()) {
+                        if (!roomManager->isConnected()) {
+                            std::cout << "Warning: Not connected to a room. Gestures will not be sent to a game." << std::endl;
+                        }
+                        
+                        detector->start();
+                        detectionRunning = true;
+                        std::cout << "Gesture detection started." << std::endl;
+                    } else {
+                        std::cout << "Gesture detection is already running." << std::endl;
+                    }
+                }
+                else if (command == "stop") {
+                    // Check the actual running state from the detector, not just our local flag
+                    if (detector->isRunning()) {
+                        detector->stop();
+                        detectionRunning = false;
+                        std::cout << "Gesture detection stopped." << std::endl;
+                    } else {
+                        std::cout << "Gesture detection is already stopped." << std::endl;
+                    }
+                }
+                else if (command == "webcamtest") {
+                    detector->runTestingMode();
+                }
+                // TESTING COMMANDS - TO BE REMOVED IN FINAL VERSION
+                else if (command == "starttimer") {
+                    int seconds = 30;
+                    iss >> seconds;
+                    if (seconds <= 0) {
+                        seconds = 30;
+                    }
+                    
+                    std::cout << "TESTING: Starting timer with " << seconds << " seconds" << std::endl;
+                    
+                    if (gameState) {
+                        // Start the timer
+                        gameState->startTimer(seconds);
+                        std::cout << "Timer started" << std::endl;
+                    } else {
+                        std::cout << "Error: GameState not available" << std::endl;
+                    }
+                }
+                else if (command == "stoptimer") {
+                    std::cout << "TESTING: Stopping timer" << std::endl;
+                    
+                    if (gameState) {
+                        // Stop the timer
+                        gameState->stopTimer();
+                        std::cout << "Timer stopped" << std::endl;
+                    } else {
+                        std::cout << "Error: GameState not available" << std::endl;
+                    }
+                }
+                else if (command == "displaytimer") {
+                    std::cout << "TESTING: Displaying timer information" << std::endl;
+                    
+                    if (gameState && displayManager) {
+                        // Display timer information
+                        displayManager->updateCardAndGameDisplay(true);
+                        std::cout << "Timer display updated" << std::endl;
+                    } else {
+                        std::cout << "Error: GameState or DisplayManager not available" << std::endl;
+                    }
+                }
+                else if (command == "exit") {
+                    if (detectionRunning) {
+                        detector->stop();
+                    }
+                    
+                    std::cout << "Exiting application..." << std::endl;
+                    break;
+                }
+                else {
+                    std::cout << "Unknown command: " << command << std::endl;
+                    std::cout << "Type 'help' for a list of commands." << std::endl;
+                }
             }
         }
         

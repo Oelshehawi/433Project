@@ -39,6 +39,7 @@ void DisplayManager::updateCardAndGameDisplay(bool showOutput) {
         std::cout << "[DisplayManager.cpp] Round: " << roundNumber << std::endl;
         std::cout << "[DisplayManager.cpp] Time remaining: " << timeRemaining << " seconds" << std::endl;
         std::cout << "[DisplayManager.cpp] Cards: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
+        std::cout << "[DisplayManager.cpp] Timer stopped: " << (gameState->isTimerRunning() ? "No" : "Yes") << std::endl;
     }
     
     // Create game info display
@@ -52,8 +53,12 @@ void DisplayManager::updateCardAndGameDisplay(bool showOutput) {
     // Format the card type counts
     snprintf(line2, sizeof(line2), "ATK:%d DEF:%d BLD:%d", attackCount, defendCount, buildCount);
     
-    // Format countdown timer (both players move simultaneously)
-    snprintf(line3, sizeof(line3), "TIME: %d sec", timeRemaining);
+    // Format countdown timer based on timer status
+    if (!gameState->isTimerRunning()) {
+        snprintf(line3, sizeof(line3), "TIME: %d sec (PAUSED)", timeRemaining);
+    } else {
+        snprintf(line3, sizeof(line3), "TIME: %d sec", timeRemaining);
+    }
     
     // Debug output before displaying - only if showOutput is true
     if (showOutput) {
@@ -78,11 +83,12 @@ void DisplayManager::updateCardAndGameDisplay(bool showOutput) {
     
     // Only log in these cases:
     // 1. Round number changed (new round)
-    // 2. Time is a multiple of 5 seconds (0, 5, 10, 15, etc.)
-    // 3. Time is in final 3 seconds countdown
-    // 4. First display after initialization (lastTimeRemaining == -1)
+    // 2. First display after initialization (lastTimeRemaining == -1)
+    // 3. Timer status has changed (we're now displaying TIMER STOPPED)
+    // 4. showOutput is true (explicit update request)
     bool shouldLog = (lastRoundNumber != roundNumber ||    // Round changed
-                     lastTimeRemaining == -1) &&          // First display
+                     lastTimeRemaining == -1 ||           // First display
+                     !gameState->isTimerRunning()) &&      // Timer just stopped
                      showOutput;                          // Only if showOutput is true
                     
     if (shouldLog) {
@@ -90,7 +96,13 @@ void DisplayManager::updateCardAndGameDisplay(bool showOutput) {
         std::cout << "*       GAME STATE UPDATE        *" << std::endl;
         std::cout << "************************************" << std::endl;
         std::cout << "* ROUND: " << roundNumber << std::endl;
-        std::cout << "* TIME:  " << timeRemaining << "s" << std::endl;
+        
+        if (!gameState->isTimerRunning()) {
+            std::cout << "* TIME:  " << timeRemaining << "s (PAUSED)" << std::endl;
+        } else {
+            std::cout << "* TIME:  " << timeRemaining << "s" << std::endl;
+        }
+        
         std::cout << "* CARDS: ATK:" << attackCount << " DEF:" << defendCount << " BLD:" << buildCount << std::endl;
         std::cout << "************************************\n" << std::endl;
     }

@@ -39,12 +39,30 @@ GestureDetector::GestureDetector(RoomManager* roomManager)
 }
 
 GestureDetector::~GestureDetector() {
-    stop();
-    
-    // Clean up the event sender
-    if (eventSender) {
-        delete eventSender;
-        eventSender = nullptr;
+    try {
+        std::cout << "[GestureDetector.cpp] Destructor called, cleaning up resources" << std::endl;
+        
+        // First set the run flag to false to tell the thread to exit
+        runThread.store(false);
+        
+        // Then join the thread if it's joinable
+        if (gestureThread.joinable()) {
+            std::cout << "[GestureDetector.cpp] Waiting for gesture thread to join in destructor..." << std::endl;
+            gestureThread.join();
+            std::cout << "[GestureDetector.cpp] Gesture thread successfully joined in destructor" << std::endl;
+        }
+        
+        // Clean up the event sender
+        if (eventSender) {
+            delete eventSender;
+            eventSender = nullptr;
+        }
+        
+        std::cout << "[GestureDetector.cpp] Destructor completed successfully" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "[GestureDetector.cpp] Exception in destructor: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "[GestureDetector.cpp] Unknown exception in destructor" << std::endl;
     }
 }
 
@@ -60,19 +78,56 @@ bool GestureDetector::testCameraAccess() {
 }
 
 void GestureDetector::start() {
+    // Make sure we're in a clean state before starting
+    // If thread is still joinable but runThread is false, we need to clean up first
+    if (gestureThread.joinable()) {
+        std::cout << "[GestureDetector.cpp] Thread is still joinable, cleaning up before starting new thread" << std::endl;
+        try {
+            // Force wait for thread to exit if it's still running
+            if (gestureThread.joinable()) {
+                gestureThread.join();
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[GestureDetector.cpp] Exception while joining thread: " << e.what() << std::endl;
+        }
+    }
+    
+    // Now we can safely start a new thread
     if (!runThread.load()) {
+        std::cout << "[GestureDetector.cpp] Starting gesture detection thread" << std::endl;
         runThread.store(true);
-        gestureThread = std::thread(&GestureDetector::gestureLoop, this);
+        
+        try {
+            gestureThread = std::thread(&GestureDetector::gestureLoop, this);
+            std::cout << "[GestureDetector.cpp] Gesture detection thread started successfully" << std::endl;
+        } catch (const std::exception& e) {
+            // If thread creation fails, make sure we set runThread back to false
+            runThread.store(false);
+            std::cerr << "[GestureDetector.cpp] Failed to start gesture thread: " << e.what() << std::endl;
+        }
+    } else {
+        std::cout << "[GestureDetector.cpp] Gesture detection is already running." << std::endl;
     }
 }
 
 void GestureDetector::stop() {
+    std::cout << "[GestureDetector.cpp] Stopping gesture detection. Current state: " << (runThread.load() ? "running" : "not running") << std::endl;
+    
     if (runThread.load()) {
         runThread.store(false);
         if (gestureThread.joinable()) {
+            std::cout << "[GestureDetector.cpp] Waiting for gesture thread to join..." << std::endl;
             gestureThread.join();
+            std::cout << "[GestureDetector.cpp] Gesture thread successfully joined" << std::endl;
+        } else {
+            std::cout << "[GestureDetector.cpp] Gesture thread is not joinable" << std::endl;
         }
+    } else {
+        std::cout << "[GestureDetector.cpp] Gesture detection was already stopped" << std::endl;
     }
+    
+    // Force set runThread to false to ensure clean state
+    runThread.store(false);
 }
 
 // Log hand position for debugging
@@ -144,128 +199,147 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
 }
 
 void GestureDetector::gestureLoop() {
-    if (!camera.openCamera()) {
-        std::cout << "[GestureDetector.cpp] Failed to open camera" << std::endl;
-        return;
-    }
-    
-    std::cout << "[GestureDetector.cpp] Gesture detection loop started" << std::endl;
-    
-    while (runThread.load()) {
-        if (roomManager == nullptr) {
-            std::cout << "[GestureDetector.cpp] Room manager is null, exiting gesture loop" << std::endl;
+    // Use try-catch to ensure camera is closed properly even if exceptions occur
+    try {
+        if (!camera.openCamera()) {
+            std::cout << "[GestureDetector.cpp] Failed to open camera" << std::endl;
             return;
         }
         
-        cv::Mat frame;
-        if (!camera.captureFrame(frame)) {
-            continue;
-        }
+        std::cout << "[GestureDetector.cpp] Gesture detection loop started" << std::endl;
         
-        if (frame.empty()) {
-            continue;
-        }
-        
-        handPosition handPos;
-        auto status = hand_analyze_image(frame, &handPos);
-        
-        if (!status.ok()) {
-            continue;
-        }
-        
-        if (handPos.hand_visible) {
-            {
-                std::lock_guard<std::mutex> lock(handMutex);
-                currentHand = handPos;
+        while (runThread.load()) {
+            if (roomManager == nullptr) {
+                std::cout << "[GestureDetector.cpp] Room manager is null, exiting gesture loop" << std::endl;
+                break;
             }
             
-            // Debug output for hand position
-            if (handPos.num_fingers_held_up > 0) {
-                std::cout << "[GestureDetector.cpp] Fingers up: " << handPos.num_fingers_held_up 
-                          << " (I:" << handPos.index_held_up
-                          << " M:" << handPos.middle_held_up
-                          << " R:" << handPos.ring_held_up
-                          << " P:" << handPos.pinky_held_up
-                          << " T:" << handPos.thumb_held_up << ")" << std::endl;
+            cv::Mat frame;
+            if (!camera.captureFrame(frame)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
             }
             
-            std::string detectedMove, actionType;
-            if (recognizeGesture(handPos, detectedMove, actionType)) {
-                // Get initial rotary encoder value
-                int initialValue = rotary_press_statemachine_getValue();
-                long long confirmationStartTime = getTimeInMs();
-                bool gestureConfirmed = false;
-                
-                // Wait for confirmation or timeout (5 seconds)
-                const int CONFIRMATION_TIMEOUT_MS = 5000; // 5 seconds
-                
-                std::cout << "[GestureDetector.cpp] Waiting for gesture confirmation... (press button)" << std::endl;
-                
-                // After initializing wait period, update display with time remaining info
-                if (roomManager && roomManager->gameState) {
-                    DisplayManager* dm = roomManager->gameState->getDisplayManager();
-                    if (dm) {
-                        dm->displayMessage(
-                            detectedMove + " DETECTED",
-                            "Press button to confirm"
-                        );
-                    }
+            if (frame.empty()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+            
+            handPosition handPos;
+            auto status = hand_analyze_image(frame, &handPos);
+            
+            if (!status.ok()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+            
+            if (handPos.hand_visible) {
+                {
+                    std::lock_guard<std::mutex> lock(handMutex);
+                    currentHand = handPos;
                 }
                 
-                while (runThread.load() && (getTimeInMs() - confirmationStartTime < CONFIRMATION_TIMEOUT_MS)) {
-                    // Check if button was pressed
-                    int currentValue = rotary_press_statemachine_getValue();
-                    if (currentValue != initialValue) {
-                        gestureConfirmed = true;
-                        std::cout << "[GestureDetector.cpp] Gesture confirmed with button press" << std::endl;
-                        break;
-                    }
+                // Debug output for hand position
+                if (handPos.num_fingers_held_up > 0) {
+                    std::cout << "[GestureDetector.cpp] Fingers up: " << handPos.num_fingers_held_up 
+                            << " (I:" << handPos.index_held_up
+                            << " M:" << handPos.middle_held_up
+                            << " R:" << handPos.ring_held_up
+                            << " P:" << handPos.pinky_held_up
+                            << " T:" << handPos.thumb_held_up << ")" << std::endl;
+                }
+                
+                std::string detectedMove, actionType;
+                if (recognizeGesture(handPos, detectedMove, actionType)) {
+                    // Get initial rotary encoder value
+                    int initialValue = rotary_press_statemachine_getValue();
+                    long long confirmationStartTime = getTimeInMs();
+                    bool gestureConfirmed = false;
                     
-                    // Update countdown display every second
-                    static long long lastUpdateTime = 0;
-                    long long currentTime = getTimeInMs();
-                    int remainingSeconds = (CONFIRMATION_TIMEOUT_MS - (currentTime - confirmationStartTime)) / 1000;
+                    // Wait for confirmation or timeout (5 seconds)
+                    const int CONFIRMATION_TIMEOUT_MS = 5000; // 5 seconds
                     
-                    if (currentTime - lastUpdateTime > 1000 && roomManager && roomManager->gameState) {
+                    std::cout << "[GestureDetector.cpp] Waiting for gesture confirmation... (press button)" << std::endl;
+                    
+                    // After initializing wait period, update display with time remaining info
+                    if (roomManager && roomManager->gameState) {
                         DisplayManager* dm = roomManager->gameState->getDisplayManager();
                         if (dm) {
-                            char countdownMessage[32];
-                            snprintf(countdownMessage, sizeof(countdownMessage), "Confirm (%d sec left)", remainingSeconds + 1);
                             dm->displayMessage(
                                 detectedMove + " DETECTED",
-                                countdownMessage
+                                "Press button to confirm"
                             );
-                            lastUpdateTime = currentTime;
                         }
                     }
                     
-                    // Small delay to prevent high CPU usage
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                }
-                
-                // If confirmed or timed out
-                if (gestureConfirmed) {
-                    // Send the gesture
-                    std::cout << "[GestureDetector.cpp] Sending confirmed gesture: " << detectedMove << std::endl;
-                    confirmGesture(actionType);
+                    while (runThread.load() && (getTimeInMs() - confirmationStartTime < CONFIRMATION_TIMEOUT_MS)) {
+                        // Check if button was pressed
+                        int currentValue = rotary_press_statemachine_getValue();
+                        if (currentValue != initialValue) {
+                            gestureConfirmed = true;
+                            std::cout << "[GestureDetector.cpp] Gesture confirmed with button press" << std::endl;
+                            break;
+                        }
+                        
+                        // Update countdown display every second
+                        static long long lastUpdateTime = 0;
+                        long long currentTime = getTimeInMs();
+                        int remainingSeconds = (CONFIRMATION_TIMEOUT_MS - (currentTime - confirmationStartTime)) / 1000;
+                        
+                        if (currentTime - lastUpdateTime > 1000 && roomManager && roomManager->gameState) {
+                            DisplayManager* dm = roomManager->gameState->getDisplayManager();
+                            if (dm) {
+                                char countdownMessage[32];
+                                snprintf(countdownMessage, sizeof(countdownMessage), "Confirm (%d sec left)", remainingSeconds + 1);
+                                dm->displayMessage(
+                                    detectedMove + " DETECTED",
+                                    countdownMessage
+                                );
+                                lastUpdateTime = currentTime;
+                            }
+                        }
+                        
+                        // Small delay to prevent high CPU usage
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    }
                     
-                    // After successful confirmation and sending, stop the gesture detection
-                    // until it's restarted for the next round
-                    std::cout << "[GestureDetector.cpp] Gesture confirmed and sent. Stopping detection until next round." << std::endl;
-                    break; // Exit the main loop to stop detection
-                } else {
-                    std::cout << "[GestureDetector.cpp] Gesture confirmation timed out" << std::endl;
-                    // Short delay to show timeout message
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+                    // If confirmed or timed out
+                    if (gestureConfirmed) {
+                        // Send the gesture
+                        std::cout << "[GestureDetector.cpp] Sending confirmed gesture: " << detectedMove << std::endl;
+                        confirmGesture(actionType);
+                        
+                        // After successful confirmation and sending, stop the gesture detection
+                        // until it's restarted for the next round
+                        std::cout << "[GestureDetector.cpp] Gesture confirmed and sent. Stopping detection until next round." << std::endl;
+                        runThread.store(false); // Properly set runThread to false before breaking
+                        break; // Exit the main loop to stop detection
+                    } else {
+                        std::cout << "[GestureDetector.cpp] Gesture confirmation timed out" << std::endl;
+                        // Short delay to show timeout message
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+                    }
                 }
             }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-        
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[GestureDetector.cpp] Exception in gesture loop: " << e.what() << std::endl;
+    }
+    catch (...) {
+        std::cerr << "[GestureDetector.cpp] Unknown exception in gesture loop" << std::endl;
     }
     
-    std::cout << "[GestureDetector.cpp] Gesture detection loop ended" << std::endl;
-    camera.closeCamera();
+    // Always make sure the camera is closed when we exit the loop
+    try {
+        std::cout << "[GestureDetector.cpp] Gesture detection loop ended, closing camera" << std::endl;
+        camera.closeCamera();
+    }
+    catch (const std::exception& e) {
+        std::cerr << "[GestureDetector.cpp] Exception closing camera: " << e.what() << std::endl;
+    }
 }
 
 handPosition GestureDetector::getCurrentHand() {
@@ -339,14 +413,13 @@ void GestureDetector::runTestingMode() {
 }
 
 void GestureDetector::confirmGesture(const std::string& actionType) {
-    std::cout << "[GestureDetector.cpp] ROTARY ENCODER PRESSED - STOPPING TIMER IMMEDIATELY" << std::endl;
-    
     // FIRST PRIORITY: Stop the timer immediately when rotary encoder is pressed
     if (roomManager && roomManager->gameState) {
-        // Direct access to atomic values for instant stopping
-        roomManager->gameState->setCurrentTurnTimeRemaining(0);
-        roomManager->gameState->stopTimerThread();
-        std::cout << "[GestureDetector.cpp] Timer forcibly stopped by rotary encoder press" << std::endl;
+        // Stopping the timer is now a single call that handles everything
+        roomManager->gameState->stopTimer();
+        
+        // Optionally force the timer to zero if needed for display purposes
+        // roomManager->gameState->setCurrentTurnTimeRemaining(0);
     }
     
     // Try to send the gesture via the event sender
@@ -382,10 +455,7 @@ void GestureDetector::confirmGesture(const std::string& actionType) {
         }
     }
     
-    // Verify timer is definitely stopped
-    if (roomManager && roomManager->gameState) {
-        // Double-check timer is fully stopped
-        roomManager->gameState->stopTimerThread();
-        std::cout << "[GestureDetector.cpp] Stopped timer after confirming gesture" << std::endl;
-    }
+    // Mark the thread as not running but don't call stop() to avoid deadlock
+    // This is now handled in the gestureLoop with runThread.store(false)
+    std::cout << "[GestureDetector.cpp] Gesture confirmed, runThread will be set to false" << std::endl;
 } 
