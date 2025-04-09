@@ -163,11 +163,6 @@ void GameState::updateTimerFromEvent(const json& roundStartPayload) {
         }
     }
     
-    // If we didn't find cards in the round_start payload, see if we have cached cards
-    if (!foundCards && playerCards.empty()) {
-        // We don't have cards - this is unusual but we'll handle it
-        // Not logging an error to keep the logs clean
-    }
     
     // Force a display update to show the new round and cards
     if (displayManager) {

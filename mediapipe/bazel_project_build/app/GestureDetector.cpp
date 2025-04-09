@@ -85,6 +85,7 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
         !handPos.thumb_held_up && !handPos.middle_held_up && !handPos.ring_held_up && !handPos.pinky_held_up) {
         detectedMove = "Attack";
         actionType = "attack";
+        std::cout << "[GestureDetector.cpp] Detected gesture: Attack" << std::endl;
         return true;
     } 
     // Defend: All 5 fingers up
@@ -92,6 +93,7 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
              handPos.middle_held_up && handPos.ring_held_up && handPos.pinky_held_up) {
         detectedMove = "Defend";
         actionType = "defend";
+        std::cout << "[GestureDetector.cpp] Detected gesture: Defend" << std::endl;
         return true;
     } 
     // Build: 2 fingers (index and middle)
@@ -99,6 +101,7 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
              !handPos.thumb_held_up && !handPos.ring_held_up && !handPos.pinky_held_up) {
         detectedMove = "Build";
         actionType = "build";
+        std::cout << "[GestureDetector.cpp] Detected gesture: Build" << std::endl;
         return true;
     }
     
@@ -107,11 +110,15 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
 
 void GestureDetector::gestureLoop() {
     if (!camera.openCamera()) {
+        std::cout << "[GestureDetector.cpp] Failed to open camera" << std::endl;
         return;
     }
     
+    std::cout << "[GestureDetector.cpp] Gesture detection loop started" << std::endl;
+    
     while (runThread.load()) {
         if (roomManager == nullptr) {
+            std::cout << "[GestureDetector.cpp] Room manager is null, exiting gesture loop" << std::endl;
             return;
         }
         
@@ -137,6 +144,16 @@ void GestureDetector::gestureLoop() {
                 currentHand = handPos;
             }
             
+            // Debug output for hand position
+            if (handPos.num_fingers_held_up > 0) {
+                std::cout << "[GestureDetector.cpp] Fingers up: " << handPos.num_fingers_held_up 
+                          << " (I:" << handPos.index_held_up
+                          << " M:" << handPos.middle_held_up
+                          << " R:" << handPos.ring_held_up
+                          << " P:" << handPos.pinky_held_up
+                          << " T:" << handPos.thumb_held_up << ")" << std::endl;
+            }
+            
             std::string detectedMove, actionType;
             if (recognizeGesture(handPos, detectedMove, actionType)) {
                 // Get initial rotary encoder value
@@ -147,11 +164,14 @@ void GestureDetector::gestureLoop() {
                 // Wait for confirmation or timeout (5 seconds)
                 const int CONFIRMATION_TIMEOUT_MS = 5000; // 5 seconds
                 
+                std::cout << "[GestureDetector.cpp] Waiting for gesture confirmation... (press button)" << std::endl;
+                
                 while (runThread.load() && (getTimeInMs() - confirmationStartTime < CONFIRMATION_TIMEOUT_MS)) {
                     // Check if button was pressed
                     int currentValue = rotary_press_statemachine_getValue();
                     if (currentValue != initialValue) {
                         gestureConfirmed = true;
+                        std::cout << "[GestureDetector.cpp] Gesture confirmed with button press" << std::endl;
                         break;
                     }
                     
@@ -162,8 +182,15 @@ void GestureDetector::gestureLoop() {
                 // If confirmed or timed out
                 if (gestureConfirmed) {
                     // Send the gesture
+                    std::cout << "[GestureDetector.cpp] Sending confirmed gesture: " << detectedMove << std::endl;
                     confirmGesture(actionType);
+                    
+                    // After successful confirmation and sending, stop the gesture detection
+                    // until it's restarted for the next round
+                    std::cout << "[GestureDetector.cpp] Gesture confirmed and sent. Stopping detection until next round." << std::endl;
+                    break; // Exit the main loop to stop detection
                 } else {
+                    std::cout << "[GestureDetector.cpp] Gesture confirmation timed out" << std::endl;
                     // Short delay to show timeout message
                     std::this_thread::sleep_for(std::chrono::milliseconds(1500));
                 }
@@ -173,6 +200,7 @@ void GestureDetector::gestureLoop() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     
+    std::cout << "[GestureDetector.cpp] Gesture detection loop ended" << std::endl;
     camera.closeCamera();
 }
 

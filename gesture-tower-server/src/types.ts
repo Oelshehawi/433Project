@@ -144,8 +144,6 @@ export interface GameState {
   playerShields: Map<string, boolean>;
   playerMoves: Map<string, boolean>;
   roundNumber: number;
-  roundStartTime: number;
-  roundDuration: number;
 }
 
 // Card definition
