@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useRoomStore } from '../../lib/room/store';
 import { useGameStore } from '../../lib/game/store';
@@ -33,6 +33,10 @@ export default function GamePage() {
   const [connectionRetries, setConnectionRetries] = useState(0);
   const [forceLoader, setForceLoader] = useState(false);
   const [roundStartSent, setRoundStartSent] = useState(false);
+
+  // Add refs to track when game_ready should be sent
+  const gameReadySent = useRef(false);
+  const userClickedX = useRef(false);
 
   // Use the game store
   const {
@@ -196,6 +200,13 @@ export default function GamePage() {
     }
   }, [pendingRoundNumber, roundData.isTransitioning, readyForNextRound]);
 
+  // Custom handler for rules animation completion
+  const handleRulesAnimationComplete = () => {
+    console.log('🎮 [GamePage] User clicked X to close rules animation');
+    userClickedX.current = true;
+    setAnimationComplete('rulesAnimationComplete', true);
+  };
+
   // Log all game state changes
   useEffect(() => {
     console.log(
@@ -205,11 +216,23 @@ export default function GamePage() {
       `🌟 [GamePage] Transition state: ${roundData.isTransitioning}, Pending round: ${pendingRoundNumber}`
     );
 
-    // When animation completes, ensure we send game_ready
-    if (gameStatus === 'waiting' && animationState.rulesAnimationComplete) {
+    // IMPORTANT: Only send game_ready and round_start when:
+    // 1. Animation is complete due to user clicking X
+    // 2. We haven't sent game_ready yet
+    // 3. Socket is healthy
+    if (
+      gameStatus === 'waiting' &&
+      animationState.rulesAnimationComplete &&
+      userClickedX.current &&
+      !gameReadySent.current &&
+      isSocketHealthy()
+    ) {
       console.log(
-        '🚀 [GamePage] Rules animation completed, ensuring game_ready signal sent'
+        '🚀 [GamePage] Rules animation completed by user click, sending game signals'
       );
+
+      // Mark as sent to prevent multiple sends
+      gameReadySent.current = true;
 
       import('../../lib/websocket').then(({ sendMessage }) => {
         // First send game_ready event
@@ -239,6 +262,8 @@ export default function GamePage() {
           })
           .catch((err) => {
             console.error('🔴 [GamePage] Error sending game_ready:', err);
+            // If we failed to send, allow retrying
+            gameReadySent.current = false;
           });
       });
     }
@@ -300,9 +325,7 @@ export default function GamePage() {
               onTitleAnimationComplete={() =>
                 setAnimationComplete('titleAnimationComplete', true)
               }
-              onRulesAnimationComplete={() =>
-                setAnimationComplete('rulesAnimationComplete', true)
-              }
+              onRulesAnimationComplete={handleRulesAnimationComplete}
             />
 
             {/* Center Divider */}

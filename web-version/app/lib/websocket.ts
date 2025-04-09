@@ -184,6 +184,35 @@ export const initializeSocket = (
             '[websocket.ts] 🛑🛑🛑 ROUND END EVENT RECEIVED:',
             data.payload
           );
+
+          // Add additional debug info for round_end events
+          const { roundNumber, gameState, shouldContinue } = data.payload;
+          console.log(
+            `[websocket.ts] Round ${roundNumber} ended, should continue: ${shouldContinue}`
+          );
+          console.log(`[websocket.ts] Current game state:`, gameState);
+
+          // Debug what round transition should happen next
+          if (shouldContinue) {
+            const nextRound = (roundNumber || 1) + 1;
+            console.log(`[websocket.ts] Next round should be ${nextRound}`);
+          } else {
+            console.log(`[websocket.ts] Game should end after this round`);
+          }
+        }
+
+        if (data.event === 'game_state_update') {
+          console.log(
+            '[websocket.ts] ⚙️ GAME STATE UPDATE RECEIVED:',
+            data.payload
+          );
+
+          // Add additional debug info for waitingForNextRound field
+          if (data.payload.waitingForNextRound) {
+            console.log(
+              '[websocket.ts] ⚠️ SERVER IS WAITING FOR NEXT_ROUND_READY SIGNAL'
+            );
+          }
         }
 
         // Create a simple custom event with the data
@@ -417,6 +446,25 @@ export const signalNextRoundReady = (
     `📢 [websocket.ts] Signaling server that web client is ready for round ${roundNumber}`
   );
 
+  // Verify we have valid parameters
+  if (!roomId) {
+    console.error(
+      '❌ [websocket.ts] Cannot signal next round ready: Missing roomId'
+    );
+    return;
+  }
+
+  if (!roundNumber || roundNumber < 1) {
+    console.error(
+      `❌ [websocket.ts] Cannot signal next round ready: Invalid roundNumber ${roundNumber}`
+    );
+    return;
+  }
+
+  console.log(
+    `📢 [websocket.ts] Preparing next_round_ready for room ${roomId}, round ${roundNumber}`
+  );
+
   try {
     // Check socket health first
     if (!isSocketHealthy()) {
@@ -431,14 +479,17 @@ export const signalNextRoundReady = (
           console.log(
             `📢 [websocket.ts] Retrying next_round_ready for round ${roundNumber} after refresh`
           );
-          sendMessage('next_round_ready', { roomId, roundNumber }).catch(
-            (error) => {
-              console.error(
-                '❌ [websocket.ts] Error sending next_round_ready after refresh:',
-                error
+          sendMessage('next_round_ready', { roomId, roundNumber })
+            .then(() => {
+              console.log(
+                `✅ [websocket.ts] Successfully sent next_round_ready for round ${roundNumber} after refresh`
               );
-            }
-          );
+            })
+            .catch((error) => {
+              console.error(
+                `❌ [websocket.ts] Error sending next_round_ready after refresh: ${error}`
+              );
+            });
         } else {
           console.error(
             '❌ [websocket.ts] Still not healthy after refresh, cannot send next_round_ready'
@@ -450,16 +501,24 @@ export const signalNextRoundReady = (
     }
 
     // Send with normal flow if socket is healthy
-    sendMessage('next_round_ready', { roomId, roundNumber }).catch((error) => {
-      console.error(
-        '❌ [websocket.ts] Error sending next_round_ready signal:',
-        error
-      );
-    });
+    console.log(
+      `📢 [websocket.ts] Socket is healthy, sending next_round_ready for round ${roundNumber}`
+    );
+
+    sendMessage('next_round_ready', { roomId, roundNumber })
+      .then(() => {
+        console.log(
+          `✅ [websocket.ts] Successfully sent next_round_ready for round ${roundNumber}`
+        );
+      })
+      .catch((error) => {
+        console.error(
+          `❌ [websocket.ts] Error sending next_round_ready signal: ${error}`
+        );
+      });
   } catch (error) {
     console.error(
-      '❌ [websocket.ts] Exception sending next_round_ready signal:',
-      error
+      `❌ [websocket.ts] Exception sending next_round_ready signal: ${error}`
     );
   }
 };

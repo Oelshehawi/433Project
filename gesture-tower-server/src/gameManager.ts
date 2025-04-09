@@ -1,9 +1,6 @@
 import {
   GameState,
-  Room,
-  Player,
   GameActionType,
-  ExtendedWebSocket,
   ServerEventType,
   GestureEventPayload,
 } from './types';
@@ -15,7 +12,6 @@ const MIN_GOAL_HEIGHT = 5;
 const MAX_GOAL_HEIGHT = 10;
 // Set to 1 for TEST MODE (single player), or 2 for normal gameplay
 export const MIN_REQUIRED_PLAYERS = 1; // TOGGLE: 1 = test mode, 2 = normal mode
-// Removed ROUND_DURATION_MS as we'll let clients handle timing
 
 // Track pending gestures for each room and round
 interface PendingGesture {

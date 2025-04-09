@@ -719,28 +719,65 @@ if (typeof window !== 'undefined') {
         const nextRound = (roundNumber || 1) + 1;
         console.log(`🟠 [game/store] Preparing for round ${nextRound}`);
 
+        // IMPORTANT: Update the pendingRoundNumber to the next round
         useGameStore.setState({
           pendingRoundNumber: nextRound,
+          roundData: {
+            ...state.roundData,
+            roundNumber: nextRound, // Ensure roundNumber is updated
+            isTransitioning: true,
+          },
         });
+
+        // Make sure we have a current room
+        if (!state.currentRoom) {
+          console.error(
+            '🔴 [game/store] No current room found for next round signal'
+          );
+          return;
+        }
 
         // Signal ready for next round immediately and with retries
         const signalReady = () => {
           console.log(
             `🟠 [game/store] Signaling ready for round ${nextRound} from round_end handler`
           );
+
+          // Check if socket is healthy and we have a room
           if (state.currentRoom && isSocketHealthy()) {
-            // Use direct import to ensure we get the fresh version
-            import('../websocket').then(({ signalNextRoundReady }) => {
+            // Use dynamically imported function to ensure we get fresh version
+            import('../websocket').then(({ sendMessage }) => {
               console.log(
-                `🟠 [game/store] Calling signalNextRoundReady for round ${nextRound}`
+                `🟠 [game/store] Sending next_round_ready for round ${nextRound}`
               );
-              signalNextRoundReady(state.currentRoom!, nextRound);
+
+              // Send the signal with extensive error handling
+              sendMessage('next_round_ready', {
+                roomId: state.currentRoom, // The currentRoom is the roomId string
+                roundNumber: nextRound,
+              })
+                .then(() => {
+                  console.log(
+                    `✅ [game/store] Successfully sent next_round_ready for round ${nextRound}`
+                  );
+                  state.addEventLog(
+                    `Signal sent for round ${nextRound}`,
+                    'System'
+                  );
+                })
+                .catch((error) => {
+                  console.error(
+                    `🔴 [game/store] Failed to send next_round_ready: ${error}`
+                  );
+                  state.addEventLog(
+                    `Failed to signal for round ${nextRound}`,
+                    'Error'
+                  );
+                });
             });
           } else {
             console.warn(
-              `🟠 [game/store] Cannot signal ready: room=${
-                state.currentRoom
-              }, socketHealthy=${isSocketHealthy()}`
+              `🟠 [game/store] Cannot signal ready: room=${!!state.currentRoom}, socketHealthy=${isSocketHealthy()}`
             );
           }
         };
