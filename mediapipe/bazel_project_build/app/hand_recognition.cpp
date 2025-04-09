@@ -46,7 +46,8 @@ bool initial = true;
 #define RING_LOW 14
 #define PINKY_LOW 18
 #define THUMB_LOW 2
-#define THUMB_Y_THRESHOLD 0.5
+#define HAND_BASE 0
+#define THUMB_Y_THRESHOLD 0.4
 
 
 bool handPosition::compare(handPosition reference){
@@ -98,7 +99,8 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
     const mediapipe::NormalizedLandmark& ring_low = landmark_list.landmark(RING_LOW);
     const mediapipe::NormalizedLandmark& pinky_low = landmark_list.landmark(PINKY_LOW);
     const mediapipe::NormalizedLandmark& thumb_low = landmark_list.landmark(THUMB_LOW);
-    
+    const mediapipe::NormalizedLandmark& hand_base = landmark_list.landmark(HAND_BASE);
+
     // Remove hand orientation detection since we don't need it
     // bool is_left_hand = false;
     // if (pinky_tip.x() > index_tip.x()){
@@ -160,6 +162,7 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
     
     // Simplify thumb detection logic to work for both left and right hands
     // Use vertical position or any horizontal movement as indication of thumb up
+    /*
     if (thumb_tip.y() < THUMB_Y_THRESHOLD || 
         abs(thumb_high.x() - thumb_tip.x()) > 0.05 || 
         abs(thumb_low.x() - thumb_tip.x()) > 0.05) {
@@ -167,7 +170,11 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
         ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
     }
-    
+    */
+    if (fabs(hand_base.x() - thumb_tip.x()) > 0.1 || abs(thumb_tip.y() - hand_base.y()) > THUMB_Y_THRESHOLD){
+        ret->thumb_held_up = true;
+        ret->num_fingers_held_up++;
+   }
     return;
 }
 
