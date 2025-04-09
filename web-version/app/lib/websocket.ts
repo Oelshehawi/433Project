@@ -150,8 +150,6 @@ export const initializeSocket = (
 
     socket.onmessage = (event) => {
       try {
-        // Log raw message for debugging
-        console.log(`🔍 [websocket.ts] RAW MESSAGE RECEIVED:`, event.data);
 
         const data = JSON.parse(event.data);
 
@@ -363,16 +361,11 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
 
     try {
       const message = { event: type, payload };
-      // Important events get special logging
-      if (type === 'next_round_ready' || type === 'game_ready') {
-        console.log(
-          '📢 [websocket.ts] SENDING CRITICAL SIGNAL:',
-          type,
-          payload
-        );
-      } else {
-        console.log('📝 [websocket.ts] Sending WebSocket message:', message);
-      }
+
+        if (message.event !== 'ping' && message.event !== 'pong') {
+          console.log('📝 [websocket.ts] Sending WebSocket message:', message);
+        }
+   
       socket.send(JSON.stringify(message));
 
       // Confirm sent for important messages

@@ -75,6 +75,7 @@ export function initializeGameState(roomId: string): boolean {
     `MIN_GOAL_HEIGHT: ${MIN_GOAL_HEIGHT}, MAX_GOAL_HEIGHT: ${MAX_GOAL_HEIGHT}`
   );
 
+  console.log(`beagleBoardPlayers: ${beagleBoardPlayers}`);
   // Initialize player tower heights and goal heights
   beagleBoardPlayers.forEach((player) => {
     gameState.towerHeights.set(player.id, 0);
@@ -123,6 +124,8 @@ export function initializeGameState(roomId: string): boolean {
     towerHeights: Object.fromEntries(gameState.towerHeights),
     goalHeights: Object.fromEntries(gameState.goalHeights),
     roundNumber: gameState.roundNumber,
+    playerShields: Object.fromEntries(gameState.playerShields),
+    playerMoves: Object.fromEntries(gameState.playerMoves),
   };
 
   sendToRoom(roomId, 'game_state_update', {
@@ -241,6 +244,8 @@ export function startRound(roomId: string): boolean {
       towerHeights: Object.fromEntries(room.gameState.towerHeights),
       goalHeights: Object.fromEntries(room.gameState.goalHeights),
       roundNumber: room.gameState.roundNumber,
+      playerShields: Object.fromEntries(room.gameState.playerShields),
+      playerMoves: Object.fromEntries(room.gameState.playerMoves),
     },
   };
 
@@ -349,6 +354,8 @@ export function endRound(roomId: string): boolean {
         towerHeights: Object.fromEntries(room.gameState.towerHeights),
         goalHeights: Object.fromEntries(room.gameState.goalHeights),
         roundNumber: room.gameState.roundNumber,
+        playerShields: Object.fromEntries(room.gameState.playerShields),
+        playerMoves: Object.fromEntries(room.gameState.playerMoves),
       },
       winnerId: winningPlayerId,
       roundComplete: true,
@@ -395,6 +402,8 @@ export function endRound(roomId: string): boolean {
           towerHeights: Object.fromEntries(room.gameState.towerHeights),
           goalHeights: Object.fromEntries(room.gameState.goalHeights),
           roundNumber: room.gameState.roundNumber,
+          playerShields: Object.fromEntries(room.gameState.playerShields),
+          playerMoves: Object.fromEntries(room.gameState.playerMoves),
         },
         message: `Waiting for web client to be ready for round ${nextRoundNumber}`,
         waitingForNextRound: true,
@@ -667,8 +676,15 @@ export function processAction(
     confidence,
     cardId,
     roomId,
+    // Add round number to help the client track gestures by round
+    roundNumber: currentRound,
+    // Add timestamp for better tracking
+    timestamp: Date.now(),
   };
 
+  console.log(
+    `[gameManager.ts] Forwarding gesture event to clients: ${playerId} played ${action} with confidence ${confidence}`
+  );
   sendToRoom(roomId, 'gesture_event' as ServerEventType, gestureEvent);
 
   // If we've received all expected gestures, process them all at once
@@ -679,6 +695,12 @@ export function processAction(
 
     // Track players who already moved in this round
     const playersMoved = new Set<string>();
+    // Store all gesture details for reference
+    const gestureDetails = [] as Array<{
+      playerId: string;
+      gesture: string;
+      cardId?: string;
+    }>;
 
     // Process all gestures
     roundGestures.forEach((gesture) => {
@@ -692,7 +714,20 @@ export function processAction(
 
       // Mark this player as having moved
       playersMoved.add(gesture.playerId);
+
+      // Save gesture details for reference
+      gestureDetails.push({
+        playerId: gesture.playerId,
+        gesture: gesture.gesture,
+        cardId: gesture.cardId,
+      });
     });
+
+    // Log all the gestures received and processed
+    console.log(
+      `[gameManager.ts] Processed gestures for round ${currentRound}:`,
+      gestureDetails
+    );
 
     // Mark all players who moved
     playersMoved.forEach((playerId) => {
@@ -704,7 +739,7 @@ export function processAction(
       room.gameState.playerMoves.set('virtual_opponent', true);
     }
 
-    // Send updated game state to clients
+    // Send updated game state to clients with detailed gesture information
     sendToRoom(roomId, 'game_state_update' as ServerEventType, {
       roomId,
       gameState: {
@@ -712,9 +747,11 @@ export function processAction(
         goalHeights: Object.fromEntries(room.gameState.goalHeights),
         roundNumber: room.gameState.roundNumber,
         playerShields: Object.fromEntries(room.gameState.playerShields),
+        playerMoves: Object.fromEntries(room.gameState.playerMoves),
       },
       message: 'All players have submitted their gestures',
       allGesturesReceived: true,
+      playerGestureSummary: gestureDetails,
     });
 
     // Check if all players have moved

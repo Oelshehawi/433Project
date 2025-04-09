@@ -186,6 +186,7 @@ export interface GestureEventPayload {
   cardId?: string; // Optional card ID used for the gesture
   roomId: string; // Add roomId property
   roundNumber?: number; // Add optional roundNumber property
+  timestamp?: number; // Add optional timestamp property
 }
 
 export interface ErrorPayload {

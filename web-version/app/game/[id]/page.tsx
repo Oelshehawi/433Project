@@ -298,6 +298,48 @@ export default function GamePage() {
     return player ? player.name : playerId;
   };
 
+  // Add a detailed game state logging effect after the existing useEffect hooks
+  // Add this before the return statement
+  // Enhanced game state logging
+  useEffect(() => {
+    if (gameStatus === 'playing') {
+      // Log detailed game state information
+      console.log('📊 [GamePage] Current Game State Summary:');
+      console.log(
+        `  Round: ${roundData.roundNumber} (Transitioning: ${roundData.isTransitioning})`
+      );
+      console.log(`  Time Remaining: ${roundData.timeRemaining}s`);
+      console.log(
+        `  Player 1 (${player1Name}): Tower=${player1TowerHeight}/${player1GoalHeight}, Card=${
+          player1CardPlayed || 'None'
+        }, Shield=${player1ShieldActive}`
+      );
+      console.log(
+        `  Player 2 (${player2Name}): Tower=${player2TowerHeight}/${player2GoalHeight}, Card=${
+          player2CardPlayed || 'None'
+        }, Shield=${player2ShieldActive}`
+      );
+      console.log(`  Game Ended: ${isGameEnded}, Winner: ${winner || 'None'}`);
+      console.log(`  Pending Round: ${pendingRoundNumber || 'None'}`);
+    }
+  }, [
+    gameStatus,
+    roundData,
+    player1TowerHeight,
+    player2TowerHeight,
+    player1CardPlayed,
+    player2CardPlayed,
+    player1ShieldActive,
+    player2ShieldActive,
+    isGameEnded,
+    winner,
+    pendingRoundNumber,
+    player1Name,
+    player2Name,
+    player1GoalHeight,
+    player2GoalHeight,
+  ]);
+
   // We will always render everything, but show/hide based on game state
   return (
     <>
