@@ -6,6 +6,7 @@
 #include <chrono>
 #include <thread>
 #include <map>
+#include <atomic>
 #include <nlohmann/json.hpp>
 #include "RoomManager.h"
 
@@ -25,17 +26,21 @@ private:
 
     // Game state
     int currentRoundNumber = 1;
-    int currentTurnTimeRemaining = 0;
+    std::atomic<int> currentTurnTimeRemaining{0}; // Using atomic for thread safety
     std::vector<Card> lastReceivedCards;
     // Map to store available cards by type -> id
     std::map<std::string, std::string> playerCards;
+    
+    // Flag to track if round_end was received from server
+    std::atomic<bool> roundEndReceived{false};
 
     // Timer management
-    bool timerActive = false;
+    std::atomic<bool> timerActive{false};
     std::chrono::steady_clock::time_point lastTimerUpdate;
     std::thread timerThread;
     std::mutex timerMutex;
-    bool timerThreadRunning = false;
+    std::atomic<bool> timerThreadRunning{false};
+    std::atomic<bool> needDisplayUpdate{false}; // Flag to indicate display needs update
 
     // Auto-play when timer expires
     void autoPlayCard();
@@ -65,6 +70,10 @@ public:
 
     bool isGameActive() const { return gameInProgress; }
     void setGameActive(bool active) { gameInProgress = active; }
+    
+    // Round end received flag management
+    void setRoundEndReceived(bool received) { roundEndReceived = received; }
+    bool wasRoundEndReceived() const { return roundEndReceived; }
 
     // Update timer from round start event
     void updateTimerFromEvent(const json& roundStartPayload);

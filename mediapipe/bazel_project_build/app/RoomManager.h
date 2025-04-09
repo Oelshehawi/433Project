@@ -44,7 +44,6 @@ private:
     WebSocketClient* client;
     WebSocketReceiver* receiver;
     MessageHandler* messageHandler;
-    GameState* gameState;
     DisplayManager* displayManager;
     
     std::string deviceId;
@@ -91,7 +90,8 @@ private:
     // Display methods - update LCD with current game state and cards
 
 public:
-    GestureDetector* gestureDetector; // Made public for direct access
+    GameState* gameState;                   // Made public for direct access
+    GestureDetector* gestureDetector;       // Made public for direct access
     GestureEventSender* gestureEventSender; // Public gesture event sender
 
     RoomManager(WebSocketClient* client);
