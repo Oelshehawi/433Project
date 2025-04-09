@@ -150,8 +150,35 @@ export const initializeSocket = (
 
     socket.onmessage = (event) => {
       try {
+        // Check if event.data exists
+        if (!event || !event.data) {
+          console.error(
+            '[websocket.ts] Received empty or invalid WebSocket message'
+          );
+          return;
+        }
 
-        const data = JSON.parse(event.data);
+        // Safely parse the data
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch (parseError) {
+          console.error(
+            '[websocket.ts] Error parsing WebSocket message:',
+            parseError,
+            event.data
+          );
+          return;
+        }
+
+        // Validate data structure
+        if (!data || typeof data !== 'object') {
+          console.error(
+            '[websocket.ts] Received invalid data structure:',
+            event.data
+          );
+          return;
+        }
 
         // Handle pong messages separately
         if (data.event === 'pong') {
@@ -159,73 +186,67 @@ export const initializeSocket = (
           return;
         }
 
-        console.log('[websocket.ts] WebSocket message received:', data);
+        // Log the message safely
+        console.log(
+          '[websocket.ts] WebSocket message received:',
+          data
+            ? typeof data === 'object'
+              ? JSON.stringify(data)
+              : data
+            : 'undefined data'
+        );
+
+        // Safely check event type and log appropriately
+        const eventType = data.event || 'unknown';
+        const payload = data.payload || {};
 
         // Special handling for game_starting to make it more visible in logs
-        if (data.event === 'game_starting') {
+        if (eventType === 'game_starting') {
           console.log(
             '[websocket.ts] 🎮 GAME STARTING EVENT RECEIVED:',
-            data.payload
+            payload
           );
         }
 
         // Special tracking for round events
-        if (data.event === 'round_start') {
+        if (eventType === 'round_start') {
           console.log(
             '[websocket.ts] 🎮🎮🎮 ROUND START EVENT RECEIVED:',
-            data.payload
+            payload
           );
         }
 
-        if (data.event === 'round_end') {
+        if (eventType === 'round_end') {
           console.log(
             '[websocket.ts] 🛑🛑🛑 ROUND END EVENT RECEIVED:',
-            data.payload
+            payload
           );
-
-          // Add additional debug info for round_end events
-          const { roundNumber, gameState, shouldContinue } = data.payload;
-          console.log(
-            `[websocket.ts] Round ${roundNumber} ended, should continue: ${shouldContinue}`
-          );
-          console.log(`[websocket.ts] Current game state:`, gameState);
-
-          // Debug what round transition should happen next
-          if (shouldContinue) {
-            const nextRound = (roundNumber || 1) + 1;
-            console.log(`[websocket.ts] Next round should be ${nextRound}`);
-          } else {
-            console.log(`[websocket.ts] Game should end after this round`);
-          }
         }
 
-        if (data.event === 'game_state_update') {
-          console.log(
-            '[websocket.ts] ⚙️ GAME STATE UPDATE RECEIVED:',
-            data.payload
+        // Create a simple custom event with the data - with safe fallbacks
+        try {
+          const customEvent = new CustomEvent(eventType, {
+            detail: payload,
+            bubbles: true,
+          });
+
+          // Dispatch a single event - all components can listen for specific event types
+          window.dispatchEvent(customEvent);
+        } catch (eventError) {
+          console.error(
+            '[websocket.ts] Error creating or dispatching event:',
+            eventError,
+            {
+              event: eventType,
+              payload: payload,
+            }
           );
-
-          // Add additional debug info for waitingForNextRound field
-          if (data.payload.waitingForNextRound) {
-            console.log(
-              '[websocket.ts] ⚠️ SERVER IS WAITING FOR NEXT_ROUND_READY SIGNAL'
-            );
-          }
         }
-
-        // Create a simple custom event with the data
-        const customEvent = new CustomEvent(data.event, {
-          detail: data.payload,
-          bubbles: true,
-        });
-
-        // Dispatch a single event - all components can listen for specific event types
-        window.dispatchEvent(customEvent);
       } catch (error) {
         console.error(
           '[websocket.ts] Error processing WebSocket message:',
           error,
-          event.data
+          event ? event.data || 'No data' : 'Invalid event'
         );
       }
     };
@@ -362,10 +383,10 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
     try {
       const message = { event: type, payload };
 
-        if (message.event !== 'ping' && message.event !== 'pong') {
-          console.log('📝 [websocket.ts] Sending WebSocket message:', message);
-        }
-   
+      if (message.event !== 'ping' && message.event !== 'pong') {
+        console.log('📝 [websocket.ts] Sending WebSocket message:', message);
+      }
+
       socket.send(JSON.stringify(message));
 
       // Confirm sent for important messages
@@ -439,25 +460,6 @@ export const signalNextRoundReady = (
     `📢 [websocket.ts] Signaling server that web client is ready for round ${roundNumber}`
   );
 
-  // Verify we have valid parameters
-  if (!roomId) {
-    console.error(
-      '❌ [websocket.ts] Cannot signal next round ready: Missing roomId'
-    );
-    return;
-  }
-
-  if (!roundNumber || roundNumber < 1) {
-    console.error(
-      `❌ [websocket.ts] Cannot signal next round ready: Invalid roundNumber ${roundNumber}`
-    );
-    return;
-  }
-
-  console.log(
-    `📢 [websocket.ts] Preparing next_round_ready for room ${roomId}, round ${roundNumber}`
-  );
-
   try {
     // Check socket health first
     if (!isSocketHealthy()) {
@@ -472,17 +474,14 @@ export const signalNextRoundReady = (
           console.log(
             `📢 [websocket.ts] Retrying next_round_ready for round ${roundNumber} after refresh`
           );
-          sendMessage('next_round_ready', { roomId, roundNumber })
-            .then(() => {
-              console.log(
-                `✅ [websocket.ts] Successfully sent next_round_ready for round ${roundNumber} after refresh`
-              );
-            })
-            .catch((error) => {
+          sendMessage('next_round_ready', { roomId, roundNumber }).catch(
+            (error) => {
               console.error(
-                `❌ [websocket.ts] Error sending next_round_ready after refresh: ${error}`
+                '❌ [websocket.ts] Error sending next_round_ready after refresh:',
+                error
               );
-            });
+            }
+          );
         } else {
           console.error(
             '❌ [websocket.ts] Still not healthy after refresh, cannot send next_round_ready'
@@ -494,24 +493,16 @@ export const signalNextRoundReady = (
     }
 
     // Send with normal flow if socket is healthy
-    console.log(
-      `📢 [websocket.ts] Socket is healthy, sending next_round_ready for round ${roundNumber}`
-    );
-
-    sendMessage('next_round_ready', { roomId, roundNumber })
-      .then(() => {
-        console.log(
-          `✅ [websocket.ts] Successfully sent next_round_ready for round ${roundNumber}`
-        );
-      })
-      .catch((error) => {
-        console.error(
-          `❌ [websocket.ts] Error sending next_round_ready signal: ${error}`
-        );
-      });
+    sendMessage('next_round_ready', { roomId, roundNumber }).catch((error) => {
+      console.error(
+        '❌ [websocket.ts] Error sending next_round_ready signal:',
+        error
+      );
+    });
   } catch (error) {
     console.error(
-      `❌ [websocket.ts] Exception sending next_round_ready signal: ${error}`
+      '❌ [websocket.ts] Exception sending next_round_ready signal:',
+      error
     );
   }
 };

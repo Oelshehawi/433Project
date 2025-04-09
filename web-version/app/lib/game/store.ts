@@ -9,6 +9,9 @@ import {
   refreshConnectionStatus,
 } from '../websocket';
 
+// Import socket directly to use in debugging
+import '../websocket';
+
 // Function to create a GameStore
 export const useGameStore = create<GameStore>((set, get) => ({
   // Initial game state
@@ -55,6 +58,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   loading: false,
   error: null,
   socketConnected: false,
+
+  // Notification
+  notification: null,
 
   // Initialize game with room ID
   initialize: async (roomId: string) => {
@@ -111,36 +117,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       // Add structured error handling to separate connection issues from game state issues
       try {
-        // Fetch game state from server using the current room
-        await sendMessage('get_game_state', { roomId });
-        console.log('[game/store] Game state requested for room:', roomId);
+        // CRITICAL FIX: First join the room as a webviewer before requesting game state
+        console.log(
+          '[game/store] Joining room as webviewer before requesting game state'
+        );
+        await sendMessage('join_room', {
+          roomId,
+          playerId: crypto.randomUUID(), // Generate a unique ID for this client
+          playerName: 'Web Client',
+          // Removed playerType as it's not expected by the server
+        });
+        console.log('[game/store] Successfully joined room as webviewer');
+
+        // Don't request game state here - will be requested after user clicks X and round_start is sent
       } catch (error) {
         // Don't fail initialization for game state issues - we'll recover via events
-        console.warn('[game/store] Failed to request game state:', error);
-
-        // Register a one-time event listener to try again in 2 seconds if socket is connected
-        if (isSocketHealthy()) {
-          setTimeout(() => {
-            if (isSocketHealthy() && get().currentRoom === roomId) {
-              console.log('[game/store] Retrying game state request');
-              sendMessage('get_game_state', { roomId }).catch((err) =>
-                console.warn(
-                  '[game/store] Retry game state request failed:',
-                  err
-                )
-              );
-            }
-          }, 2000);
-        }
-      }
-
-      // Ensure we're connected to the room
-      try {
-        // Send a get_room request to make sure our connection is registered with the server
-        await sendMessage('get_room', { roomId });
-        console.log('[game/store] Room data requested for room:', roomId);
-      } catch (error) {
-        console.warn('[game/store] Failed to request room data:', error);
+        console.warn('[game/store] Failed to join room:', error);
       }
 
       // Initialize the game state
@@ -359,6 +351,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
     get().addEventLog('Game reset', 'System');
   },
 
+  // Request game state after round_start
+  requestGameState: async () => {
+    try {
+      const { currentRoom } = get();
+      if (!currentRoom) {
+        console.error(
+          '[game/store] Cannot request game state: No current room'
+        );
+        return;
+      }
+
+      console.log(
+        '[game/store] Requesting game data after round start for room:',
+        currentRoom
+      );
+
+      // Use get_game_state instead of get_room to request game state directly
+      await sendMessage('get_game_state', { roomId: currentRoom });
+      console.log('[game/store] Game state requested for room:', currentRoom);
+
+      get().addEventLog('Game state requested after round start', 'System');
+    } catch (error) {
+      console.error('[game/store] Failed to request game state:', error);
+    }
+  },
+
   // Add event log
   addEventLog: (message: string, source: string = 'UI') => {
     const now = new Date();
@@ -382,6 +400,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
   clearEventLogs: () => {
     set({ eventLogs: [] });
     get().addEventLog('Logs cleared', 'UI');
+  },
+
+  // Find where the other notification-related functions are defined and add this function
+  resetNotification: () => set({ notification: null }),
+
+  // Debug function to check event listeners
+  debugCheckEventListeners: () => {
+    // Access the external socket variable from the websocket module
+    import('../websocket').then(() => {
+      // Check socket health using the imported function
+      if (!isSocketHealthy()) {
+        console.log('No socket connection available');
+        return;
+      }
+
+      console.log('Current socket:', 'WebSocket Available');
+      console.log('Event listeners:', 'Available');
+      console.log('Current room:', get().currentRoom);
+      console.log('Current round:', get().gameState?.roundNumber || 0);
+    });
   },
 }));
 
@@ -409,30 +447,14 @@ if (typeof window !== 'undefined') {
   // Game state update event
   window.addEventListener('game_state_update', (event: CustomEventInit) => {
     try {
-      const {
-        gameState,
-        message,
-        waitingForNextRound,
-        allGesturesReceived,
-        playerGestureSummary,
-      } = event.detail || {};
+      const { gameState, message, waitingForNextRound } = event.detail || {};
       console.log('🟣 [game/store] Game state update received:', gameState);
       console.log(
         '🟣 [game/store] Message:',
         message,
         'Waiting for next round:',
-        waitingForNextRound,
-        'All gestures received:',
-        allGesturesReceived
+        waitingForNextRound
       );
-
-      // Log additional gesture data if available
-      if (playerGestureSummary) {
-        console.log(
-          '🎮 [game/store] Player gesture summary:',
-          playerGestureSummary
-        );
-      }
 
       if (gameState) {
         const state = useGameStore.getState();
@@ -460,52 +482,6 @@ if (typeof window !== 'undefined') {
           }
         }
 
-        // Extract player shield status
-        if (gameState.playerShields) {
-          const playerIds = Object.keys(gameState.playerShields);
-
-          if (playerIds.length >= 1) {
-            useGameStore.setState({
-              player1ShieldActive:
-                gameState.playerShields[playerIds[0]] || false,
-            });
-          }
-
-          if (playerIds.length >= 2) {
-            useGameStore.setState({
-              player2ShieldActive:
-                gameState.playerShields[playerIds[1]] || false,
-            });
-          }
-        }
-
-        // Process playerGestureSummary if available
-        if (playerGestureSummary && Array.isArray(playerGestureSummary)) {
-          // Get player IDs from the current state
-          const playerIds = Object.keys(gameState.towerHeights || {});
-
-          playerGestureSummary.forEach((gesture) => {
-            const isPlayer1 = gesture.playerId === playerIds[0];
-            if (isPlayer1) {
-              useGameStore.setState({
-                player1CardPlayed: gesture.gesture,
-              });
-              state.addEventLog(
-                `Updated Player 1 gesture: ${gesture.gesture}`,
-                'System'
-              );
-            } else {
-              useGameStore.setState({
-                player2CardPlayed: gesture.gesture,
-              });
-              state.addEventLog(
-                `Updated Player 2 gesture: ${gesture.gesture}`,
-                'System'
-              );
-            }
-          });
-        }
-
         // Update round data
         if (gameState.roundNumber) {
           useGameStore.setState({
@@ -516,26 +492,60 @@ if (typeof window !== 'undefined') {
           });
         }
 
-        // Log more detailed information about the game state
-        console.log('🧩 [game/store] Processed game state:');
-        console.log('- Tower heights:', gameState.towerHeights);
-        console.log('- Goal heights:', gameState.goalHeights);
-        console.log('- Player shields:', gameState.playerShields);
-        console.log('- Player moves:', gameState.playerMoves);
-        console.log('- Round number:', gameState.roundNumber);
-
-        // Add event log
-        if (message) {
-          state.addEventLog(`Server: ${message}`, 'Server');
+        // Update shield status if provided
+        if (gameState.playerShields) {
+          const playerIds = Object.keys(gameState.playerShields);
+          if (playerIds.length >= 1) {
+            useGameStore.setState({
+              player1ShieldActive:
+                gameState.playerShields[playerIds[0]] || false,
+            });
+          }
+          if (playerIds.length >= 2) {
+            useGameStore.setState({
+              player2ShieldActive:
+                gameState.playerShields[playerIds[1]] || false,
+            });
+          }
         }
 
-        // If all gestures are received, log this important information
-        if (allGesturesReceived) {
-          state.addEventLog('All player gestures received', 'Server');
+        // Log the state update
+        state.addEventLog(
+          `Game state updated: Round ${gameState.roundNumber}`,
+          'Server'
+        );
+
+        // If there's a message, add it to the logs
+        if (message) {
+          state.addEventLog(message, 'Server');
+        }
+
+        // If waiting for next round, set the pendingRoundNumber
+        if (waitingForNextRound) {
+          console.log(
+            '🟣 [game/store] Server waiting for next round ready signal for round',
+            gameState.roundNumber
+          );
+
+          useGameStore.setState({
+            pendingRoundNumber: gameState.roundNumber,
+          });
+
+          // Immediately try to signal readiness if we're in a non-transitioning state
+          if (!state.roundData.isTransitioning) {
+            console.log(
+              '🟣 [game/store] Not transitioning, immediately signaling ready for round',
+              gameState.roundNumber
+            );
+            state.readyForNextRound(gameState.roundNumber);
+          }
         }
       }
     } catch (error) {
-      console.error('[game/store] Error processing game state update:', error);
+      console.error(
+        '🔴 [game/store] Error processing game state update:',
+        error
+      );
     }
   });
 
@@ -631,32 +641,18 @@ if (typeof window !== 'undefined') {
   // Gesture event
   window.addEventListener('gesture_event', (event: CustomEventInit) => {
     try {
-      const { playerId, gesture, confidence, cardId } = event.detail || {};
-      console.log('🎮 [game/store] Gesture event received:', event.detail);
-      console.log(
-        `🎮 [game/store] Player ${playerId} played ${gesture} (confidence: ${confidence})`
-      );
+      const { playerId, gesture, cardId } = event.detail || {};
+      console.log('[game/store] Gesture event received:', event.detail);
 
       const state = useGameStore.getState();
 
-      // Get player IDs from the current state
-      const playerIds = Object.keys(state.gameState?.towerHeights || {});
-      if (playerIds.length === 0) {
-        console.warn('🎮 [game/store] No player IDs found in game state');
-      }
-
       // Update the player's card played state
-      const isPlayer1 = playerIds[0] === playerId;
+      const isPlayer1 =
+        Object.keys(state.gameState?.towerHeights || {})[0] === playerId;
 
       if (isPlayer1) {
-        console.log(
-          `🎮 [game/store] Updating Player 1 (${playerId}) gesture to ${gesture}`
-        );
         useGameStore.setState({ player1CardPlayed: gesture });
       } else {
-        console.log(
-          `🎮 [game/store] Updating Player 2 (${playerId}) gesture to ${gesture}`
-        );
         useGameStore.setState({ player2CardPlayed: gesture });
       }
 
@@ -677,14 +673,9 @@ if (typeof window !== 'undefined') {
 
       state.addEventLog(`Player ${playerId} played ${gesture}`, 'Gesture');
 
-      // Check if both players have submitted gestures
+      // NEW: Check if both players have submitted gestures
       // Get updated state after setting the current player's gesture
       const updatedState = useGameStore.getState();
-      console.log('🎮 [game/store] Current gesture state:', {
-        player1: updatedState.player1CardPlayed,
-        player2: updatedState.player2CardPlayed,
-      });
-
       if (updatedState.player1CardPlayed && updatedState.player2CardPlayed) {
         console.log(
           '🎮 [game/store] Both players have submitted gestures, will signal round_end'
@@ -1063,6 +1054,77 @@ if (typeof window !== 'undefined') {
         '[game/store] Error processing game starting event:',
         error
       );
+    }
+  });
+
+  // Room data event
+  window.addEventListener('room_data', (event: CustomEventInit) => {
+    try {
+      const { room } = event.detail || {};
+      console.log('[game/store] Room data received:', room);
+
+      if (room && room.gameState) {
+        const state = useGameStore.getState();
+
+        // Make sure we're in the same room
+        if (state.currentRoom !== room.id) {
+          console.log(
+            `[game/store] Received room data for room ${room.id} but we're in room ${state.currentRoom}`
+          );
+          return;
+        }
+
+        console.log('[game/store] Updating game state from room data');
+
+        // Convert the gameState from the server format to our format
+        const gameState = {
+          towerHeights: room.gameState.towerHeights || {},
+          goalHeights: room.gameState.goalHeights || {},
+          roundNumber: room.gameState.roundNumber || 1,
+          playerShields: room.gameState.playerShields || {},
+          roundStartTime: Date.now(),
+        };
+
+        // Update game state
+        useGameStore.setState({ gameState });
+
+        // Extract player tower heights and goal heights
+        if (gameState.towerHeights && gameState.goalHeights) {
+          const playerIds = Object.keys(gameState.towerHeights);
+
+          if (playerIds.length >= 1) {
+            useGameStore.setState({
+              player1TowerHeight: gameState.towerHeights[playerIds[0]] || 0,
+              player1GoalHeight: gameState.goalHeights[playerIds[0]] || 5,
+            });
+          }
+
+          if (playerIds.length >= 2) {
+            useGameStore.setState({
+              player2TowerHeight: gameState.towerHeights[playerIds[1]] || 0,
+              player2GoalHeight: gameState.goalHeights[playerIds[1]] || 5,
+            });
+          }
+        }
+
+        // Update round data
+        if (gameState.roundNumber) {
+          useGameStore.setState({
+            roundData: {
+              ...state.roundData,
+              roundNumber: gameState.roundNumber,
+            },
+          });
+        }
+
+        // Log the update
+        state.addEventLog(
+          `Game state updated from room data: Round ${gameState.roundNumber}`,
+          'Server'
+        );
+      }
+    } catch (error) {
+      console.error('[game/store] Error processing room data:', error);
     }
   });
 }

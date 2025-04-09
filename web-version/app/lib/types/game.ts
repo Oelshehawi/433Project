@@ -166,6 +166,9 @@ export interface GameStore {
   winner: string | null;
   roundEndMessage: string;
 
+  // Notification
+  notification: { message: string; type: string } | null;
+
   // Animation states
   animationState: AnimationState;
   moveAnimations: PlayerMove[];
@@ -186,6 +189,9 @@ export interface GameStore {
   acknowledgeMoves: () => Promise<void>;
   readyForNextRound: (roundNumber: number) => Promise<void>;
   resetGame: () => void;
+  resetNotification: () => void;
+  debugCheckEventListeners: () => void;
+  requestGameState: () => Promise<void>;
 
   // Utility functions
   addEventLog: (message: string, source?: string) => void;
