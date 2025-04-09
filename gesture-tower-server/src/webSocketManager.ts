@@ -1193,7 +1193,6 @@ function handleGetGameState(client: ExtendedWebSocket, payload: any) {
     towerHeights: Object.fromEntries(room.gameState.towerHeights),
     goalHeights: Object.fromEntries(room.gameState.goalHeights),
     roundNumber: room.gameState.roundNumber,
-    roundStartTime: room.gameState.roundStartTime,
   };
 
   // Send the game state to the client
