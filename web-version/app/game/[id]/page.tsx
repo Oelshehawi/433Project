@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useRoomStore } from '../../lib/room/store';
 import { useGameStore } from '../../lib/game/store';
@@ -9,6 +9,7 @@ import {
   isSocketHealthy,
   sendMessage,
 } from '../../lib/websocket';
+import { useSoundManager, SoundEffect } from '../../lib/utils/SoundManager';
 
 // Import CSS animations
 import '../../styles/animations.css';
@@ -28,17 +29,67 @@ import PlayerGestureDisplay from '../../components/game/PlayerGestureDisplay';
 import Player from '../../components/game/Player';
 import GameStateDisplay from '../../components/game/GameStateDisplay';
 import GameControls from '../../components/game/GameControls';
+import DebugControls from '../../components/game/DebugControls';
 
-// Define the animation state types that Player component can accept
-type PlayerAnimationState =
-  | 'idle'
-  | 'attack'
-  | 'damaged'
-  | 'win'
-  | 'lose'
-  | 'jump'
-  | 'hurt'
-  | 'die';
+// Animation State Manager - Copied from DebugControls.tsx for game functionality
+const createAnimationStateManager = () => {
+  // Track animations in progress
+  const animationsInProgress = new Map<string, boolean>();
+
+  // Generate a unique key for each animation type and player
+  const getAnimationKey = (
+    type: 'attack' | 'shield' | 'build',
+    player: 'player1' | 'player2'
+  ): string => {
+    return `${type}_${player}`;
+  };
+
+  // Check if an animation is already in progress
+  const isAnimationInProgress = (
+    type: 'attack' | 'shield' | 'build',
+    player: 'player1' | 'player2'
+  ): boolean => {
+    const key = getAnimationKey(type, player);
+    return !!animationsInProgress.get(key);
+  };
+
+  // Mark an animation as started
+  const startAnimation = (
+    type: 'attack' | 'shield' | 'build',
+    player: 'player1' | 'player2'
+  ): boolean => {
+    const key = getAnimationKey(type, player);
+
+    // If animation is already in progress, don't start a new one
+    if (animationsInProgress.get(key)) {
+      console.log(
+        `[Game] ${type} animation for ${player} already in progress, ignoring request`
+      );
+      return false;
+    }
+
+    // Mark animation as in progress
+    animationsInProgress.set(key, true);
+    console.log(`[Game] Starting ${type} animation for ${player}`);
+    return true;
+  };
+
+  // Mark an animation as completed
+  const completeAnimation = (
+    type: 'attack' | 'shield' | 'build',
+    player: 'player1' | 'player2'
+  ): void => {
+    const key = getAnimationKey(type, player);
+    animationsInProgress.set(key, false);
+    console.log(`[Game] Completed ${type} animation for ${player}`);
+  };
+
+  return {
+    isAnimationInProgress,
+    startAnimation,
+    completeAnimation,
+  };
+};
 
 export default function GamePage() {
   const params = useParams();
@@ -48,6 +99,16 @@ export default function GamePage() {
   const [forceLoader, setForceLoader] = useState(false);
   const [roundStartSent, setRoundStartSent] = useState(false);
 
+  // Create animation state manager for the game
+  const animationManagerRef = useRef(createAnimationStateManager());
+  const animationManager = animationManagerRef.current;
+
+  // Track animation states for PlayerGestureDisplay synchronization
+  const [player1AttackVisible, setPlayer1AttackVisible] = useState(false);
+  const [player2AttackVisible, setPlayer2AttackVisible] = useState(false);
+  const [player1Explosion, setPlayer1Explosion] = useState(false);
+  const [player2Explosion, setPlayer2Explosion] = useState(false);
+
   // Add objects to track when game_ready should be sent
   const gameReadySent = { current: false };
   const userClickedX = { current: false };
@@ -55,6 +116,10 @@ export default function GamePage() {
   // Add these to track round state
   const roundStartMap = { current: new Map() }; // Map to track which rounds we've already sent start events for
   const processingRoundStart = { current: false }; // Flag to prevent concurrent round_start processing
+
+  // Move the useSoundManager hook to the top level of the component
+  const { playBackgroundMusic, stopBackgroundMusic, playSound } =
+    useSoundManager();
 
   // Use the game store
   const {
@@ -87,7 +152,109 @@ export default function GamePage() {
     player2Animation,
     player1JumpHeight,
     player2JumpHeight,
+    // Set player animations
+    setPlayerAnimation,
+    // Get debug state from game store
+    showDebugLogs,
+    toggleDebugLogs,
+    // Add event logs
+    addEventLog,
   } = useGameStore();
+
+  // Handle animation triggers from server events or other sources
+  const triggerAnimation = (
+    type: 'attack' | 'shield' | 'build',
+    player: 'player1' | 'player2'
+  ) => {
+    // Check if animation is already in progress
+    if (animationManager.isAnimationInProgress(type, player)) {
+      console.log(
+        `[Game] ${type} animation for ${player} already in progress, ignoring request`
+      );
+      return;
+    }
+
+    // Mark animation as started in the manager
+    if (!animationManager.startAnimation(type, player)) {
+      return;
+    }
+
+    // Add debug log
+    if (showDebugLogs) {
+      addEventLog(`Triggering ${type} animation for ${player}`, 'Animation');
+    }
+
+    // Handle animation based on type
+    if (type === 'attack') {
+      // Play attack sound
+      playSound(SoundEffect.ATTACK);
+
+      // Set player animation
+      setPlayerAnimation(player, 'jump');
+
+      // Show the attack animation based on which player
+      if (player === 'player1') {
+        setPlayer1AttackVisible(true);
+      } else {
+        setPlayer2AttackVisible(true);
+      }
+
+      // Attack animation will trigger completion in PlayerGestureDisplay component
+    } else if (type === 'shield') {
+      // Play shield sound
+      playSound(SoundEffect.SHIELD);
+
+      // Shield doesn't have a special animation, just update the shield state in UI
+      // PlayerGestureDisplay will handle showing the shield effect
+
+      // Complete the animation after a delay
+      setTimeout(() => {
+        animationManager.completeAnimation(type, player);
+      }, 2000);
+    } else if (type === 'build') {
+      // Play build sound
+      playSound(SoundEffect.BUILD);
+
+      // Set player animation
+      setPlayerAnimation(player, 'jump');
+
+      // Add jump effect for building
+      if (player === 'player1') {
+        useGameStore.setState({ player1JumpHeight: 20 });
+
+        // Reset jump height after a delay
+        setTimeout(() => {
+          useGameStore.setState({ player1JumpHeight: 0 });
+          setPlayerAnimation(player, 'idle');
+
+          // Mark animation as complete
+          animationManager.completeAnimation(type, player);
+        }, 500);
+      } else {
+        useGameStore.setState({ player2JumpHeight: 20 });
+
+        // Reset jump height after a delay
+        setTimeout(() => {
+          useGameStore.setState({ player2JumpHeight: 0 });
+          setPlayerAnimation(player, 'idle');
+
+          // Mark animation as complete
+          animationManager.completeAnimation(type, player);
+        }, 500);
+      }
+    }
+  };
+
+  // Handler for attack animation completion from PlayerGestureDisplay
+  const handleAttackAnimationComplete = (player: 'player1' | 'player2') => {
+    console.log(`[Game] Attack animation completed for ${player}`);
+
+    // Reset player animation to idle
+    setPlayerAnimation(player, 'idle');
+
+    // Mark animation as completed in the manager
+    animationManager.completeAnimation('attack', player);
+  };
 
   // Create a centralized function to send round_start events
   const sendRoundStart = async (roomId: string, roundNumber: number) => {
@@ -393,6 +560,87 @@ export default function GamePage() {
     }
   }, [socketConnected, connectionRetries]);
 
+  // Find the useEffect hook that handles game state changes
+  useEffect(() => {
+    if (
+      gameStatus === 'playing' &&
+      !isGameEnded &&
+      !animationState.isAnimating
+    ) {
+      // If animations are complete, make sure to play background music
+      if (animationState.animationComplete) {
+        playBackgroundMusic();
+      }
+    }
+  }, [
+    gameStatus,
+    isGameEnded,
+    animationState.isAnimating,
+    animationState.animationComplete,
+    playBackgroundMusic,
+  ]);
+
+  // Add cleanup for background music when component unmounts
+  useEffect(() => {
+    // Clean up when component unmounts
+    return () => {
+      stopBackgroundMusic();
+    };
+  }, [stopBackgroundMusic]);
+
+  // Stop background music when game ends
+  useEffect(() => {
+    if (isGameEnded) {
+      stopBackgroundMusic();
+    }
+  }, [isGameEnded, stopBackgroundMusic]);
+
+  // Add effect to trigger animations based on player cards
+  useEffect(() => {
+    // Check for player1 attack card
+    if (
+      player1CardPlayed?.toLowerCase() === 'attack' &&
+      !player1AttackVisible
+    ) {
+      triggerAnimation('attack', 'player1');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player1CardPlayed]);
+
+  // Add effect to trigger animations based on player cards
+  useEffect(() => {
+    // Check for player2 attack card
+    if (
+      player2CardPlayed?.toLowerCase() === 'attack' &&
+      !player2AttackVisible
+    ) {
+      triggerAnimation('attack', 'player2');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player2CardPlayed]);
+
+  // Add effect to trigger animations for shield
+  useEffect(() => {
+    if (
+      player1ShieldActive &&
+      !animationManager.isAnimationInProgress('shield', 'player1')
+    ) {
+      triggerAnimation('shield', 'player1');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player1ShieldActive]);
+
+  // Add effect to trigger animations for shield
+  useEffect(() => {
+    if (
+      player2ShieldActive &&
+      !animationManager.isAnimationInProgress('shield', 'player2')
+    ) {
+      triggerAnimation('shield', 'player2');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player2ShieldActive]);
+
   // Helper function to get player name by ID
   const getPlayerNameById = (playerId: string): string => {
     if (!currentRoom) return playerId;
@@ -438,19 +686,25 @@ export default function GamePage() {
               playerId='player1'
               name={player1Name}
               isVisible={true}
-              animationState={player1Animation as PlayerAnimationState}
+              animationState={player1Animation}
               jumpHeight={player1JumpHeight}
             />
             <Player
               playerId='player2'
               name={player2Name}
               isVisible={true}
-              animationState={player2Animation as PlayerAnimationState}
+              animationState={player2Animation}
               jumpHeight={player2JumpHeight}
             />
 
             {/* Add Rules button outside the game state conditional so it's always visible */}
             <RulesButton />
+
+            {/* Add Debug Controls next to the Rules button */}
+            <DebugControls
+              isVisible={showDebugLogs}
+              onToggleVisibility={toggleDebugLogs}
+            />
 
             {/* Game state display */}
             {gameStatus === 'playing' && (
@@ -467,11 +721,13 @@ export default function GamePage() {
                   roundEndMessage={roundEndMessage}
                 />
 
-                {/* Debug event logs */}
-                <EventLogger
-                  eventLogs={eventLogs}
-                  onClearLogs={clearEventLogs}
-                />
+                {/* Debug event logs - only show when toggled on */}
+                {showDebugLogs && (
+                  <EventLogger
+                    eventLogs={eventLogs}
+                    onClearLogs={clearEventLogs}
+                  />
+                )}
 
                 {/* Tower blocks for both players */}
                 <TowerBlocks
@@ -489,6 +745,20 @@ export default function GamePage() {
                   player1ShieldActive={player1ShieldActive}
                   player2ShieldActive={player2ShieldActive}
                   gameState={gameStatus === 'playing' ? 'playing' : 'starting'}
+                  onPlayer1AttackComplete={() =>
+                    handleAttackAnimationComplete('player1')
+                  }
+                  onPlayer2AttackComplete={() =>
+                    handleAttackAnimationComplete('player2')
+                  }
+                  player1AttackVisible={player1AttackVisible}
+                  player2AttackVisible={player2AttackVisible}
+                  setPlayer1AttackVisible={setPlayer1AttackVisible}
+                  setPlayer2AttackVisible={setPlayer2AttackVisible}
+                  player1Explosion={player1Explosion}
+                  player2Explosion={player2Explosion}
+                  setPlayer1Explosion={setPlayer1Explosion}
+                  setPlayer2Explosion={setPlayer2Explosion}
                 />
 
                 {/* Game Controls */}

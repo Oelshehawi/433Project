@@ -14,6 +14,7 @@ interface PlayerProps {
   isVisible: boolean;
   animationState?: PlayerAnimationState;
   jumpHeight?: number;
+  towerHeight?: number; // Add prop for tower height
 }
 
 export default function Player({
@@ -22,6 +23,7 @@ export default function Player({
   isVisible,
   animationState = 'idle',
   jumpHeight = 0,
+  towerHeight = 0, // Default to 0 if not provided
 }: PlayerProps) {
   const isPlayer1 = playerId === 'player1';
   const playerNumber = isPlayer1 ? 1 : 2;
@@ -47,40 +49,52 @@ export default function Player({
 
   // Player-specific vertical adjustments
   const playerPositionClass = isPlayer1
-    ? 'bottom-28' // Player 1 needs to be positioned lower to match Player 2
-    : 'bottom-28'; // Player 2 position
+    ? 'bottom-32' // Player 1 needs to be positioned lower to match Player 2
+    : 'bottom-32'; // Player 2 position
 
   // Player-specific margin adjustments for the sprite
   const spriteMarginClass = isPlayer1
-    ? 'mb-0' // Player 1 needs more margin to push the sprite closer to the nametag
-    : 'mb-8'; // Player 2 margin
+    ? 'mb-6' // Player 1 needs more margin to push the sprite closer to the nametag
+    : 'mb-14'; // Player 2 margin
+
+  const BLOCK_HEIGHT = 40; // pixels
+
+  // Calculate position based on tower height
+  const towerOffset = towerHeight * BLOCK_HEIGHT;
 
   return (
-    <motion.div
-      className={`absolute z-10 ${playerPositionClass} ${
+    <div
+      className={`absolute z-10 ${
         isPlayer1 ? 'left-[25%]' : 'right-[25%]'
       } transform ${
         isPlayer1 ? '-translate-x-1/2' : 'translate-x-1/2'
-      } flex flex-col items-center`}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{
-        opacity: isVisible ? 1 : 0,
-        y: 0,
-        translateY: jumpHeight ? `-${jumpHeight}px` : '0px',
-      }}
-      transition={{
-        opacity: { duration: 0.3 },
-        y: { duration: 0.5 },
-        translateY: { duration: 0.2 },
-      }}
-      data-player-id={playerId}
-      data-animation-state={animationState}
-      style={{ zIndex: 10 }}
+      } ${playerPositionClass}`}
     >
-      {/* Player character animation */}
-      <div
+      {/* Player character animation - this moves with tower height */}
+      <motion.div
         className={`flex justify-center ${spriteMarginClass}`}
-        style={{ width: '100px', height: '100px' }}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{
+          opacity: isVisible ? 1 : 0,
+          y: 0,
+          bottom: `${towerOffset}px`, // Position player relative to tower height
+          translateY: jumpHeight ? `-${jumpHeight}px` : '0px',
+        }}
+        transition={{
+          opacity: { duration: 0.3 },
+          y: { duration: 0.5 },
+          bottom: { duration: 0.3 },
+          translateY: { duration: 0.2 },
+        }}
+        data-player-id={playerId}
+        data-animation-state={animationState}
+        style={{
+          position: 'absolute',
+          zIndex: 10,
+          width: '100px',
+          height: '100px',
+          bottom: `${16 + towerOffset}px`,
+        }}
       >
         <SpriteAnimation
           playerNumber={playerNumber}
@@ -89,9 +103,9 @@ export default function Player({
           height={100}
           className='object-contain'
         />
-      </div>
+      </motion.div>
 
-      {/* Name plate below player */}
+      {/* Name plate - stays fixed */}
       <div className='w-32 bg-gray-800/80 rounded-md flex flex-col items-center justify-center py-1 px-2 backdrop-blur-sm'>
         <span
           className={`text-sm font-medium ${
@@ -101,6 +115,6 @@ export default function Player({
           {displayName}
         </span>
       </div>
-    </motion.div>
+    </div>
   );
 }

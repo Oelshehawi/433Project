@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useCallback } from 'react';
 import GestureTowerTitle from './GestureTowerTitle';
 import RulesScroll from './RulesScroll';
+import { useSoundManager } from '../../lib/utils/SoundManager';
 
 interface GameAnimationProps {
   showTitleAnimation: boolean;
@@ -15,6 +16,23 @@ const GameAnimation: React.FC<GameAnimationProps> = ({
   onTitleAnimationComplete,
   onRulesAnimationComplete,
 }) => {
+  const { playBackgroundMusic, stopBackgroundMusic } = useSoundManager();
+
+  // Handle rules animation complete
+  const handleRulesAnimationComplete = useCallback(() => {
+    // Play background music once rules animation completes
+    playBackgroundMusic();
+    // Call the original completion handler
+    onRulesAnimationComplete();
+  }, [playBackgroundMusic, onRulesAnimationComplete]);
+
+  // Clean up when component unmounts
+  useEffect(() => {
+    return () => {
+      stopBackgroundMusic();
+    };
+  }, [stopBackgroundMusic]);
+
   return (
     <>
       {/* Title Animation */}
@@ -26,7 +44,7 @@ const GameAnimation: React.FC<GameAnimationProps> = ({
       {/* Rules Animation */}
       <RulesScroll
         isVisible={showRulesAnimation}
-        onAnimationComplete={onRulesAnimationComplete}
+        onAnimationComplete={handleRulesAnimationComplete}
       />
     </>
   );

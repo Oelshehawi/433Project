@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface ExplosionEffectProps {
   isVisible: boolean;
@@ -17,16 +17,48 @@ const ExplosionEffect: React.FC<ExplosionEffectProps> = ({
   const BLOCK_HEIGHT = 40; // pixels
   const BASE_HEIGHT = 15; // pixels
 
+  // Track animation timer
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Track if component was mounted
+  const isMountedRef = useRef(true);
+
+  // Cleanup function
+  const cleanup = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
   // Set timeout to call onAnimationComplete after animation finishes
   useEffect(() => {
-    if (isVisible) {
-      const timer = setTimeout(() => {
-        onAnimationComplete();
-      }, 500); // Match the CSS animation duration
+    // Reset timer when visibility changes
+    cleanup();
 
-      return () => clearTimeout(timer);
+    if (isVisible && isMountedRef.current) {
+      console.log(`[Explosion-${position}] Starting explosion animation`);
+      timerRef.current = setTimeout(() => {
+        if (isMountedRef.current) {
+          console.log(
+            `[Explosion-${position}] Animation complete, cleaning up`
+          );
+          onAnimationComplete();
+        }
+      }, 500); // Match the CSS animation duration
     }
-  }, [isVisible, onAnimationComplete]);
+
+    return cleanup;
+  }, [isVisible, onAnimationComplete, position]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      console.log(`[Explosion-${position}] Component unmounting`);
+      isMountedRef.current = false;
+      cleanup();
+    };
+  }, [position]);
 
   if (!isVisible) return null;
 
@@ -34,12 +66,12 @@ const ExplosionEffect: React.FC<ExplosionEffectProps> = ({
   const positionStyles =
     position === 'left'
       ? {
-          bottom: `${towerHeight * BLOCK_HEIGHT + BASE_HEIGHT + 20}px`,
+          bottom: `${towerHeight * BLOCK_HEIGHT + BASE_HEIGHT + 20 + 64}px`,
           left: '25%',
           transform: 'translate(-50%, 0)',
         }
       : {
-          bottom: `${towerHeight * BLOCK_HEIGHT + BASE_HEIGHT + 20}px`,
+          bottom: `${towerHeight * BLOCK_HEIGHT + BASE_HEIGHT + 20 + 64}px`,
           right: '25%',
           transform: 'translate(50%, 0)',
         };

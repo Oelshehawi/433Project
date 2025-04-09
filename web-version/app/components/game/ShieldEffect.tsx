@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 
 interface ShieldEffectProps {
   isActive: boolean;
@@ -13,6 +13,32 @@ const ShieldEffect = ({
   towerHeight,
   glowIntensity = 0,
 }: ShieldEffectProps) => {
+  // Add a useEffect for handling CSS animations
+  useEffect(() => {
+    if (isActive) {
+      // Add shield pulse animation to stylesheet if not exists
+      if (!document.getElementById('shield-animation-styles')) {
+        const styleSheet = document.createElement('style');
+        styleSheet.id = 'shield-animation-styles';
+        styleSheet.textContent = `
+          @keyframes shieldPulse {
+            0% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1); opacity: 0.8; }
+          }
+          @keyframes shieldReact {
+            0% { transform: scale(1); }
+            25% { transform: scale(1.2); }
+            50% { transform: scale(0.9); }
+            75% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+          }
+        `;
+        document.head.appendChild(styleSheet);
+      }
+    }
+  }, [isActive]);
+
   if (!isActive) return null;
 
   // Constants for positioning
@@ -23,12 +49,12 @@ const ShieldEffect = ({
   const positionStyles =
     position === 'left'
       ? {
-          bottom: `${towerHeight * BLOCK_HEIGHT + BASE_HEIGHT + 20}px`,
+          bottom: `${towerHeight * BLOCK_HEIGHT + BASE_HEIGHT + 20 + 64}px`,
           left: '25%',
           transform: 'translate(-50%, 0)',
         }
       : {
-          bottom: `${towerHeight * BLOCK_HEIGHT + BASE_HEIGHT + 20}px`,
+          bottom: `${towerHeight * BLOCK_HEIGHT + BASE_HEIGHT + 20 + 64}px`,
           right: '25%',
           transform: 'translate(50%, 0)',
         };
@@ -58,6 +84,7 @@ const ShieldEffect = ({
         border: `${2 + glowIntensity * 4}px solid rgba(186,104,255,${
           0.7 + glowIntensity * 0.3
         })`,
+        animation: 'shieldPulse 2s ease-in-out infinite',
       }}
     >
       {/* Pulsing effect inner circle - slightly visible in center */}

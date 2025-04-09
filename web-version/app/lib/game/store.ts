@@ -56,6 +56,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
   moveAnimations: [],
   pendingRoundNumber: null,
 
+  // Track animations played in current round
+  animationsPlayedInCurrentRound: {
+    player1: {
+      attack: false,
+      shield: false,
+      build: false,
+    },
+    player2: {
+      attack: false,
+      shield: false,
+      build: false,
+    },
+  },
+
   // Player character animation states
   player1Animation: 'idle',
   player2Animation: 'idle',
@@ -64,6 +78,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // Event logs
   eventLogs: [],
+  showDebugLogs: false, // Debug logs hidden by default
 
   // Loading state
   loading: false,
@@ -451,6 +466,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
       },
       moveAnimations: [],
       pendingRoundNumber: null,
+      animationsPlayedInCurrentRound: {
+        player1: {
+          attack: false,
+          shield: false,
+          build: false,
+        },
+        player2: {
+          attack: false,
+          shield: false,
+          build: false,
+        },
+      },
     });
     get().addEventLog('Game reset', 'System');
   },
@@ -515,6 +542,67 @@ export const useGameStore = create<GameStore>((set, get) => ({
     console.log('Debug - Event Listeners:');
     console.log('Current room:', state.currentRoom);
     console.log('Current round:', state.gameState?.roundNumber);
+  },
+
+  // Check if an animation has already been played in the current round
+  hasAnimationPlayedInCurrentRound: (
+    player: 'player1' | 'player2',
+    animationType: 'attack' | 'shield' | 'build'
+  ): boolean => {
+    const state = get();
+    return state.animationsPlayedInCurrentRound[player][animationType];
+  },
+
+  // Mark an animation as played in the current round
+  markAnimationAsPlayed: (
+    player: 'player1' | 'player2',
+    animationType: 'attack' | 'shield' | 'build'
+  ): void => {
+    set((state) => {
+      const updatedAnimationsPlayed = {
+        ...state.animationsPlayedInCurrentRound,
+        [player]: {
+          ...state.animationsPlayedInCurrentRound[player],
+          [animationType]: true,
+        },
+      };
+
+      return {
+        animationsPlayedInCurrentRound: updatedAnimationsPlayed,
+      };
+    });
+
+    get().addEventLog(
+      `Animation ${animationType} marked as played for ${player}`,
+      'Animation'
+    );
+  },
+
+  // Reset animations played in a round (call this at round start/end)
+  resetAnimationsPlayedInRound: (): void => {
+    set({
+      animationsPlayedInCurrentRound: {
+        player1: {
+          attack: false,
+          shield: false,
+          build: false,
+        },
+        player2: {
+          attack: false,
+          shield: false,
+          build: false,
+        },
+      },
+    });
+
+    get().addEventLog('Reset animations played in round', 'Animation');
+  },
+
+  // Toggle debug logs visibility
+  toggleDebugLogs: (): void => {
+    set((state) => ({
+      showDebugLogs: !state.showDebugLogs,
+    }));
   },
 }));
 
@@ -835,70 +923,136 @@ if (typeof window !== 'undefined') {
 
       // Set appropriate animation based on gesture
       if (normalizedGesture === 'attack') {
-        // Trigger attack animation with AttackAnimation component
-        state.setPlayerAnimation('player1', 'jump'); // Use 'jump' for attack
+        // Check if this animation has already been played in the current round
+        if (!state.hasAnimationPlayedInCurrentRound('player1', 'attack')) {
+          // Trigger attack animation with AttackAnimation component
+          state.setPlayerAnimation('player1', 'jump'); // Use 'jump' for attack
 
-        // Trigger the attack animation after a short delay
-        setTimeout(() => {
-          // Set attack animation visible flag
-          useGameStore.setState((prevState) => ({
-            ...prevState,
-            player1AttackVisible: true,
-          }));
-        }, 200);
+          // Trigger the attack animation after a short delay
+          setTimeout(() => {
+            // Set attack animation visible flag
+            useGameStore.setState((prevState) => ({
+              ...prevState,
+              player1AttackVisible: true,
+            }));
+          }, 200);
+
+          // Mark this animation as played for this round
+          state.markAnimationAsPlayed('player1', 'attack');
+        } else {
+          state.addEventLog(
+            'Attack animation already played for player1 this round, skipping',
+            'Animation'
+          );
+        }
       } else if (normalizedGesture === 'defend') {
-        state.setPlayerAnimation('player1', 'idle'); // No special animation for defend
+        // Check if this animation has already been played in the current round
+        if (!state.hasAnimationPlayedInCurrentRound('player1', 'shield')) {
+          state.setPlayerAnimation('player1', 'idle'); // No special animation for defend
 
-        // Activate shield
-        useGameStore.setState({ player1ShieldActive: true });
+          // Activate shield
+          useGameStore.setState({ player1ShieldActive: true });
+
+          // Mark this animation as played for this round
+          state.markAnimationAsPlayed('player1', 'shield');
+        } else {
+          state.addEventLog(
+            'Shield animation already played for player1 this round, skipping',
+            'Animation'
+          );
+        }
       } else if (normalizedGesture === 'build') {
-        state.setPlayerAnimation('player1', 'jump'); // Use jump animation for build
+        // Check if this animation has already been played in the current round
+        if (!state.hasAnimationPlayedInCurrentRound('player1', 'build')) {
+          state.setPlayerAnimation('player1', 'jump'); // Use jump animation for build
 
-        // Add jump effect for building
-        useGameStore.setState({ player1JumpHeight: 20 });
+          // Add jump effect for building
+          useGameStore.setState({ player1JumpHeight: 20 });
 
-        // After a delay, reset jump height and increase tower height
-        setTimeout(() => {
-          useGameStore.setState({
-            player1JumpHeight: 0,
-            // Tower height increase will be handled by game state update
-          });
-        }, 500);
+          // After a delay, reset jump height and increase tower height
+          setTimeout(() => {
+            useGameStore.setState({
+              player1JumpHeight: 0,
+              // Tower height increase will be handled by game state update
+            });
+          }, 500);
+
+          // Mark this animation as played for this round
+          state.markAnimationAsPlayed('player1', 'build');
+        } else {
+          state.addEventLog(
+            'Build animation already played for player1 this round, skipping',
+            'Animation'
+          );
+        }
       }
     } else {
       useGameStore.setState({ player2CardPlayed: displayGesture });
 
       // Set appropriate animation based on gesture
       if (normalizedGesture === 'attack') {
-        // Trigger attack animation with AttackAnimation component
-        state.setPlayerAnimation('player2', 'jump'); // Use 'jump' for attack
+        // Check if this animation has already been played in the current round
+        if (!state.hasAnimationPlayedInCurrentRound('player2', 'attack')) {
+          // Trigger attack animation with AttackAnimation component
+          state.setPlayerAnimation('player2', 'jump'); // Use 'jump' for attack
 
-        // Trigger the attack animation after a short delay
-        setTimeout(() => {
-          // Set attack animation visible flag
-          useGameStore.setState((prevState) => ({
-            ...prevState,
-            player2AttackVisible: true,
-          }));
-        }, 200);
+          // Trigger the attack animation after a short delay
+          setTimeout(() => {
+            // Set attack animation visible flag
+            useGameStore.setState((prevState) => ({
+              ...prevState,
+              player2AttackVisible: true,
+            }));
+          }, 200);
+
+          // Mark this animation as played for this round
+          state.markAnimationAsPlayed('player2', 'attack');
+        } else {
+          state.addEventLog(
+            'Attack animation already played for player2 this round, skipping',
+            'Animation'
+          );
+        }
       } else if (normalizedGesture === 'defend') {
-        state.setPlayerAnimation('player2', 'idle'); // No special animation for defend
+        // Check if this animation has already been played in the current round
+        if (!state.hasAnimationPlayedInCurrentRound('player2', 'shield')) {
+          state.setPlayerAnimation('player2', 'idle'); // No special animation for defend
 
-        // Activate shield
-        useGameStore.setState({ player2ShieldActive: true });
+          // Activate shield
+          useGameStore.setState({ player2ShieldActive: true });
+
+          // Mark this animation as played for this round
+          state.markAnimationAsPlayed('player2', 'shield');
+        } else {
+          state.addEventLog(
+            'Shield animation already played for player2 this round, skipping',
+            'Animation'
+          );
+        }
       } else if (normalizedGesture === 'build') {
-        state.setPlayerAnimation('player2', 'jump'); // Use jump animation for build
+        // Check if this animation has already been played in the current round
+        if (!state.hasAnimationPlayedInCurrentRound('player2', 'build')) {
+          state.setPlayerAnimation('player2', 'jump'); // Use jump animation for build
 
-        // Add jump effect for building
-        useGameStore.setState({ player2JumpHeight: 20 });
+          // Add jump effect for building
+          useGameStore.setState({ player2JumpHeight: 20 });
 
-        // After a delay, reset jump height and increase tower height
-        setTimeout(() => {
-          useGameStore.setState({
-            player2JumpHeight: 0,
-            // Tower height increase will be handled by game state update
-          });
-        }, 500);
+          // After a delay, reset jump height and increase tower height
+          setTimeout(() => {
+            useGameStore.setState({
+              player2JumpHeight: 0,
+              // Tower height increase will be handled by game state update
+            });
+          }, 500);
+
+          // Mark this animation as played for this round
+          state.markAnimationAsPlayed('player2', 'build');
+        } else {
+          state.addEventLog(
+            'Build animation already played for player2 this round, skipping',
+            'Animation'
+          );
+        }
       }
     }
 
@@ -1103,6 +1257,52 @@ if (typeof window !== 'undefined') {
       }
     } catch (error) {
       console.error('[game/store] Error processing room data:', error);
+    }
+  });
+
+  // Round start event - reset animation tracking
+  window.addEventListener('round_start', (event: CustomEventInit) => {
+    try {
+      const { roomId, roundNumber } = event.detail || {};
+      console.log('🔄 [game/store] Round start received:', {
+        roomId,
+        roundNumber,
+        timestamp: new Date().toISOString(),
+      });
+
+      const state = useGameStore.getState();
+
+      // Reset animations played for the new round
+      state.resetAnimationsPlayedInRound();
+      state.addEventLog(
+        `Reset animations for new round ${roundNumber}`,
+        'Animation'
+      );
+    } catch (error) {
+      console.error('🔴 [game/store] Error handling round start event:', error);
+    }
+  });
+
+  // Round end event - reset animation tracking
+  window.addEventListener('round_end', (event: CustomEventInit) => {
+    try {
+      const { roomId, roundNumber } = event.detail || {};
+      console.log('🔄 [game/store] Round end received:', {
+        roomId,
+        roundNumber,
+        timestamp: new Date().toISOString(),
+      });
+
+      const state = useGameStore.getState();
+
+      // Reset animations played for the round that just ended
+      state.resetAnimationsPlayedInRound();
+      state.addEventLog(
+        `Reset animations at end of round ${roundNumber}`,
+        'Animation'
+      );
+    } catch (error) {
+      console.error('🔴 [game/store] Error handling round end event:', error);
     }
   });
 }
