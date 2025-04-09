@@ -759,13 +759,13 @@ function setBeagleBoardReady(
   // Check if all players are ready to start the game
   const allPlayersReady = room.players.every((player) => player.isReady);
 
-  // TEMPORARY FOR TESTING: Allow games with just 1 BeagleBoard player
+  // Verify we have enough players (2 BeagleBoard players) for normal gameplay
   const beagleBoardPlayers = room.players.filter(
     (p) => p.playerType === 'beagleboard'
   ).length;
-  const hasEnoughPlayers = beagleBoardPlayers >= 1; // Changed from 2 to 1 for testing
+  const hasEnoughPlayers = beagleBoardPlayers >= 2;
   console.log(
-    `Room has ${beagleBoardPlayers} BeagleBoard player(s). TEST MODE: Starting with 1 player.`
+    `Room has ${beagleBoardPlayers} BeagleBoard player(s). Require 2 players for normal gameplay.`
   );
 
   const notPlaying = room.status !== 'playing';

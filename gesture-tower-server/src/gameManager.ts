@@ -10,8 +10,8 @@ import { sendToRoom } from './messaging';
 // Constants for game configuration
 const MIN_GOAL_HEIGHT = 5;
 const MAX_GOAL_HEIGHT = 10;
-// Set to 1 for TEST MODE (single player), or 2 for normal gameplay
-export const MIN_REQUIRED_PLAYERS = 1; // TOGGLE: 1 = test mode, 2 = normal mode
+// Set to 2 for normal gameplay (removing test mode)
+export const MIN_REQUIRED_PLAYERS = 2; // Normal gameplay mode requires 2 players
 
 // Track pending gestures for each room and round
 interface PendingGesture {
@@ -52,15 +52,6 @@ export function initializeGameState(roomId: string): boolean {
     return false;
   }
 
-  // Test mode is active if only 1 player and MIN_REQUIRED_PLAYERS is 1
-  const useTestMode =
-    beagleBoardPlayers.length === 1 && MIN_REQUIRED_PLAYERS === 1;
-  if (useTestMode) {
-    console.log(
-      `TEST MODE: Only 1 player detected. Creating virtual opponent.`
-    );
-  }
-
   // Create new game state
   const gameState: GameState = {
     towerHeights: new Map(),
@@ -96,22 +87,6 @@ export function initializeGameState(roomId: string): boolean {
       `Player ${player.name} (${player.id}) - Initial Tower: 0, Goal: ${goalHeight}`
     );
   });
-
-  // In TEST MODE, set up virtual opponent
-  if (useTestMode) {
-    const virtualOpponentId = 'virtual_opponent';
-    gameState.towerHeights.set(virtualOpponentId, 0);
-    const opponentGoalHeight = Math.floor(
-      Math.random() * (MAX_GOAL_HEIGHT - MIN_GOAL_HEIGHT + 1) + MIN_GOAL_HEIGHT
-    );
-    gameState.goalHeights.set(virtualOpponentId, opponentGoalHeight);
-    gameState.playerShields.set(virtualOpponentId, false);
-    gameState.playerMoves.set(virtualOpponentId, false);
-
-    console.log(
-      `Virtual opponent - Initial Tower: 0, Goal: ${opponentGoalHeight}`
-    );
-  }
 
   // Save game state to room
   room.gameState = gameState;
@@ -165,7 +140,7 @@ export function startRound(roomId: string): boolean {
   // First, create a new empty Map
   room.gameState.playerMoves = new Map();
 
-  // Get all players (both real and virtual)
+  // Get all players
   const beagleBoardPlayers = room.players.filter(
     (player) => player.playerType === 'beagleboard'
   );
@@ -177,20 +152,6 @@ export function startRound(roomId: string): boolean {
     );
     room.gameState!.playerMoves.set(player.id, false);
   });
-
-  // Check if we're in test mode
-  const useTestMode =
-    beagleBoardPlayers.length === 1 && MIN_REQUIRED_PLAYERS === 1;
-
-  // Reset virtual opponent if in test mode
-  if (useTestMode) {
-    console.log(
-      `Resetting move status for virtual_opponent to false for round ${
-        room.gameState!.roundNumber
-      }`
-    );
-    room.gameState!.playerMoves.set('virtual_opponent', false);
-  }
 
   console.log(`Room has ${beagleBoardPlayers.length} BeagleBoard players`);
   beagleBoardPlayers.forEach((player) => {
@@ -264,51 +225,6 @@ export function startRound(roomId: string): boolean {
   console.log(`Calling sendToRoom(${roomId}, "round_start", payload) now...`);
   sendToRoom(roomId, 'round_start', payload);
   console.log(`Sent round_start with included cards for room ${roomId}`);
-
-  // In TEST MODE, automatically generate a move for the virtual opponent after a delay
-  if (useTestMode) {
-    console.log(`TEST MODE: Scheduling virtual opponent move in 5-10 seconds`);
-
-    // Random delay between 5-10 seconds
-    const delay = Math.floor(Math.random() * 5000) + 5000;
-
-    setTimeout(() => {
-      if (rooms.has(roomId)) {
-        const currentRoom = rooms.get(roomId)!;
-
-        // Make sure the room still exists and is in the same round
-        if (
-          currentRoom &&
-          currentRoom.gameState &&
-          currentRoom.gameState.roundNumber === room.gameState!.roundNumber
-        ) {
-          console.log(
-            `TEST MODE: Virtual opponent making a move in room ${roomId}, round ${currentRoom.gameState.roundNumber}`
-          );
-
-          // Generate a random move for the virtual opponent
-          const actions: GameActionType[] = ['attack', 'defend', 'build'];
-          const randomAction =
-            actions[Math.floor(Math.random() * actions.length)];
-          const randomConfidence = Math.random() * 0.5 + 0.5; // 0.5-1.0
-
-          // Process the virtual opponent's action
-          processAction(
-            roomId,
-            'virtual_opponent',
-            randomAction,
-            randomConfidence
-          );
-
-          console.log(
-            `TEST MODE: Virtual opponent chose action: ${randomAction} with confidence ${randomConfidence.toFixed(
-              2
-            )}`
-          );
-        }
-      }
-    }, delay);
-  }
 
   // We no longer need to send separate beagle_board_command events for cards
   // as they're now included in the round_start event
@@ -463,53 +379,7 @@ export function checkWinCondition(roomId: string): {
     }
   }
 
-  // Get real players (not virtual opponent)
-  const beagleBoardPlayers = room.players.filter(
-    (player) => player.playerType === 'beagleboard'
-  );
-
-  // TESTING MODE: Handle virtual opponent for single player mode
-  if (beagleBoardPlayers.length === 1) {
-    const realPlayer = beagleBoardPlayers[0];
-    const realPlayerTowerHeight =
-      room.gameState.towerHeights.get(realPlayer.id) || 0;
-    const realPlayerGoalHeight =
-      room.gameState.goalHeights.get(realPlayer.id) || 0;
-    const virtualOpponentTowerHeight =
-      room.gameState.towerHeights.get('virtual_opponent') || 0;
-    const virtualOpponentGoalHeight =
-      room.gameState.goalHeights.get('virtual_opponent') || 0;
-
-    console.log(
-      `TESTING MODE: Player ${realPlayer.name} - Tower: ${realPlayerTowerHeight}/${realPlayerGoalHeight}`
-    );
-    console.log(
-      `TESTING MODE: Virtual opponent - Tower: ${virtualOpponentTowerHeight}/${virtualOpponentGoalHeight}`
-    );
-
-    // Only return a winner if a player has reached their goal height
-    // Do NOT end the game if tower height is 0 - that's the starting value!
-    if (realPlayerTowerHeight >= realPlayerGoalHeight) {
-      console.log(
-        `TESTING MODE: Player ${realPlayer.name} won by reaching goal height!`
-      );
-      return { winningPlayerId: realPlayer.id, shouldContinue: true };
-    }
-
-    if (virtualOpponentTowerHeight >= virtualOpponentGoalHeight) {
-      console.log(
-        `TESTING MODE: Virtual opponent won by reaching goal height!`
-      );
-      return { winningPlayerId: 'virtual_opponent', shouldContinue: true };
-    }
-
-    return { winningPlayerId: null, shouldContinue: true };
-  }
-
-  // Regular multiplayer mode
-  // We should remove the old logic that ends the game if a player's tower is 0
-  // since that's the starting height - makes no sense!
-
+  // Nobody has reached their goal height yet
   return { winningPlayerId: null, shouldContinue: true };
 }
 
@@ -658,11 +528,8 @@ export function processAction(
     (player) => player.playerType === 'beagleboard'
   );
 
-  // In test mode with 1 player, we expect 2 gestures (real player + virtual opponent)
-  // In regular mode, we expect one gesture from each real player
-  const useTestMode =
-    beagleBoardPlayers.length === 1 && MIN_REQUIRED_PLAYERS === 1;
-  const expectedGestures = useTestMode ? 2 : beagleBoardPlayers.length;
+  // We expect one gesture from each real player
+  const expectedGestures = beagleBoardPlayers.length;
 
   console.log(
     `[gameManager.ts] Have ${roundGestures.length}/${expectedGestures} gestures for round ${currentRound}`
@@ -733,11 +600,6 @@ export function processAction(
     playersMoved.forEach((playerId) => {
       room.gameState!.playerMoves.set(playerId, true);
     });
-
-    // In single player test mode, mark the virtual opponent as having moved too
-    if (useTestMode) {
-      room.gameState.playerMoves.set('virtual_opponent', true);
-    }
 
     // Send updated game state to clients with detailed gesture information
     sendToRoom(roomId, 'game_state_update' as ServerEventType, {
@@ -810,23 +672,13 @@ function applyGestureEffect(
     (player) => player.playerType === 'beagleboard'
   );
 
-  // Determine if we're in single player test mode
-  const useTestMode =
-    beagleBoardPlayers.length === 1 && MIN_REQUIRED_PLAYERS === 1;
-
   // Get the target player ID (the opponent)
   let targetPlayerId: string | null = null;
 
   if (beagleBoardPlayers.length >= 2) {
-    // In multiplayer mode, find the opponent
+    // Find the opponent (the player that isn't the current player)
     targetPlayerId =
       beagleBoardPlayers.find((p) => p.id !== playerId)?.id || null;
-  } else if (useTestMode) {
-    // In test mode, use virtual opponent or the real player
-    targetPlayerId =
-      playerId === 'virtual_opponent'
-        ? beagleBoardPlayers[0].id
-        : 'virtual_opponent';
   }
 
   if (!targetPlayerId) {
