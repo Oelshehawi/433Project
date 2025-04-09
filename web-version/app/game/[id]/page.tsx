@@ -9,6 +9,7 @@ import {
   isSocketHealthy,
   sendMessage,
 } from '../../lib/websocket';
+import { useSoundManager } from '../../lib/utils/SoundManager';
 
 // Import CSS animations
 import '../../styles/animations.css';
@@ -393,6 +394,34 @@ export default function GamePage() {
     }
   }, [socketConnected, connectionRetries]);
 
+  // Find the useEffect hook that handles game state changes
+  useEffect(() => {
+    if (gameStatus === 'playing' && !isGameEnded && !animationState.isAnimating) {
+      // If animations are complete, make sure to play background music
+      if (animationState.animationComplete) {
+        const { playBackgroundMusic } = useSoundManager();
+        playBackgroundMusic();
+      }
+    }
+  }, [gameStatus, isGameEnded, animationState.isAnimating, animationState.animationComplete]);
+
+  // Add cleanup for background music when component unmounts
+  useEffect(() => {
+    // Clean up when component unmounts
+    return () => {
+      const { stopBackgroundMusic } = useSoundManager();
+      stopBackgroundMusic();
+    };
+  }, []);
+
+  // Stop background music when game ends
+  useEffect(() => {
+    if (isGameEnded) {
+      const { stopBackgroundMusic } = useSoundManager();
+      stopBackgroundMusic();
+    }
+  }, [isGameEnded]);
+
   // Helper function to get player name by ID
   const getPlayerNameById = (playerId: string): string => {
     if (!currentRoom) return playerId;
@@ -438,14 +467,14 @@ export default function GamePage() {
               playerId='player1'
               name={player1Name}
               isVisible={true}
-              animationState={player1Animation as PlayerAnimationState}
+              animationState={player1Animation || 'idle'}
               jumpHeight={player1JumpHeight}
             />
             <Player
               playerId='player2'
               name={player2Name}
               isVisible={true}
-              animationState={player2Animation as PlayerAnimationState}
+              animationState={player2Animation || 'idle'}
               jumpHeight={player2JumpHeight}
             />
 
