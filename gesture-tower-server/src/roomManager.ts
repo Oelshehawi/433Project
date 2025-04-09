@@ -157,17 +157,26 @@ export function handleRoundStartEvent(client: ExtendedWebSocket, payload: any) {
     return;
   }
 
-  // Check if the requested round number matches the current round
+  // Get the current round from server state
   const currentRound = room.gameState.roundNumber;
-  if (roundNumber && roundNumber !== currentRound) {
-    console.warn(
-      `Round number mismatch: client requested ${roundNumber}, server is at ${currentRound}`
+
+  // Important: If the client is requesting the next round, we should advance the server's round number
+  if (roundNumber && roundNumber > currentRound) {
+    console.log(
+      `Advancing round in room ${roomId} from ${currentRound} to ${roundNumber}`
     );
-    // Still proceed with the current round
+    room.gameState.roundNumber = roundNumber;
+  } else if (roundNumber && roundNumber !== currentRound) {
+    console.warn(
+      `Round number mismatch: client requested ${roundNumber}, server is at ${currentRound}. Using client's requested round.`
+    );
+    room.gameState.roundNumber = roundNumber;
   }
 
+  // Use the updated round number
+  const roundToStart = room.gameState.roundNumber;
   console.log(
-    `Starting round ${currentRound} in room ${roomId} at client request`
+    `Starting round ${roundToStart} in room ${roomId} at client request`
   );
 
   // Now we can start the round
@@ -905,14 +914,6 @@ export const handleRoundEndAck = (
 
   // Get the current round number
   const currentRoundNumber = room.gameState?.roundNumber || 0;
-
-  // Check if the round number matches
-  if (roundNumber !== currentRoundNumber - 1) {
-    console.warn(
-      `Round number mismatch: got ack for round ${roundNumber} but current round is ${currentRoundNumber}`
-    );
-    // We'll still process the ack because it's coming from the BeagleBoard
-  }
 
   // Forward ack to web client with next round info
   const forwardPayload = {
