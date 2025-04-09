@@ -91,6 +91,14 @@ export function handleGameReady(client: ExtendedWebSocket, payload: any) {
   // Get the room
   const room = rooms.get(roomId)!;
 
+  // Check if the room is already marked as ready - prevent duplicate processing
+  if (webClientReadyRooms.has(roomId)) {
+    console.log(
+      `Room ${roomId} already marked as ready, ignoring duplicate game_ready`
+    );
+    return;
+  }
+
   // Mark this room as having received the game_ready signal
   webClientReadyRooms.add(roomId);
   console.log(`Room ${roomId} marked as ready to start first round`);
@@ -129,6 +137,7 @@ export function handleGameReady(client: ExtendedWebSocket, payload: any) {
 
 // New function to handle round_start event from client
 export function handleRoundStartEvent(client: ExtendedWebSocket, payload: any) {
+  console.log('Processing round_start event');
   const { roomId, roundNumber } = payload;
 
   console.log(
@@ -160,17 +169,39 @@ export function handleRoundStartEvent(client: ExtendedWebSocket, payload: any) {
   // Get the current round from server state
   const currentRound = room.gameState.roundNumber;
 
-  // Important: If the client is requesting the next round, we should advance the server's round number
-  if (roundNumber && roundNumber > currentRound) {
+  // Validate round numbers more strictly
+  if (roundNumber === undefined) {
+    // If no round number provided, just use current
+    console.log(
+      `No round number specified, using current round ${currentRound}`
+    );
+  } else if (roundNumber > currentRound) {
+    // Valid advancement to next round
     console.log(
       `Advancing round in room ${roomId} from ${currentRound} to ${roundNumber}`
     );
     room.gameState.roundNumber = roundNumber;
-  } else if (roundNumber && roundNumber !== currentRound) {
-    console.warn(
-      `Round number mismatch: client requested ${roundNumber}, server is at ${currentRound}. Using client's requested round.`
+  } else if (roundNumber < currentRound) {
+    // Invalid regression to earlier round
+    console.error(
+      `Invalid round regression: client requested ${roundNumber}, but server is already at ${currentRound}`
     );
-    room.gameState.roundNumber = roundNumber;
+
+    // Send an error message to the client
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(
+        JSON.stringify({
+          event: 'error',
+          payload: {
+            message: `Cannot start round ${roundNumber}, already at round ${currentRound}`,
+          },
+        })
+      );
+    }
+    return; // Do not proceed with starting an earlier round
+  } else if (roundNumber === currentRound) {
+    // Same round, this is okay for the first round, but may be a duplicate for later rounds
+    console.log(`Client requested current round ${roundNumber}`);
   }
 
   // Use the updated round number

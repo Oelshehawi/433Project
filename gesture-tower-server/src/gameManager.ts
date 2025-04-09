@@ -140,8 +140,6 @@ export function initializeGameState(roomId: string): boolean {
     message: 'Game initialized, waiting for web client ready signal',
   });
 
-  // Don't start the first round automatically
-  // It will be started when the web client sends the game_ready signal
   console.log(
     `Game state initialized for room ${roomId}. Waiting for web client to be ready before starting first round.`
   );

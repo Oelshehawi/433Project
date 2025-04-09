@@ -436,17 +436,10 @@ if (typeof window !== 'undefined') {
   // Game state update event
   window.addEventListener('game_state_update', (event: CustomEventInit) => {
     try {
-      const {
-        gameState,
-        message,
-        allGesturesReceived,
-        playerGestureSummary,
-      } = event.detail || {};
+      const { gameState, message, allGesturesReceived, playerGestureSummary } =
+        event.detail || {};
       console.log('🟣 [game/store] Game state update received:', gameState);
-      console.log(
-        '🟣 [game/store] Message:',
-        message,
-      );
+      console.log('🟣 [game/store] Message:', message);
 
       if (allGesturesReceived) {
         console.log(
@@ -578,6 +571,18 @@ if (typeof window !== 'undefined') {
 
       const state = useGameStore.getState();
       const currentStatus = state.gameStatus;
+
+      // VALIDATE: Ensure the round number is valid - don't accept round numbers
+      // less than the current round number (avoid regression)
+      if (
+        state.roundData.roundNumber > 1 &&
+        roundNumber < state.roundData.roundNumber
+      ) {
+        console.error(
+          `🚨 [game/store] INVALID ROUND START: Server sent round ${roundNumber} but we're already on round ${state.roundData.roundNumber}`
+        );
+        return; // Reject invalid round transitions
+      }
 
       // CRITICAL FIX: Force transition to playing state
       console.log(
