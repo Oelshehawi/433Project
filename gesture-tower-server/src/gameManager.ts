@@ -629,12 +629,6 @@ export function processAction(
         `[gameManager.ts] All players have moved in round ${currentRound}, waiting for web client to signal round_end`
       );
 
-      // NOTE: The following code is commented out since we now wait for web client to end the round
-      // Clear pending gestures for this round
-      // roomGestures.delete(currentRound);
-
-      // Don't call endRound here anymore
-      // endRound(roomId);
     }
 
     return true;

@@ -52,6 +52,9 @@ public:
     // Setter methods for circular dependency resolution
     void setRoomManager(RoomManager* rm) { roomManager = rm; }
     void setDisplayManager(DisplayManager* dm) { displayManager = dm; }
+    
+    // Getter for displayManager
+    DisplayManager* getDisplayManager() const { return displayManager; }
 
     // Timer management
     void startTimerThread();

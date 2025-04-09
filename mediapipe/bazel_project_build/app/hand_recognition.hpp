@@ -4,6 +4,12 @@
 #include <opencv2/core/core.hpp>
 #include "absl/status/status.h"
 
+// Forward declarations for MediaPipe types
+namespace mediapipe {
+class NormalizedLandmarkList;
+class NormalizedLandmark;
+}
+
 class handPosition {
 public:
     bool hand_visible = false;
@@ -32,3 +38,14 @@ public:
 };
 
 absl::Status hand_analyze_image(cv::Mat image, handPosition* hand_pos);
+
+// Declaration for the hand landmarks processing function (implementation details hidden)
+void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list, handPosition* ret);
+
+// Declaration for the thumb angle calculation function (implementation details hidden)
+float calculateThumbAngle(
+    const mediapipe::NormalizedLandmark& thumb_tip,
+    const mediapipe::NormalizedLandmark& thumb_high,
+    const mediapipe::NormalizedLandmark& thumb_low,
+    const mediapipe::NormalizedLandmark& thumb_bot,
+    const mediapipe::NormalizedLandmark& hand_base);
