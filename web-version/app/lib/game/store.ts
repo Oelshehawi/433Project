@@ -774,13 +774,11 @@ if (typeof window !== 'undefined') {
   // Round end acknowledgment event
   window.addEventListener('round_end_ack', (event: CustomEventInit) => {
     try {
-      const { roomId, playerId, roundNumber, nextRoundNumber } =
-        event.detail || {};
+      const { roomId, playerId, roundNumber } = event.detail || {};
       console.log('🔄 [game/store] Round end acknowledgment received:', {
         roomId,
         playerId,
         roundNumber,
-        nextRoundNumber,
         timestamp: new Date().toISOString(),
       });
 
@@ -807,51 +805,26 @@ if (typeof window !== 'undefined') {
         'System'
       );
 
-      // If nextRoundNumber is provided, we should prepare for that round
-      if (nextRoundNumber) {
-        console.log(`🎮 [game/store] Preparing for round ${nextRoundNumber}`);
+      // Let the page component handle sending round_start for next round
+      // We just need to update our internal state to be ready for it
 
-        // Reset card played states for next round
-        useGameStore.setState({
-          player1CardPlayed: undefined,
-          player2CardPlayed: undefined,
-          roundData: {
-            ...state.roundData,
-            roundNumber: nextRoundNumber,
-            isTransitioning: false,
-          },
-        });
+      // Calculate the next round number
+      const nextRoundNumber = roundNumber + 1;
 
-        // Send round_start event to server after a short delay
-        setTimeout(() => {
-          console.log(
-            `🎮 [game/store] Sending round_start for round ${nextRoundNumber}`
-          );
+      // Reset card played states for next round
+      useGameStore.setState({
+        player1CardPlayed: undefined,
+        player2CardPlayed: undefined,
+        roundData: {
+          ...state.roundData,
+          isTransitioning: true, // Set transitioning to prevent duplicate round starts
+        },
+      });
 
-          import('../websocket').then(({ sendMessage }) => {
-            sendMessage('round_start', {
-              roomId: state.currentRoom,
-              roundNumber: nextRoundNumber,
-            })
-              .then(() => {
-                console.log(
-                  `✅ [game/store] round_start for round ${nextRoundNumber} successfully sent`
-                );
-                state.addEventLog(
-                  `Starting round ${nextRoundNumber}`,
-                  'System'
-                );
-              })
-              .catch((err) => {
-                console.error(
-                  '🔴 [game/store] Failed to send round_start:',
-                  err
-                );
-                state.addEventLog('Failed to start next round', 'Error');
-              });
-          });
-        }, 1000);
-      }
+      state.addEventLog(
+        `Round ${roundNumber} complete, waiting for round ${nextRoundNumber}`,
+        'System'
+      );
     } catch (error) {
       console.error(
         '🔴 [game/store] Error processing round end acknowledgment:',

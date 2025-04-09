@@ -38,6 +38,10 @@ export default function GamePage() {
   const gameReadySent = useRef(false);
   const userClickedX = useRef(false);
 
+  // Add these new refs to track round state
+  const roundStartMap = useRef(new Map()); // Map to track which rounds we've already sent start events for
+  const processingRoundStart = useRef(false); // Flag to prevent concurrent round_start processing
+
   // Use the game store
   const {
     initialize,
@@ -62,10 +66,116 @@ export default function GamePage() {
     roundEndMessage,
     eventLogs,
     clearEventLogs,
-    readyForNextRound,
     pendingRoundNumber,
     requestGameState,
   } = useGameStore();
+
+  // Create a centralized function to send round_start events
+  const sendRoundStart = async (roomId: string, roundNumber: number) => {
+    // Prevent duplicate/concurrent requests for the same round
+    if (
+      processingRoundStart.current ||
+      roundStartMap.current.has(roundNumber)
+    ) {
+      console.log(
+        `🔄 [GamePage] Already sent/processing round_start for round ${roundNumber}`
+      );
+      return;
+    }
+
+    try {
+      console.log(`🚀 [GamePage] Sending round_start for round ${roundNumber}`);
+      processingRoundStart.current = true;
+
+      // Mark this round as being started
+      roundStartMap.current.set(roundNumber, true);
+
+      // For round 1, also update roundStartSent state
+      if (roundNumber === 1) {
+        setRoundStartSent(true);
+      }
+
+      // Import and use the sendMessage function
+      const { sendMessage } = await import('../../lib/websocket');
+      await sendMessage('round_start', { roomId, roundNumber });
+
+      console.log(
+        `✅ [GamePage] round_start for round ${roundNumber} sent successfully`
+      );
+
+      // After round_start is sent successfully for round 1, request game state
+      if (roundNumber === 1) {
+        setTimeout(() => {
+          console.log('🚀 [GamePage] Requesting game state after round_start');
+          requestGameState();
+        }, 500);
+      }
+    } catch (err) {
+      console.error(
+        `🔴 [GamePage] Error sending round_start for round ${roundNumber}:`,
+        err
+      );
+      // Remove from map so we can retry
+      roundStartMap.current.delete(roundNumber);
+    } finally {
+      processingRoundStart.current = false;
+    }
+  };
+
+  // Custom handler for rules animation completion
+  const handleRulesAnimationComplete = () => {
+    console.log('🎮 [GamePage] User clicked X to close rules animation');
+    userClickedX.current = true;
+    setAnimationComplete('rulesAnimationComplete', true);
+
+    // Send game_ready directly when the user clicks X
+    if (isSocketHealthy() && !gameReadySent.current && roomId) {
+      console.log(
+        '🚀 [GamePage] Sending game_ready immediately after user click'
+      );
+      gameReadySent.current = true;
+
+      import('../../lib/websocket').then(({ sendMessage }) => {
+        sendMessage('game_ready', { roomId })
+          .then(() => {
+            console.log(
+              '✅ [GamePage] game_ready sent successfully on modal close'
+            );
+            // Add a small delay before sending round_start
+            setTimeout(() => {
+              // Only send round_start if not already sent
+              if (!roundStartSent) {
+                console.log('🚀 [GamePage] Sending initial round_start event');
+                sendMessage('round_start', { roomId, roundNumber: 1 })
+                  .then(() => {
+                    console.log('✅ [GamePage] round_start sent successfully');
+                    setRoundStartSent(true);
+
+                    // Request game state after round_start is sent
+                    setTimeout(() => {
+                      console.log(
+                        '🚀 [GamePage] Requesting game state after round_start'
+                      );
+                      requestGameState();
+                    }, 500);
+                  })
+                  .catch((err) => {
+                    console.error(
+                      '🔴 [GamePage] Error sending round_start:',
+                      err
+                    );
+                  });
+              }
+            }, 500);
+          })
+          .catch((err) => {
+            console.error('🔴 [GamePage] Error sending game_ready:', err);
+            // If we failed to send, allow retrying
+            gameReadySent.current = false;
+          });
+      });
+    }
+  };
 
   // Immediately verify connection status when page loads
   useEffect(() => {
@@ -175,19 +285,22 @@ export default function GamePage() {
             event.detail
           );
 
-          // Calculate next round number
+          // Calculate next round number - EXPLICITLY add 1 to current round
           const nextRoundNumber = roundNumber + 1;
 
-          // Send round_start event for the next round
           console.log(
             `🟢 [GamePage] Sending round_start for round ${nextRoundNumber}`
           );
 
-          sendMessage('round_start', {
-            roomId,
-            roundNumber: nextRoundNumber,
-          }).catch((err) => {
-            console.error('🔴 [GamePage] Error sending round_start:', err);
+          // Use imported sendMessage to ensure it's available
+          import('../../lib/websocket').then(({ sendMessage }) => {
+            // Send round_start event for the next round - ENSURE THE ROUND NUMBER IS INCREMENTED
+            sendMessage('round_start', {
+              roomId,
+              roundNumber: nextRoundNumber, // This is the key fix - always use nextRoundNumber
+            }).catch((err) => {
+              console.error('🔴 [GamePage] Error sending round_start:', err);
+            });
           });
         } catch (error) {
           console.error('🔴 [GamePage] Error handling round_end_ack:', error);
@@ -202,7 +315,7 @@ export default function GamePage() {
         window.removeEventListener('round_end_ack', handleRoundEndAck);
       };
     }
-  }, [roomId, initialize, connectionRetries]);
+  }, [roomId, initialize, connectionRetries, requestGameState]);
 
   // Handle player name updates when room data is available
   useEffect(() => {
@@ -227,77 +340,14 @@ export default function GamePage() {
   useEffect(() => {
     if (pendingRoundNumber && !roundData.isTransitioning) {
       console.log(
-        `🟢 [GamePage] Ready for round ${pendingRoundNumber}, signaling to server`
+        `🟢 [GamePage] Ready for round ${pendingRoundNumber}, sending round_start`
       );
-      readyForNextRound(pendingRoundNumber);
-    } else if (pendingRoundNumber && roundData.isTransitioning) {
-      console.log(
-        `🟡 [GamePage] Pending round ${pendingRoundNumber} but still transitioning, waiting...`
-      );
-    }
-  }, [pendingRoundNumber, roundData.isTransitioning, readyForNextRound]);
-
-  // Custom handler for rules animation completion
-  const handleRulesAnimationComplete = () => {
-    // Only if we haven't processed this click before
-    if (!userClickedX.current) {
-      console.log('🎮 [GamePage] User clicked X to close rules animation');
-      userClickedX.current = true;
-      setAnimationComplete('rulesAnimationComplete', true);
-
-      // Send game_ready directly when the user clicks X
-      if (isSocketHealthy() && !gameReadySent.current && roomId) {
-        console.log(
-          '🚀 [GamePage] Sending game_ready immediately after user click'
-        );
-        gameReadySent.current = true;
-
-        import('../../lib/websocket').then(({ sendMessage }) => {
-          sendMessage('game_ready', { roomId })
-            .then(() => {
-              console.log(
-                '✅ [GamePage] game_ready sent successfully on modal close'
-              );
-              // Add a small delay before sending round_start
-              setTimeout(() => {
-                // Only send round_start if not already sent
-                if (!roundStartSent) {
-                  console.log(
-                    '🚀 [GamePage] Sending initial round_start event'
-                  );
-                  sendMessage('round_start', { roomId, roundNumber: 1 })
-                    .then(() => {
-                      console.log(
-                        '✅ [GamePage] round_start sent successfully'
-                      );
-                      setRoundStartSent(true);
-
-                      // Request game state after round_start is sent
-                      setTimeout(() => {
-                        console.log(
-                          '🚀 [GamePage] Requesting game state after round_start'
-                        );
-                        requestGameState();
-                      }, 500);
-                    })
-                    .catch((err) => {
-                      console.error(
-                        '🔴 [GamePage] Error sending round_start:',
-                        err
-                      );
-                    });
-                }
-              }, 500);
-            })
-            .catch((err) => {
-              console.error('🔴 [GamePage] Error sending game_ready:', err);
-              // If we failed to send, allow retrying
-              gameReadySent.current = false;
-            });
-        });
+      // Send round_start for the pending round
+      if (roomId) {
+        sendRoundStart(roomId, pendingRoundNumber);
       }
     }
-  };
+  }, [pendingRoundNumber, roundData.isTransitioning, roomId]);
 
   // Modify the useEffect that was handling game_ready to remove the duplicate sends
   useEffect(() => {
@@ -307,22 +357,7 @@ export default function GamePage() {
     console.log(
       `🌟 [GamePage] Transition state: ${roundData.isTransitioning}, Pending round: ${pendingRoundNumber}`
     );
-
-    // IMPORTANT: We've moved the game_ready and round_start logic directly to the
-    // handleRulesAnimationComplete function to ensure it only happens on direct user action
-
-    // Only handle pending round transitions here, not initial game_ready
-    if (
-      pendingRoundNumber &&
-      !roundData.isTransitioning &&
-      pendingRoundNumber > 1
-    ) {
-      console.log(
-        `🟢 [GamePage] Ready for round ${pendingRoundNumber}, signaling to server`
-      );
-      readyForNextRound(pendingRoundNumber);
-    }
-  }, [gameStatus, roundData, pendingRoundNumber, readyForNextRound]);
+  }, [gameStatus, roundData, pendingRoundNumber]);
 
   // Add automatic connection retry
   useEffect(() => {
