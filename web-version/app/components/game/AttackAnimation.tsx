@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Image from 'next/image';
 
 interface AttackAnimationProps {
@@ -8,66 +8,190 @@ interface AttackAnimationProps {
   targetTowerHeight: number;
 }
 
+const AnimationDebug = {
+  log: (player: string, message: string) => {
+    console.log(`[Attack-${player}] ${message}`);
+  },
+};
+
 const AttackAnimation: React.FC<AttackAnimationProps> = ({
   player,
   isVisible,
   onAnimationComplete,
   targetTowerHeight,
 }) => {
-  const [position, setPosition] = useState({ x: 0, y: 0 });
+  // Generate a unique ID for this component instance
+  const instanceId = useRef(
+    `${player}-${Math.random().toString(36).substring(2, 9)}`
+  );
 
-  // Constants
+  // Use useState instead of refs for position to ensure proper rendering
+  const [position, setPosition] = useState({
+    x: player === 'player1' ? 25 : 75,
+    y: 0,
+  });
+
+  // Track whether this animation instance has completed
+  const hasCompletedRef = useRef(false);
+
+  // Keep reference to the animation interval
+  const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Keep reference to completion timeout
+  const completionTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Track whether animation has started to prevent multiple starts
+  const animationStartedRef = useRef(false);
+
+  // Track if component is mounted
+  const isMountedRef = useRef(true);
+
+  // Constants for positioning
   const BLOCK_HEIGHT = 40; // pixels
   const BASE_HEIGHT = 15; // pixels
-  const PLAYER_HEIGHT_OFFSET = 100; // Higher starting point for the projectile
 
+  // Log debug information
+  const logDebug = (message: string) => {
+    AnimationDebug.log(instanceId.current, message);
+  };
+
+  // Cleanup function to ensure proper state on unmount
+  const cleanupAnimation = () => {
+    if (animationIntervalRef.current) {
+      logDebug(`Cleaning up animation interval`);
+      clearInterval(animationIntervalRef.current);
+      animationIntervalRef.current = null;
+    }
+
+    if (completionTimerRef.current) {
+      logDebug(`Cleaning up completion timer`);
+      clearTimeout(completionTimerRef.current);
+      completionTimerRef.current = null;
+    }
+  };
+
+  // Safe completion handler that ensures we only complete once
+  const handleAnimationComplete = () => {
+    if (!hasCompletedRef.current && isMountedRef.current) {
+      logDebug(`Calling onAnimationComplete`);
+      hasCompletedRef.current = true;
+      // Double-check visibility before calling
+      if (isVisible) {
+        onAnimationComplete(player);
+      }
+    }
+  };
+
+  // Unmount cleanup
   useEffect(() => {
-    if (!isVisible) return;
+    return () => {
+      logDebug(`Component unmounting, cleaning up resources`);
+      isMountedRef.current = false;
+      cleanupAnimation();
+    };
+  }, []);
+
+  // Run animation effect once when component becomes visible
+  useEffect(() => {
+    // Only run animation if component is visible and we haven't already completed or started
+    if (
+      !isVisible ||
+      hasCompletedRef.current ||
+      animationStartedRef.current ||
+      !isMountedRef.current
+    ) {
+      return;
+    }
+
+    // Mark as started to prevent duplicate animations
+    animationStartedRef.current = true;
+
+    logDebug(`Starting animation (isVisible=${isVisible})`);
 
     // Starting position
     const startX = player === 'player1' ? 25 : 75;
     const targetX = player === 'player1' ? 75 : 25;
 
-    // Calculate position to target middle of player
-    const targetY = targetTowerHeight * BLOCK_HEIGHT + BASE_HEIGHT + 60; // 60px additional offset for player height
+    // Calculate target position
+    const targetY = targetTowerHeight * BLOCK_HEIGHT + BASE_HEIGHT + 60 + 64;
     const targetYPercent = (targetY / window.innerHeight) * 100;
 
+    // Set initial position
     setPosition({ x: startX, y: 0 });
 
-    // Animate bomb
+    // Time settings
     const duration = 1500; // 1.5 seconds
     const startTime = Date.now();
 
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
+    // Clear any existing interval and timers
+    cleanupAnimation();
+
+    // Use a single interval for the animation instead of requestAnimationFrame
+    // This is more reliable across browsers and simpler to manage
+    animationIntervalRef.current = setInterval(() => {
+      if (!isMountedRef.current) {
+        cleanupAnimation();
+        return;
+      }
+
+      const now = Date.now();
+      const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
 
-      // Calculate x position - linear path
+      // Calculate current position
       const x = startX + (targetX - startX) * progress;
-
-      // Calculate y position - combine parabolic arc with linear rise to target
-      const arcComponent = -4 * progress * (progress - 1) * 100; // High arc
-      const linearComponent = progress * targetYPercent; // Linear rise to target height
-
-      // Combined trajectory
+      const arcComponent = -4 * progress * (progress - 1) * 100; // Parabolic arc
+      const linearComponent = progress * targetYPercent; // Linear rise
       const y = linearComponent + arcComponent;
 
+      // Update position
       setPosition({ x, y });
 
-      if (progress < 1) {
-        requestAnimationFrame(animate);
-      } else {
-        // Animation is complete
-        setTimeout(() => {
-          onAnimationComplete(player);
-        }, 100); // Brief pause at target for visual effect
-      }
-    };
+      // Check if animation is complete
+      if (progress >= 1) {
+        logDebug(`Animation complete, clearing interval`);
+        cleanupAnimation();
 
-    requestAnimationFrame(animate);
+        // Call onAnimationComplete after a short delay
+        completionTimerRef.current = setTimeout(() => {
+          handleAnimationComplete();
+        }, 100);
+      }
+    }, 16); // ~60fps
+
+    // Set a maximum duration timeout as a fallback
+    // This ensures animation always completes even if there are issues
+    completionTimerRef.current = setTimeout(() => {
+      if (!hasCompletedRef.current) {
+        logDebug(`Maximum animation duration reached, forcing completion`);
+        cleanupAnimation();
+        handleAnimationComplete();
+      }
+    }, duration + 250); // Give a little extra time beyond the animation duration
+
+    // Cleanup function
+    return () => {
+      cleanupAnimation();
+    };
   }, [isVisible, player, targetTowerHeight, onAnimationComplete]);
 
-  if (!isVisible) return null;
+  // Reset state if component is hidden
+  useEffect(() => {
+    if (!isVisible) {
+      logDebug(`Component hidden, resetting state`);
+      hasCompletedRef.current = false;
+      animationStartedRef.current = false;
+      cleanupAnimation();
+
+      // Ensure we reset the position when hidden to avoid "stuck" images
+      setPosition({ x: player === 'player1' ? 25 : 75, y: 0 });
+    }
+  }, [isVisible, player]);
+
+  // Return null if not visible - prevents stuck PNGs
+  if (!isVisible || !isMountedRef.current) {
+    return null;
+  }
 
   return (
     <div
@@ -75,7 +199,9 @@ const AttackAnimation: React.FC<AttackAnimationProps> = ({
       style={{
         left: `${position.x}%`,
         bottom: `${position.y}%`,
+        pointerEvents: 'none', // Prevent click events on the animation
       }}
+      data-instance-id={instanceId.current}
     >
       <Image
         src={`/bomb p${player === 'player1' ? '1' : '2'}.png`}
@@ -83,6 +209,7 @@ const AttackAnimation: React.FC<AttackAnimationProps> = ({
         width={32}
         height={32}
         className='object-contain'
+        priority={true} // Prioritize loading
       />
     </div>
   );

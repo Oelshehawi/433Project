@@ -11,6 +11,18 @@ interface PlayerGestureDisplayProps {
   player1ShieldActive: boolean;
   player2ShieldActive: boolean;
   gameState: 'starting' | 'playing';
+  // New props for animation control from parent
+  onPlayer1AttackComplete?: () => void;
+  onPlayer2AttackComplete?: () => void;
+  // Props for animation visibility control
+  player1AttackVisible?: boolean;
+  player2AttackVisible?: boolean;
+  setPlayer1AttackVisible?: (visible: boolean) => void;
+  setPlayer2AttackVisible?: (visible: boolean) => void;
+  player1Explosion?: boolean;
+  player2Explosion?: boolean;
+  setPlayer1Explosion?: (visible: boolean) => void;
+  setPlayer2Explosion?: (visible: boolean) => void;
 }
 
 const PlayerGestureDisplay = ({
@@ -19,29 +31,86 @@ const PlayerGestureDisplay = ({
   player1ShieldActive,
   player2ShieldActive,
   gameState,
+  // New props with defaults
+  onPlayer1AttackComplete,
+  onPlayer2AttackComplete,
+  player1AttackVisible: externalPlayer1AttackVisible,
+  player2AttackVisible: externalPlayer2AttackVisible,
+  setPlayer1AttackVisible: externalSetPlayer1AttackVisible,
+  setPlayer2AttackVisible: externalSetPlayer2AttackVisible,
+  player1Explosion: externalPlayer1Explosion,
+  player2Explosion: externalPlayer2Explosion,
+  setPlayer1Explosion: externalSetPlayer1Explosion,
+  setPlayer2Explosion: externalSetPlayer2Explosion,
 }: PlayerGestureDisplayProps) => {
   // Using our sound manager hook instead of managing audio elements directly
   const { playSound } = useSoundManager();
 
-  // Attack animation states
-  const [player1AttackVisible, setPlayer1AttackVisible] = useState(false);
-  const [player2AttackVisible, setPlayer2AttackVisible] = useState(false);
+  // Attack animation states - use external state if provided, otherwise use local state
+  const [localPlayer1AttackVisible, setLocalPlayer1AttackVisible] =
+    useState(false);
+  const [localPlayer2AttackVisible, setLocalPlayer2AttackVisible] =
+    useState(false);
+  const [localPlayer1Explosion, setLocalPlayer1Explosion] = useState(false);
+  const [localPlayer2Explosion, setLocalPlayer2Explosion] = useState(false);
 
-  // Explosion effect states
-  const [player1Explosion, setPlayer1Explosion] = useState(false);
-  const [player2Explosion, setPlayer2Explosion] = useState(false);
+  // Use provided state from parent if available, otherwise use local state
+  const player1AttackVisible =
+    externalPlayer1AttackVisible !== undefined
+      ? externalPlayer1AttackVisible
+      : localPlayer1AttackVisible;
+  const player2AttackVisible =
+    externalPlayer2AttackVisible !== undefined
+      ? externalPlayer2AttackVisible
+      : localPlayer2AttackVisible;
+  const player1Explosion =
+    externalPlayer1Explosion !== undefined
+      ? externalPlayer1Explosion
+      : localPlayer1Explosion;
+  const player2Explosion =
+    externalPlayer2Explosion !== undefined
+      ? externalPlayer2Explosion
+      : localPlayer2Explosion;
+
+  // Functions to set state, will use external setters if provided
+  const setPlayer1AttackVisible = (visible: boolean) => {
+    if (externalSetPlayer1AttackVisible) {
+      externalSetPlayer1AttackVisible(visible);
+    } else {
+      setLocalPlayer1AttackVisible(visible);
+    }
+  };
+
+  const setPlayer2AttackVisible = (visible: boolean) => {
+    if (externalSetPlayer2AttackVisible) {
+      externalSetPlayer2AttackVisible(visible);
+    } else {
+      setLocalPlayer2AttackVisible(visible);
+    }
+  };
+
+  const setPlayer1Explosion = (visible: boolean) => {
+    if (externalSetPlayer1Explosion) {
+      externalSetPlayer1Explosion(visible);
+    } else {
+      setLocalPlayer1Explosion(visible);
+    }
+  };
+
+  const setPlayer2Explosion = (visible: boolean) => {
+    if (externalSetPlayer2Explosion) {
+      externalSetPlayer2Explosion(visible);
+    } else {
+      setLocalPlayer2Explosion(visible);
+    }
+  };
 
   // Shield glow states
   const [player1ShieldGlow, setPlayer1ShieldGlow] = useState(0);
   const [player2ShieldGlow, setPlayer2ShieldGlow] = useState(0);
 
   // Get tower heights from game store
-  const {
-    player1TowerHeight,
-    player2TowerHeight,
-    player1Animation,
-    player2Animation,
-  } = useGameStore();
+  const { player1TowerHeight, player2TowerHeight } = useGameStore();
 
   // Normalize card played strings for case-insensitive comparison
   const normalizedPlayer1Card = player1CardPlayed?.toLowerCase() || '';
@@ -83,6 +152,11 @@ const PlayerGestureDisplay = ({
         setPlayer2ShieldGlow(0);
       }, 300);
     }
+
+    // Call parent callback if provided
+    if (onPlayer1AttackComplete) {
+      onPlayer1AttackComplete();
+    }
   };
 
   const handlePlayer2AttackComplete = () => {
@@ -97,6 +171,11 @@ const PlayerGestureDisplay = ({
         setPlayer1ShieldGlow(0);
       }, 300);
     }
+
+    // Call parent callback if provided
+    if (onPlayer2AttackComplete) {
+      onPlayer2AttackComplete();
+    }
   };
 
   // Handle explosion animation completion
@@ -105,8 +184,13 @@ const PlayerGestureDisplay = ({
     setPlayer2Explosion(false);
   };
 
-  // Listen for player1 attack gestures
+  // Listen for player1 attack gestures - only use if not controlled by parent
   useEffect(() => {
+    // Skip if parent is controlling animation state
+    if (externalPlayer1AttackVisible !== undefined) return;
+
+    let glowInterval: NodeJS.Timeout | null = null;
+
     // Attack detection for Player 1
     if (normalizedPlayer1Card === 'attack' && !player1AttackVisible) {
       // Play attack sound
@@ -117,27 +201,37 @@ const PlayerGestureDisplay = ({
 
       // If player 2 has shield, gradually increase glow intensity
       if (player2ShieldActive) {
-        const interval = setInterval(() => {
+        // Store interval reference for cleanup
+        glowInterval = setInterval(() => {
           setPlayer2ShieldGlow((prev) => {
             const newValue = prev + 0.1;
             return newValue > 1 ? 1 : newValue;
           });
         }, 100);
-
-        // Cleanup interval
-        setTimeout(() => clearInterval(interval), 1000);
       }
     }
+
+    // Cleanup function to clear interval
+    return () => {
+      if (glowInterval) {
+        clearInterval(glowInterval);
+      }
+    };
   }, [
     normalizedPlayer1Card,
     player1AttackVisible,
     player2ShieldActive,
-    player1Animation,
     playSound,
+    externalPlayer1AttackVisible,
   ]);
 
-  // Listen for player2 attack gestures
+  // Listen for player2 attack gestures - only use if not controlled by parent
   useEffect(() => {
+    // Skip if parent is controlling animation state
+    if (externalPlayer2AttackVisible !== undefined) return;
+
+    let glowInterval: NodeJS.Timeout | null = null;
+
     // Attack detection for Player 2
     if (normalizedPlayer2Card === 'attack' && !player2AttackVisible) {
       // Play attack sound
@@ -148,23 +242,28 @@ const PlayerGestureDisplay = ({
 
       // If player 1 has shield, gradually increase glow intensity
       if (player1ShieldActive) {
-        const interval = setInterval(() => {
+        // Store interval reference for cleanup
+        glowInterval = setInterval(() => {
           setPlayer1ShieldGlow((prev) => {
             const newValue = prev + 0.1;
             return newValue > 1 ? 1 : newValue;
           });
         }, 100);
-
-        // Cleanup interval
-        setTimeout(() => clearInterval(interval), 1000);
       }
     }
+
+    // Cleanup function to clear interval
+    return () => {
+      if (glowInterval) {
+        clearInterval(glowInterval);
+      }
+    };
   }, [
     normalizedPlayer2Card,
     player2AttackVisible,
     player1ShieldActive,
-    player2Animation,
     playSound,
+    externalPlayer2AttackVisible,
   ]);
 
   // Debug state to make sure component is rendering

@@ -69,12 +69,11 @@ export default function TowerBlocks({
 
   // Constants for tower and player dimensions
   const BLOCK_HEIGHT = 40; // pixels
-  const BASE_HEIGHT = 15; // pixels
 
   return (
-    <div className='absolute bottom-0 left-0 right-0 flex justify-around'>
+    <div className='absolute bottom-25 left-0 right-0 flex justify-around'>
       {/* Player 1 Tower - fixed position left side */}
-      <div className='absolute bottom-10 left-[25%] -translate-x-1/2 w-40'>
+      <div className='absolute bottom-16 left-[25%] -translate-x-1/2 w-40'>
         <div className='flex flex-col items-center'>
           {/* Tower Structure */}
           <div className='flex flex-col items-center'>
@@ -122,8 +121,7 @@ export default function TowerBlocks({
               </AnimatePresence>
             </div>
 
-            {/* Base platform - always present */}
-            <div className='w-36 h-[15px] bg-gray-800 rounded-b-md'></div>
+            {/* Removed the base platform to allow players to appear to stand directly on blocks */}
           </div>
         </div>
       </div>
@@ -132,7 +130,7 @@ export default function TowerBlocks({
       <div
         className='absolute left-24 z-20'
         style={{
-          bottom: `${player1Goal * BLOCK_HEIGHT + BASE_HEIGHT + 120}px`,
+          bottom: `${player1Goal * BLOCK_HEIGHT + 120 + 64}px`,
         }}
       >
         <div className='flex items-center'>
@@ -142,7 +140,7 @@ export default function TowerBlocks({
       </div>
 
       {/* Player 2 Tower - fixed position right side */}
-      <div className='absolute bottom-10 right-[25%] translate-x-1/2 w-40'>
+      <div className='absolute bottom-16 right-[25%] translate-x-1/2 w-40'>
         <div className='flex flex-col items-center'>
           {/* Tower Structure */}
           <div className='flex flex-col items-center'>
@@ -190,8 +188,7 @@ export default function TowerBlocks({
               </AnimatePresence>
             </div>
 
-            {/* Base platform - always present */}
-            <div className='w-36 h-[15px] bg-gray-800 rounded-b-md'></div>
+            {/* Removed the base platform to allow players to appear to stand directly on blocks */}
           </div>
         </div>
       </div>
@@ -200,7 +197,7 @@ export default function TowerBlocks({
       <div
         className='absolute right-24 z-20'
         style={{
-          bottom: `${player2Goal * BLOCK_HEIGHT + BASE_HEIGHT + 120}px`,
+          bottom: `${player2Goal * BLOCK_HEIGHT + 120 + 64}px`,
         }}
       >
         <div className='flex items-center'>

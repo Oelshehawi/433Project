@@ -7,6 +7,7 @@ import { CreateRoomForm } from './CreateRoomForm';
 import { ViewRoomForm } from './ViewRoomForm';
 import { RoomList } from './RoomList';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 interface TitleScreenProps {
   onStart?: () => void;
@@ -275,6 +276,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = () => {
           </div>
         )}
       </motion.div>
+
+      {/* Debug mode button - positioned at the bottom of the screen */}
+      <Link
+        href='/debug'
+        className='absolute bottom-4 right-4 px-3 py-1 rounded-lg text-xs text-gray-400 hover:text-white bg-gray-800/50 hover:bg-gray-700/80 transition-colors duration-200 border border-gray-700/50'
+      >
+        Debug Mode
+      </Link>
     </div>
   );
 };

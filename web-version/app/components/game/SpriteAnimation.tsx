@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Image from 'next/image';
 
 type AnimationState = 'idle' | 'attack' | 'damaged' | 'win' | 'lose';
@@ -23,9 +23,10 @@ const SpriteAnimation = ({
   const [frame, setFrame] = useState(0);
   const [frames, setFrames] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
+  // Add ref for interval with proper typing
+  const intervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Animation settings
-  const frameCount = 5; // Total frames in each animation
   const frameDuration = 150; // Duration of each frame in ms
 
   // Player-specific scaling to make both players appear the same size
@@ -86,13 +87,42 @@ const SpriteAnimation = ({
 
   // Reset animation when state changes
   useEffect(() => {
+    // Set the frame back to start
     setFrame(0);
-    const frameInterval = setInterval(() => {
-      setFrame((currentFrame) => (currentFrame + 1) % frameCount);
+
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+
+    // Set up interval for frame update
+    intervalRef.current = setInterval(() => {
+      setFrame((prevFrame) => {
+        // If we're at the last frame, start over
+        if (prevFrame >= frames.length - 1) {
+          return 0;
+        }
+        // Otherwise, move to the next frame
+        return prevFrame + 1;
+      });
     }, frameDuration);
 
-    return () => clearInterval(frameInterval);
-  }, [animationState, frameCount, frameDuration]);
+    // Clean up interval on unmount or when dependencies change
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [frameDuration, frames.length, animationState]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
 
   if (frames.length === 0) {
     return null;
