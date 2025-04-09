@@ -1005,93 +1005,71 @@ export function handleNextRoundReady(client: ExtendedWebSocket, payload: any) {
     return;
   }
 
-  // Check if this is for the current round or the next round
-  // If current round number + 1 = payload round number, client is ready for next round
-  if (room.gameState.roundNumber + 1 === roundNumber) {
-    console.log(
-      `[roomManager.ts] Web client ready for next round ${roundNumber} in room ${roomId}`
-    );
+  // Get all BeagleBoard players in this room
+  const beagleBoardPlayers = room.players.filter(
+    (p) => p.playerType === 'beagleboard'
+  );
 
-    // Store that this room's web client is ready for the next round
-    webClientNextRoundReadyRooms.set(roomId, roundNumber);
+  // Log the current state for debugging
+  console.log(
+    `[roomManager.ts] Current round: ${room.gameState.roundNumber}, Received round: ${roundNumber}`
+  );
 
-    // UPDATED: Don't automatically start the next round
-    // Just notify that server is waiting for round_start event
-    console.log(
-      `[roomManager.ts] Waiting for explicit round_start event from client for round ${roundNumber}`
-    );
+  // Store that this room's web client is ready
+  webClientNextRoundReadyRooms.set(roomId, roundNumber);
 
-    // Get all BeagleBoard players in this room
-    const beagleBoardPlayers = room.players.filter(
-      (p) => p.playerType === 'beagleboard'
-    );
+  // Send round_end to BeagleBoard clients
+  console.log(
+    `[roomManager.ts] Sending round_end to ${beagleBoardPlayers.length} BeagleBoard clients in room ${roomId}`
+  );
 
-    console.log(
-      `[roomManager.ts] Sending round_end to ${beagleBoardPlayers.length} BeagleBoard clients in room ${roomId}`
-    );
-
-    // Create round end event
-    const roundEndEvent = {
-      event: 'round_end',
-      payload: {
-        roomId,
+  // Create round end event
+  const roundEndEvent = {
+    event: 'round_end',
+    payload: {
+      roomId,
+      roundNumber: room.gameState.roundNumber,
+      gameState: {
+        towerHeights: Object.fromEntries(room.gameState.towerHeights),
+        goalHeights: Object.fromEntries(room.gameState.goalHeights),
         roundNumber: room.gameState.roundNumber,
-        gameState: {
-          towerHeights: Object.fromEntries(room.gameState.towerHeights),
-          goalHeights: Object.fromEntries(room.gameState.goalHeights),
-          roundNumber: room.gameState.roundNumber,
-          playerShields: Object.fromEntries(
-            room.gameState.playerShields || new Map()
-          ),
-          playerMoves: Object.fromEntries(room.gameState.playerMoves),
-        },
-        winnerId: null,
-        roundComplete: true,
-        shouldContinue: true,
+        playerShields: Object.fromEntries(
+          room.gameState.playerShields || new Map()
+        ),
+        playerMoves: Object.fromEntries(room.gameState.playerMoves),
       },
-    };
+      winnerId: null,
+      roundComplete: true,
+      shouldContinue: true,
+    },
+  };
 
-    // Send round_end to each BeagleBoard client
-    beagleBoardPlayers.forEach((player) => {
-      // Find the client associated with this player
-      const playerClient = findClientByPlayerId(player.id);
-      if (playerClient && playerClient.readyState === WebSocket.OPEN) {
-        try {
-          playerClient.send(JSON.stringify(roundEndEvent));
-          console.log(
-            `[roomManager.ts] Sent round_end to BeagleBoard player ${player.name} (${player.id})`
-          );
-        } catch (error) {
-          console.error(
-            `[roomManager.ts] Error sending round_end to player ${player.id}:`,
-            error
-          );
-        }
-      } else {
-        console.warn(
-          `[roomManager.ts] Could not find connected client for player ${player.id}`
+  // Send round_end to each BeagleBoard client
+  beagleBoardPlayers.forEach((player) => {
+    // Find the client associated with this player
+    const playerClient = findClientByPlayerId(player.id);
+    if (playerClient && playerClient.readyState === WebSocket.OPEN) {
+      try {
+        playerClient.send(JSON.stringify(roundEndEvent));
+        console.log(
+          `[roomManager.ts] Sent round_end to BeagleBoard player ${player.name} (${player.id})`
+        );
+      } catch (error) {
+        console.error(
+          `[roomManager.ts] Error sending round_end to player ${player.id}:`,
+          error
         );
       }
-    });
+    } else {
+      console.warn(
+        `[roomManager.ts] Could not find connected client for player ${player.id}`
+      );
+    }
+  });
 
-    // Do NOT send round_end to web clients - they're already aware since they sent next_round_ready
-    // Remove the following sendToRoom call
-    // sendToRoom(roomId, 'round_end', {
-    //   roomId,
-    //   roundNumber: room.gameState.roundNumber,
-    // });
-
-    //next_round_ready ----->send round_end to beagleboard ---> beagleboard --> handleRoundEnd function needs to, update lcd and send round_end_ack (waiting for next round to start) ---> that goes to server (need to edit handleroundendack server side) then in that function send to web client round_end_ack--> add event listenr for round_end_ack to web client which then upon reciept sends round_start event
-  } else if (room.gameState.roundNumber === roundNumber) {
-    // Client is confirming it's ready for current round (could happen if client reloads)
-    console.log(
-      `[roomManager.ts] Web client confirming readiness for current round ${roundNumber}`
-    );
-  } else {
-    console.warn(
-      `[roomManager.ts] Round number mismatch: web client requested round ${roundNumber} but current round is ${room.gameState.roundNumber}`
-    );
-  }
+  console.log(
+    `[roomManager.ts] Waiting for BeagleBoard round_end_ack responses from round ${room.gameState.roundNumber}`
+  );
 }
 
 // Add a new function to handle round_end event from web client
