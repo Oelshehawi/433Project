@@ -1,30 +1,30 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
-import { useRoomStore } from '../../lib/room/store';
-import { useGameStore } from '../../lib/game/store';
+import { useEffect, useState, useRef } from "react";
+import { useParams } from "next/navigation";
+import { useRoomStore } from "../../lib/room/store";
+import { useGameStore } from "../../lib/game/store";
 import {
   refreshConnectionStatus,
   isSocketHealthy,
   sendMessage,
-} from '../../lib/websocket';
+} from "../../lib/websocket";
 
 // Import game components
-import GameBackground from '../../components/game/GameBackground';
-import CenterDivider from '../../components/game/CenterDivider';
-import RoomInfo from '../../components/game/RoomInfo';
-import BackButton from '../../components/game/BackButton';
-import TowerBlocks from '../../components/game/TowerBlocks';
-import RulesButton from '../../components/game/RulesButton';
-import GameAnimation from '../../components/game/GameAnimation';
-import GameLoader from '../../components/game/GameLoader';
-import EventLogger from '../../components/game/EventLogger';
-import RoundDisplay from '../../components/game/RoundDisplay';
-import PlayerGestureDisplay from '../../components/game/PlayerGestureDisplay';
-import Player from '../../components/game/Player';
-import GameStateDisplay from '../../components/game/GameStateDisplay';
-import GameControls from '../../components/game/GameControls';
+import GameBackground from "../../components/game/GameBackground";
+import CenterDivider from "../../components/game/CenterDivider";
+import RoomInfo from "../../components/game/RoomInfo";
+import BackButton from "../../components/game/BackButton";
+import TowerBlocks from "../../components/game/TowerBlocks";
+import RulesButton from "../../components/game/RulesButton";
+import GameAnimation from "../../components/game/GameAnimation";
+import GameLoader from "../../components/game/GameLoader";
+import EventLogger from "../../components/game/EventLogger";
+import RoundDisplay from "../../components/game/RoundDisplay";
+import PlayerGestureDisplay from "../../components/game/PlayerGestureDisplay";
+import Player from "../../components/game/Player";
+import GameStateDisplay from "../../components/game/GameStateDisplay";
+import GameControls from "../../components/game/GameControls";
 
 export default function GamePage() {
   const params = useParams();
@@ -69,7 +69,7 @@ export default function GamePage() {
 
   // Immediately verify connection status when page loads
   useEffect(() => {
-    console.log('[GamePage] Mounted, verifying connection state');
+    console.log("[GamePage] Mounted, verifying connection state");
 
     // Helper function to wait for socket to be healthy and then signal game ready
     const ensureConnectionAndSignalReady = async () => {
@@ -89,7 +89,7 @@ export default function GamePage() {
 
         // If socket is healthy, signal ready for game/next round
         if (isSocketHealthy()) {
-          console.log('[GamePage] Socket is healthy, signaling readiness');
+          console.log("[GamePage] Socket is healthy, signaling readiness");
           useGameStore.setState({ socketConnected: true });
 
           // If we have a pending round, signal ready for it
@@ -100,31 +100,31 @@ export default function GamePage() {
             );
             state.readyForNextRound(state.pendingRoundNumber);
           } else if (
-            state.gameStatus === 'waiting' &&
+            state.gameStatus === "waiting" &&
             state.animationState.rulesAnimationComplete
           ) {
             // If we're just starting the game, send game_ready
-            console.log('[GamePage] Signaling game_ready');
-            sendMessage('game_ready', { roomId }).catch(console.error);
+            console.log("[GamePage] Signaling game_ready");
+            sendMessage("game_ready", { roomId }).catch(console.error);
           }
         } else {
           console.error(
-            '[GamePage] Failed to establish healthy socket connection'
+            "[GamePage] Failed to establish healthy socket connection"
           );
           setForceLoader(true);
         }
       } catch (error) {
-        console.error('[GamePage] Error in connection setup:', error);
+        console.error("[GamePage] Error in connection setup:", error);
       }
     };
 
     // Check if socket is already healthy
     if (isSocketHealthy()) {
-      console.log('[GamePage] Socket is already healthy');
+      console.log("[GamePage] Socket is already healthy");
       // Force the game store to acknowledge it
       useGameStore.setState({ socketConnected: true });
     } else {
-      console.log('[GamePage] Refreshing connection status');
+      console.log("[GamePage] Refreshing connection status");
       // Refresh connection status to ensure events are properly dispatched
       refreshConnectionStatus();
 
@@ -144,7 +144,7 @@ export default function GamePage() {
     const recoveryInterval = setInterval(() => {
       if (!isSocketHealthy()) {
         console.log(
-          '[GamePage] Recovery interval: Socket not healthy, attempting to refresh'
+          "[GamePage] Recovery interval: Socket not healthy, attempting to refresh"
         );
         refreshConnectionStatus();
         ensureConnectionAndSignalReady();
@@ -160,11 +160,47 @@ export default function GamePage() {
   // Initialize game when component mounts
   useEffect(() => {
     if (roomId) {
-      console.log('🔵 [GamePage] Initializing game for room:', roomId);
+      console.log("🔵 [GamePage] Initializing game for room:", roomId);
       initialize(roomId).catch((error) => {
-        console.error('🔴 [GamePage] Error initializing game:', error);
+        console.error("🔴 [GamePage] Error initializing game:", error);
         setConnectionRetries((prev) => prev + 1);
       });
+
+      // Add event listener for round_end_ack to send round_start
+      const handleRoundEndAck = (event: CustomEventInit) => {
+        try {
+          const { roomId, roundNumber } = event.detail || {};
+          console.log(
+            "🟢 [GamePage] Received round_end_ack event:",
+            event.detail
+          );
+
+          // Calculate next round number
+          const nextRoundNumber = roundNumber + 1;
+
+          // Send round_start event for the next round
+          console.log(
+            `🟢 [GamePage] Sending round_start for round ${nextRoundNumber}`
+          );
+
+          sendMessage("round_start", {
+            roomId,
+            roundNumber: nextRoundNumber,
+          }).catch((err) => {
+            console.error("🔴 [GamePage] Error sending round_start:", err);
+          });
+        } catch (error) {
+          console.error("🔴 [GamePage] Error handling round_end_ack:", error);
+        }
+      };
+
+      // Register the event listener
+      window.addEventListener("round_end_ack", handleRoundEndAck);
+
+      // Clean up the event listener when component unmounts
+      return () => {
+        window.removeEventListener("round_end_ack", handleRoundEndAck);
+      };
     }
   }, [roomId, initialize, connectionRetries]);
 
@@ -173,7 +209,7 @@ export default function GamePage() {
     if (currentRoom && currentRoom.players.length > 0) {
       // Find BeagleBoard players
       const beagleBoardPlayers = currentRoom.players.filter(
-        (p) => p.playerType === 'beagleboard'
+        (p) => p.playerType === "beagleboard"
       );
 
       // Set player names based on the order they appear in the array
@@ -203,9 +239,9 @@ export default function GamePage() {
 
   // Custom handler for rules animation completion
   const handleRulesAnimationComplete = () => {
-    console.log('🎮 [GamePage] User clicked X to close rules animation');
+    console.log("🎮 [GamePage] User clicked X to close rules animation");
     userClickedX.current = true;
-    setAnimationComplete('rulesAnimationComplete', true);
+    setAnimationComplete("rulesAnimationComplete", true);
   };
 
   // Log all game state changes
@@ -222,47 +258,47 @@ export default function GamePage() {
     // 2. We haven't sent game_ready yet
     // 3. Socket is healthy
     if (
-      gameStatus === 'waiting' &&
+      gameStatus === "waiting" &&
       animationState.rulesAnimationComplete &&
       userClickedX.current &&
       !gameReadySent.current &&
       isSocketHealthy()
     ) {
       console.log(
-        '🚀 [GamePage] Rules animation completed by user click, sending game signals'
+        "🚀 [GamePage] Rules animation completed by user click, sending game signals"
       );
 
       // Mark as sent to prevent multiple sends
       gameReadySent.current = true;
 
-      import('../../lib/websocket').then(({ sendMessage }) => {
+      import("../../lib/websocket").then(({ sendMessage }) => {
         // First send game_ready event
-        console.log('🚀 [GamePage] Sending game_ready event');
-        sendMessage('game_ready', { roomId })
+        console.log("🚀 [GamePage] Sending game_ready event");
+        sendMessage("game_ready", { roomId })
           .then(() => {
-            console.log('✅ [GamePage] game_ready sent successfully');
+            console.log("✅ [GamePage] game_ready sent successfully");
 
             // Then send round_start event, but only if we haven't sent it yet
             if (!roundStartSent) {
               // Add a small delay to ensure game_ready is processed first
               setTimeout(() => {
-                console.log('🚀 [GamePage] Sending initial round_start event');
-                sendMessage('round_start', { roomId, roundNumber: 1 })
+                console.log("🚀 [GamePage] Sending initial round_start event");
+                sendMessage("round_start", { roomId, roundNumber: 1 })
                   .then(() => {
-                    console.log('✅ [GamePage] round_start sent successfully');
+                    console.log("✅ [GamePage] round_start sent successfully");
                     setRoundStartSent(true);
 
                     // AFTER round_start is sent successfully, request game state
                     setTimeout(() => {
                       console.log(
-                        '🚀 [GamePage] Requesting game state after round_start'
+                        "🚀 [GamePage] Requesting game state after round_start"
                       );
                       requestGameState();
                     }, 500);
                   })
                   .catch((err) => {
                     console.error(
-                      '🔴 [GamePage] Error sending round_start:',
+                      "🔴 [GamePage] Error sending round_start:",
                       err
                     );
                   });
@@ -270,7 +306,7 @@ export default function GamePage() {
             }
           })
           .catch((err) => {
-            console.error('🔴 [GamePage] Error sending game_ready:', err);
+            console.error("🔴 [GamePage] Error sending game_ready:", err);
             // If we failed to send, allow retrying
             gameReadySent.current = false;
           });
@@ -318,22 +354,22 @@ export default function GamePage() {
           connectionErrorMessage={gameError || roomError || undefined}
         />
       ) : (
-        <div className='min-h-screen flex flex-col items-center justify-center overflow-hidden'>
+        <div className="min-h-screen flex flex-col items-center justify-center overflow-hidden">
           {/* Game Arena */}
-          <div className='relative w-full h-screen flex overflow-hidden'>
+          <div className="relative w-full h-screen flex overflow-hidden">
             {/* Background */}
             <GameBackground />
 
             {/* Game Animation Component for Title and Rules */}
             <GameAnimation
               showTitleAnimation={
-                gameStatus === 'waiting' && animationState.showTitleAnimation
+                gameStatus === "waiting" && animationState.showTitleAnimation
               }
               showRulesAnimation={
-                gameStatus === 'waiting' && animationState.showRulesAnimation
+                gameStatus === "waiting" && animationState.showRulesAnimation
               }
               onTitleAnimationComplete={() =>
-                setAnimationComplete('titleAnimationComplete', true)
+                setAnimationComplete("titleAnimationComplete", true)
               }
               onRulesAnimationComplete={handleRulesAnimationComplete}
             />
@@ -342,14 +378,14 @@ export default function GamePage() {
             <CenterDivider />
 
             {/* Always show players regardless of game state */}
-            <Player playerId='player1' name={player1Name} isVisible={true} />
-            <Player playerId='player2' name={player2Name} isVisible={true} />
+            <Player playerId="player1" name={player1Name} isVisible={true} />
+            <Player playerId="player2" name={player2Name} isVisible={true} />
 
             {/* Add Rules button outside the game state conditional so it's always visible */}
             <RulesButton />
 
             {/* Game state display */}
-            {gameStatus === 'playing' && (
+            {gameStatus === "playing" && (
               <>
                 {/* Add the GameStateDisplay component */}
                 <GameStateDisplay />
@@ -359,7 +395,7 @@ export default function GamePage() {
                   gameEnded={isGameEnded}
                   currentRound={roundData.roundNumber}
                   roundTimeRemaining={roundData.timeRemaining}
-                  winnerName={winner ? getPlayerNameById(winner) : ''}
+                  winnerName={winner ? getPlayerNameById(winner) : ""}
                   roundEndMessage={roundEndMessage}
                 />
 
@@ -375,7 +411,7 @@ export default function GamePage() {
                   player2Blocks={player2TowerHeight}
                   player1Goal={player1GoalHeight}
                   player2Goal={player2GoalHeight}
-                  isVisible={gameStatus === 'playing'}
+                  isVisible={gameStatus === "playing"}
                 />
 
                 {/* Player gesture displays and shields */}
@@ -384,7 +420,7 @@ export default function GamePage() {
                   player2CardPlayed={player2CardPlayed}
                   player1ShieldActive={player1ShieldActive}
                   player2ShieldActive={player2ShieldActive}
-                  gameState={gameStatus === 'playing' ? 'playing' : 'starting'}
+                  gameState={gameStatus === "playing" ? "playing" : "starting"}
                 />
 
                 {/* Game Controls */}

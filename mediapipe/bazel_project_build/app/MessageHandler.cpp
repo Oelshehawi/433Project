@@ -107,14 +107,6 @@ void MessageHandler::handleRoundEnd(const json& payload) {
         roundNumber = payload["roundNumber"];
     }
     
-    // Check for round results
-    bool isWinner = false;
-    std::string winnerId = "";
-    if (payload.contains("roundWinner")) {
-        winnerId = payload["roundWinner"];
-        isWinner = (winnerId == roomManager->getDeviceId());
-    }
-    
     // Stop gesture detection if it's running
     if (roomManager && roomManager->gestureDetector && roomManager->gestureDetector->isRunning()) {
         roomManager->gestureDetector->stop();
@@ -130,7 +122,7 @@ void MessageHandler::handleRoundEnd(const json& payload) {
     
     // Use DisplayManager to show results
     if (roomManager->displayManager) {
-        roomManager->displayManager->displayRoundEnd(roundNumber, isWinner);
+        roomManager->displayManager->displayRoundEndConfirmation(roundNumber);
     }
 }
 
@@ -305,6 +297,11 @@ void MessageHandler::handleMoveStatus(const json& payload) {
             roomManager->gestureDetector->stop();
         }
         
+        // Update the display with accepted status
+        if (roomManager && roomManager->displayManager) {
+            roomManager->displayManager->displayRoundEndConfirmation(roundNumber, "accepted");
+        }
+        
         // Only send round_end_ack if we actually received a round_end event from the server
         if (gameState && gameState->wasRoundEndReceived()) {
             gameState->sendRoundEndEvent();
@@ -314,6 +311,12 @@ void MessageHandler::handleMoveStatus(const json& payload) {
     } 
     else if (status == "rejected") {
         std::cout << "[MessageHandler.cpp] Move was rejected by server: " << reason << std::endl;
+        
+        // Update the display with rejected status
+        if (roomManager && roomManager->displayManager) {
+            roomManager->displayManager->displayRoundEndConfirmation(roundNumber, "rejected");
+        }
+        
         if (reason == "already_moved") {
             std::cout << "[MessageHandler.cpp] Already moved this round" << std::endl;
         }

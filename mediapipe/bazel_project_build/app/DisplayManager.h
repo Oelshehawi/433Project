@@ -19,7 +19,7 @@ public:
     // Display methods
     void updateCardAndGameDisplay(bool showOutput = true);
     void displayRoundStart(int roundNumber, int timeRemaining);
-    void displayRoundEnd(int roundNumber, bool isWinner);
+    void displayRoundEndConfirmation(int roundNumber, const std::string& status = "waiting");
     void displayWaitingForNextRound(int completedRound);
     void displayGameStarting();
     void displayGameStarted();

@@ -117,7 +117,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       // Add structured error handling to separate connection issues from game state issues
       try {
-        // CRITICAL FIX: First join the room as a webviewer before requesting game state
         console.log(
           '[game/store] Joining room as webviewer before requesting game state'
         );
@@ -125,7 +124,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
           roomId,
           playerId: crypto.randomUUID(), // Generate a unique ID for this client
           playerName: 'Web Client',
-          // Removed playerType as it's not expected by the server
         });
         console.log('[game/store] Successfully joined room as webviewer');
 

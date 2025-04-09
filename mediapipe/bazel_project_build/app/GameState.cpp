@@ -252,52 +252,86 @@ void GameState::getCardCounts(int& attackCount, int& defendCount, int& buildCoun
 }
 
 void GameState::sendRoundEndEvent() {
-    // Only send round_end_ack if we actually received a round_end event
-    if (!roundEndReceived) {
-        std::cout << "[GameState.cpp] Not sending round_end_ack because no round_end was received" << std::endl;
-        return;
-    }
+    try {
+        // Only send round_end_ack if we actually received a round_end event
+        if (!roundEndReceived) {
+            std::cout << "[GameState.cpp] Not sending round_end_ack because no round_end was received" << std::endl;
+            return;
+        }
 
-    if (!roomManager || !roomManager->client) {
         if (!roomManager) {
             std::cerr << "[GameState.cpp] ERROR: Cannot send round_end_ack - roomManager not set" << std::endl;
+            return;
         }
-        if (roomManager && !roomManager->client) {
+        
+        if (!roomManager->client) {
             std::cerr << "[GameState.cpp] ERROR: Cannot send round_end_ack - websocket client not initialized" << std::endl;
+            return;
         }
-        return;
-    }
-    
-    // Stop gesture detection if it's running
-    if (roomManager->gestureDetector && roomManager->gestureDetector->isRunning()) {
-        roomManager->gestureDetector->stop();
-    }
-    
-    // Stop the timer thread to ensure it doesn't continue running
-    stopTimerThread();
-    
-    // Create and send round_end_ack event
-    json payload = json::object();
-    payload["roomId"] = roomManager->getRoomId();
-    payload["playerId"] = deviceId;
-    payload["roundNumber"] = currentRoundNumber;
-    
-    json message = json::object();
-    message["event"] = "round_end_ack";  // IMPORTANT: This must match what the server expects
-    message["payload"] = payload;
-    
-    std::string messageStr = message.dump();
-    
-    std::cout << "[GameState.cpp] Sending round_end_ack for round " << currentRoundNumber << std::endl;
-    bool sendResult = roomManager->client->sendMessage(messageStr);
-    roomManager->client->ensureMessageProcessing();
-    
-    // Reset the roundEndReceived flag after sending the ack
-    roundEndReceived = false;
-    
-    // Update display to show "Waiting for next round" message
-    if (displayManager) {
-        displayManager->displayWaitingForNextRound(currentRoundNumber);
+        
+        // Stop gesture detection if it's running
+        if (roomManager->gestureDetector && roomManager->gestureDetector->isRunning()) {
+            try {
+                roomManager->gestureDetector->stop();
+            } catch (const std::exception& e) {
+                std::cerr << "[GameState.cpp] Error stopping gesture detector: " << e.what() << std::endl;
+                // Continue anyway - this is a non-critical error
+            }
+        }
+        
+        // Stop the timer thread to ensure it doesn't continue running
+        try {
+            stopTimerThread();
+        } catch (const std::exception& e) {
+            std::cerr << "[GameState.cpp] Error stopping timer thread: " << e.what() << std::endl;
+            // Continue anyway - this is a non-critical error
+        }
+        
+        // Create and send round_end_ack event
+        try {
+            json payload = json::object();
+            payload["roomId"] = roomManager->getRoomId();
+            payload["playerId"] = deviceId;
+            payload["roundNumber"] = currentRoundNumber;
+            
+            json message = json::object();
+            message["event"] = "round_end_ack";  // IMPORTANT: This must match what the server expects
+            message["payload"] = payload;
+            
+            std::string messageStr = message.dump();
+            
+            std::cout << "[GameState.cpp] Sending round_end_ack for round " << currentRoundNumber << std::endl;
+            
+            // Safely send the message
+            bool sendResult = false;
+            try {
+                sendResult = roomManager->client->sendMessage(messageStr);
+                if (!sendResult) {
+                    std::cerr << "[GameState.cpp] Failed to send round_end_ack message" << std::endl;
+                }
+                roomManager->client->ensureMessageProcessing();
+            } catch (const std::exception& e) {
+                std::cerr << "[GameState.cpp] Exception sending round_end_ack: " << e.what() << std::endl;
+            }
+            
+            // Reset the roundEndReceived flag after sending the ack
+            roundEndReceived = false;
+        } catch (const std::exception& e) {
+            std::cerr << "[GameState.cpp] Error creating round_end_ack message: " << e.what() << std::endl;
+        }
+        
+        // Update display to show "Waiting for next round" message
+        if (displayManager) {
+            try {
+                displayManager->displayWaitingForNextRound(currentRoundNumber);
+            } catch (const std::exception& e) {
+                std::cerr << "[GameState.cpp] Error updating display for round end: " << e.what() << std::endl;
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[GameState.cpp] Unexpected exception in sendRoundEndEvent: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "[GameState.cpp] Unknown exception in sendRoundEndEvent" << std::endl;
     }
 }
 
@@ -325,52 +359,113 @@ void GameState::autoPlayCard() {
         return;
     }
     
-    // Ensure we have cards to play
-    if (playerCards.empty()) {
-        std::cout << "[GameState.cpp] No cards available for auto-play" << std::endl;
-        sendRoundEndEvent(); // Still send round end even if no cards
-        alreadyAutoPlaying = false; // Reset flag before returning
-        return;
-    }
-    
     try {
-        // Choose a card randomly from the available cards
+        // Ensure we have cards to play
+        if (playerCards.empty()) {
+            std::cout << "[GameState.cpp] No cards available for auto-play" << std::endl;
+            sendRoundEndEvent(); // Still send round end even if no cards
+            alreadyAutoPlaying = false; // Reset flag before returning
+            return;
+        }
+        
+        // Safely get card count to prevent out-of-bounds errors
+        size_t cardCount = playerCards.size();
+        if (cardCount == 0) {
+            std::cout << "[GameState.cpp] Player cards count is zero, cannot auto-play" << std::endl;
+            alreadyAutoPlaying = false;
+            return;
+        }
+        
+        std::cout << "[GameState.cpp] Auto-playing from " << cardCount << " available cards" << std::endl;
+        
+        // Choose a card randomly from the available cards - with bounds protection
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::uniform_int_distribution<> distrib(0, playerCards.size() - 1);
+        std::uniform_int_distribution<> distrib(0, std::max(0, static_cast<int>(cardCount) - 1));
         size_t cardIndex = distrib(gen);
         
-        // Get an iterator to the selected card
-        auto it = playerCards.begin();
-        std::advance(it, cardIndex);
+        // Safety check to ensure cardIndex is valid
+        if (cardIndex >= cardCount) {
+            std::cout << "[GameState.cpp] ERROR: Card index out of bounds, using first card" << std::endl;
+            cardIndex = 0;
+        }
         
-        // Extract card information
-        std::string cardType = it->first;
-        std::string cardId = it->second;
+        // Get an iterator to the selected card - with safety checks
+        std::string cardType, cardId;
+        
+        // Safe iterator approach
+        try {
+            auto it = playerCards.begin();
+            // Safely advance iterator
+            for (size_t i = 0; i < cardIndex && it != playerCards.end(); ++i) {
+                ++it;
+            }
+            
+            // Check if iterator is valid
+            if (it != playerCards.end()) {
+                // Extract card information
+                cardType = it->first;
+                cardId = it->second;
+            } else {
+                // Fallback to first card if iterator ended up invalid
+                if (!playerCards.empty()) {
+                    auto firstCard = playerCards.begin();
+                    cardType = firstCard->first;
+                    cardId = firstCard->second;
+                } else {
+                    throw std::runtime_error("No valid cards to play");
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[GameState.cpp] Error accessing card: " << e.what() << std::endl;
+            alreadyAutoPlaying = false;
+            return;
+        }
+        
+        if (cardType.empty() || cardId.empty()) {
+            std::cerr << "[GameState.cpp] Error: Selected card has empty type or ID" << std::endl;
+            alreadyAutoPlaying = false;
+            return;
+        }
         
         std::cout << "[GameState.cpp] Auto-playing card: " << cardType << " (Card ID: " << cardId << ")" << std::endl;
         
         // Send the gesture event
         if (roomManager && roomManager->gestureEventSender) {
-            roomManager->sendGestureEvent(
-                roomManager->getRoomId(), 
-                deviceId, 
-                cardType, 
-                0.95, // Default confidence value
-                cardId
-            );
+            try {
+                roomManager->sendGestureEvent(
+                    roomManager->getRoomId(), 
+                    deviceId, 
+                    cardType, 
+                    0.95, // Default confidence value
+                    cardId
+                );
+            } catch (const std::exception& e) {
+                std::cerr << "[GameState.cpp] Error sending gesture event: " << e.what() << std::endl;
+            }
         }
         
         // Update display back to cards and game info (without console output)
         if (displayManager) {
-            displayManager->updateCardAndGameDisplay(false);
+            try {
+                displayManager->updateCardAndGameDisplay(false);
+            } catch (const std::exception& e) {
+                std::cerr << "[GameState.cpp] Error updating display: " << e.what() << std::endl;
+            }
         }
         
         // Send round end event after auto-playing
-        sendRoundEndEvent();
+        try {
+            sendRoundEndEvent();
+        } catch (const std::exception& e) {
+            std::cerr << "[GameState.cpp] Error sending round end event: " << e.what() << std::endl;
+        }
     }
     catch (const std::exception& e) {
         std::cerr << "[GameState.cpp] Error during auto-play: " << e.what() << std::endl;
+    }
+    catch (...) {
+        std::cerr << "[GameState.cpp] Unknown error during auto-play" << std::endl;
     }
     
     // Reset auto-play flag

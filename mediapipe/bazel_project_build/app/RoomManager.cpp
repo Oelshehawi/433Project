@@ -274,7 +274,7 @@ void RoomManager::handleMessage(const std::string& message) {
                 
                 // Use DisplayManager to update the LCD with round result
                 if (displayManager) {
-                    displayManager->displayRoundEnd(roundNumber, isWinner);
+                    displayManager->displayRoundEndConfirmation(roundNumber);
                 }
                 
                 // Stop any active timer since the round has ended
@@ -680,23 +680,63 @@ void RoomManager::setReady(bool isReady) {
 
 bool RoomManager::sendGestureEvent(const std::string& roomId, const std::string& playerId, 
                                   const std::string& gesture, float confidence, const std::string& cardId) {
-    // Ensure we have a valid gesture event sender
-    if (!gestureEventSender) {
-        // Create the gesture event sender if it doesn't exist
-        gestureEventSender = new GestureEventSender(client);
-        
-        if (!gestureEventSender) {
+    try {
+        // Validate inputs
+        if (roomId.empty() || playerId.empty() || gesture.empty()) {
+            std::cerr << "[RoomManager.cpp] Invalid parameters for gesture event" << std::endl;
             return false;
         }
+        
+        // Check if client is valid
+        if (!client) {
+            std::cerr << "[RoomManager.cpp] WebSocket client is null, cannot send gesture" << std::endl;
+            return false;
+        }
+        
+        // Ensure we have a valid gesture event sender
+        if (!gestureEventSender) {
+            std::cout << "[RoomManager.cpp] Creating new GestureEventSender" << std::endl;
+            // Create the gesture event sender if it doesn't exist
+            try {
+                gestureEventSender = new GestureEventSender(client);
+            } catch (const std::exception& e) {
+                std::cerr << "[RoomManager.cpp] Failed to create GestureEventSender: " << e.what() << std::endl;
+                return false;
+            }
+            
+            if (!gestureEventSender) {
+                std::cerr << "[RoomManager.cpp] Failed to allocate GestureEventSender" << std::endl;
+                return false;
+            }
+        }
+        
+        std::cout << "[RoomManager.cpp] Sending gesture event: " << gesture << " with card ID: " << cardId << std::endl;
+        
+        // Forward the gesture event to the gesture event sender
+        bool result = false;
+        try {
+            result = gestureEventSender->sendGestureEvent(roomId, playerId, gesture, confidence, cardId);
+        } catch (const std::exception& e) {
+            std::cerr << "[RoomManager.cpp] Exception in sendGestureEvent: " << e.what() << std::endl;
+            return false;
+        }
+        
+        // Ensure message processing
+        if (client) {
+            try {
+                client->ensureMessageProcessing();
+            } catch (const std::exception& e) {
+                std::cerr << "[RoomManager.cpp] Exception in ensureMessageProcessing: " << e.what() << std::endl;
+                // Still return true if the send succeeded
+            }
+        }
+        
+        return result;
+    } catch (const std::exception& e) {
+        std::cerr << "[RoomManager.cpp] Unexpected exception in sendGestureEvent: " << e.what() << std::endl;
+        return false;
+    } catch (...) {
+        std::cerr << "[RoomManager.cpp] Unknown exception in sendGestureEvent" << std::endl;
+        return false;
     }
-    
-    // Forward the gesture event to the gesture event sender
-    bool result = gestureEventSender->sendGestureEvent(roomId, playerId, gesture, confidence, cardId);
-    
-    // Ensure message processing
-    if (client) {
-        client->ensureMessageProcessing();
-    }
-    
-    return result;
 } 

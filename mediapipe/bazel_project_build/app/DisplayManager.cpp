@@ -118,18 +118,29 @@ void DisplayManager::displayRoundStart(int roundNumber, int timeRemaining) {
     std::cout << "Round " << roundNumber << " started with " << timeRemaining << " seconds" << std::endl;
 }
 
-void DisplayManager::displayRoundEnd(int roundNumber, bool isWinner) {
+void DisplayManager::displayRoundEndConfirmation(int roundNumber, const std::string& status) {
     // Display round end message
     char line1[32];
     char line2[32];
     
     snprintf(line1, sizeof(line1), "ROUND %d COMPLETE", roundNumber);
-    snprintf(line2, sizeof(line2), "%s", isWinner ? "You Won!" : "You Lost");
+    
+    // Different second line based on status
+    if (status == "accepted") {
+        snprintf(line2, sizeof(line2), "Move accepted!");
+    } 
+    else if (status == "rejected") {
+        snprintf(line2, sizeof(line2), "Move rejected!");
+    }
+    else {
+        // Default waiting message
+        snprintf(line2, sizeof(line2), "Waiting for next round...");
+    }
     
     char* endRoundMsg[] = {line1, line2};
     lcd_place_message(endRoundMsg, 2, lcd_center);
     
-    std::cout << "Round " << roundNumber << " ended. " << (isWinner ? "You won!" : "You lost.") << std::endl;
+    std::cout << "[DisplayManager.cpp] Round " << roundNumber << " ended. Status: " << status << std::endl;
 }
 
 void DisplayManager::displayGameStarting() {
