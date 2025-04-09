@@ -1075,10 +1075,28 @@ function handleRoundEndAck(client: ExtendedWebSocket, payload: any) {
   // Forward the round_end_ack to web clients in the room
   // This allows the web client to know when BeagleBoards have acknowledged the round end
   console.log(`Forwarding round_end_ack to web clients in room ${roomId}`);
+
+  // Get total number of BeagleBoard players for this room
+  const beagleBoardPlayers = room.players.filter(
+    (p) => p.playerType === 'beagleboard'
+  ).length;
+
+  // Get number of players who have acknowledged
+  const acknowledgedPlayers = Array.from(
+    room.gameState.playerMoves.entries()
+  ).filter(([id, moved]) => moved).length;
+
+  // Calculate next round number
+  const nextRoundNumber = room.gameState.roundNumber + 1;
+
   sendToRoom(roomId, 'round_end_ack', {
     roomId,
     playerId,
     roundNumber,
+    nextRoundNumber,
+    acknowledgedPlayers,
+    totalPlayers: beagleBoardPlayers,
+    allAcknowledged: acknowledgedPlayers >= beagleBoardPlayers,
   });
 
   // Check if all players have completed their moves

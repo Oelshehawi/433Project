@@ -5,7 +5,8 @@ import {
   GestureEventPayload,
 } from './types';
 import { rooms, webClientNextRoundReadyRooms } from './roomManager';
-import { sendToRoom } from './messaging';
+import { sendToRoom, clients } from './messaging';
+import WebSocket from 'ws';
 
 // Constants for game configuration
 const MIN_GOAL_HEIGHT = 5;
@@ -312,7 +313,14 @@ export function endRound(roomId: string): boolean {
   console.log(
     `[gameManager.ts] Sending round_end event for round ${room.gameState.roundNumber}`
   );
-  sendToRoom(roomId, roundEndEvent.event, roundEndEvent.payload);
+
+  // IMPORTANT: Do NOT send round_end event to any clients at this point
+  // BeagleBoards already received round_end from handleNextRoundReady
+  // Web clients don't have a handler for round_end, they only listen for round_end_ack
+
+  console.log(
+    `[gameManager.ts] Not sending round_end to web clients - they only handle round_end_ack`
+  );
 
   // If the game should continue, start the next round
   if (shouldContinue) {
@@ -686,7 +694,6 @@ export function processAction(
       console.log(
         `[gameManager.ts] All players have moved in round ${currentRound}, waiting for web client to signal round_end`
       );
-
     }
 
     return true;
