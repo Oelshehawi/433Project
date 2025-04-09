@@ -825,11 +825,16 @@ if (typeof window !== 'undefined') {
     const isPlayer1 =
       Object.keys(state.gameState?.towerHeights || {})[0] === playerId;
 
+    // Normalize gesture name to handle different casings (Attack, ATTACK, attack)
+    const normalizedGesture = gesture.toLowerCase();
+    const displayGesture =
+      normalizedGesture.charAt(0).toUpperCase() + normalizedGesture.slice(1); // Capitalize first letter
+
     if (isPlayer1) {
-      useGameStore.setState({ player1CardPlayed: gesture });
+      useGameStore.setState({ player1CardPlayed: displayGesture });
 
       // Set appropriate animation based on gesture
-      if (gesture === 'Attack') {
+      if (normalizedGesture === 'attack') {
         // Trigger attack animation with AttackAnimation component
         state.setPlayerAnimation('player1', 'jump'); // Use 'jump' for attack
 
@@ -840,17 +845,13 @@ if (typeof window !== 'undefined') {
             ...prevState,
             player1AttackVisible: true,
           }));
-
-          // Animation will be handled by AttackAnimation component
         }, 200);
-      } else if (gesture === 'Defend') {
+      } else if (normalizedGesture === 'defend') {
         state.setPlayerAnimation('player1', 'idle'); // No special animation for defend
 
         // Activate shield
         useGameStore.setState({ player1ShieldActive: true });
-
-        // Shield will be rendered by ShieldEffect component
-      } else if (gesture === 'Build') {
+      } else if (normalizedGesture === 'build') {
         state.setPlayerAnimation('player1', 'jump'); // Use jump animation for build
 
         // Add jump effect for building
@@ -865,10 +866,10 @@ if (typeof window !== 'undefined') {
         }, 500);
       }
     } else {
-      useGameStore.setState({ player2CardPlayed: gesture });
+      useGameStore.setState({ player2CardPlayed: displayGesture });
 
       // Set appropriate animation based on gesture
-      if (gesture === 'Attack') {
+      if (normalizedGesture === 'attack') {
         // Trigger attack animation with AttackAnimation component
         state.setPlayerAnimation('player2', 'jump'); // Use 'jump' for attack
 
@@ -879,17 +880,13 @@ if (typeof window !== 'undefined') {
             ...prevState,
             player2AttackVisible: true,
           }));
-
-          // Animation will be handled by AttackAnimation component
         }, 200);
-      } else if (gesture === 'Defend') {
+      } else if (normalizedGesture === 'defend') {
         state.setPlayerAnimation('player2', 'idle'); // No special animation for defend
 
         // Activate shield
         useGameStore.setState({ player2ShieldActive: true });
-
-        // Shield will be rendered by ShieldEffect component
-      } else if (gesture === 'Build') {
+      } else if (normalizedGesture === 'build') {
         state.setPlayerAnimation('player2', 'jump'); // Use jump animation for build
 
         // Add jump effect for building
@@ -908,7 +905,7 @@ if (typeof window !== 'undefined') {
     // Add the move to animations
     const newMove: PlayerMove = {
       playerId,
-      gesture,
+      gesture: displayGesture, // Use normalized gesture
       cardId,
     };
 
@@ -920,7 +917,7 @@ if (typeof window !== 'undefined') {
       },
     }));
 
-    state.addEventLog(`Player ${playerId} played ${gesture}`, 'Gesture');
+    state.addEventLog(`Player ${playerId} played ${displayGesture}`, 'Gesture');
   }
 
   // Game ended event

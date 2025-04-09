@@ -3,6 +3,7 @@ import ShieldEffect from './ShieldEffect';
 import AttackAnimation from './AttackAnimation';
 import ExplosionEffect from './ExplosionEffect';
 import { useGameStore } from '../../lib/game/store';
+import { useSoundManager, SoundEffect } from '../../lib/utils/SoundManager';
 
 interface PlayerGestureDisplayProps {
   player1CardPlayed: string;
@@ -19,9 +20,8 @@ const PlayerGestureDisplay = ({
   player2ShieldActive,
   gameState,
 }: PlayerGestureDisplayProps) => {
-  // Audio references
-  const [shieldAudio, setShieldAudio] = useState<HTMLAudioElement | null>(null);
-  const [attackAudio, setAttackAudio] = useState<HTMLAudioElement | null>(null);
+  // Using our sound manager hook instead of managing audio elements directly
+  const { playSound } = useSoundManager();
 
   // Attack animation states
   const [player1AttackVisible, setPlayer1AttackVisible] = useState(false);
@@ -43,39 +43,32 @@ const PlayerGestureDisplay = ({
     player2Animation,
   } = useGameStore();
 
-  // Initialize audio on component mount
-  useEffect(() => {
-    // Initialize shield sound
-    if (typeof Audio !== 'undefined') {
-      const shieldSound = new Audio('/sounds/shield.mp3');
-      shieldSound.preload = 'auto';
-      setShieldAudio(shieldSound);
-
-      // Initialize attack sound
-      const attackSound = new Audio('/sounds/attack.mp3');
-      attackSound.preload = 'auto';
-      setAttackAudio(attackSound);
-    }
-  }, []);
+  // Normalize card played strings for case-insensitive comparison
+  const normalizedPlayer1Card = player1CardPlayed?.toLowerCase() || '';
+  const normalizedPlayer2Card = player2CardPlayed?.toLowerCase() || '';
 
   // Play shield sound when shield is activated
   useEffect(() => {
-    if (shieldAudio && player1ShieldActive) {
-      shieldAudio.currentTime = 0;
-      shieldAudio.play().catch(() => {
-        // Silently fail if audio doesn't play
-      });
+    if (player1ShieldActive && normalizedPlayer1Card === 'defend') {
+      playSound(SoundEffect.SHIELD);
     }
-  }, [player1ShieldActive, shieldAudio]);
+  }, [player1ShieldActive, normalizedPlayer1Card, playSound]);
 
   useEffect(() => {
-    if (shieldAudio && player2ShieldActive) {
-      shieldAudio.currentTime = 0;
-      shieldAudio.play().catch(() => {
-        // Silently fail if audio doesn't play
-      });
+    if (player2ShieldActive && normalizedPlayer2Card === 'defend') {
+      playSound(SoundEffect.SHIELD);
     }
-  }, [player2ShieldActive, shieldAudio]);
+  }, [player2ShieldActive, normalizedPlayer2Card, playSound]);
+
+  // Play build sound when build is played
+  useEffect(() => {
+    if (
+      normalizedPlayer1Card === 'build' ||
+      normalizedPlayer2Card === 'build'
+    ) {
+      playSound(SoundEffect.BUILD);
+    }
+  }, [normalizedPlayer1Card, normalizedPlayer2Card, playSound]);
 
   // Handle attack animation completion
   const handlePlayer1AttackComplete = () => {
@@ -115,14 +108,9 @@ const PlayerGestureDisplay = ({
   // Listen for player1 attack gestures
   useEffect(() => {
     // Attack detection for Player 1
-    if (player1CardPlayed === 'Attack' && !player1AttackVisible) {
+    if (normalizedPlayer1Card === 'attack' && !player1AttackVisible) {
       // Play attack sound
-      if (attackAudio) {
-        attackAudio.currentTime = 0;
-        attackAudio.play().catch(() => {
-          // Silently fail if audio doesn't play
-        });
-      }
+      playSound(SoundEffect.ATTACK);
 
       // Show attack animation
       setPlayer1AttackVisible(true);
@@ -141,24 +129,19 @@ const PlayerGestureDisplay = ({
       }
     }
   }, [
-    player1CardPlayed,
+    normalizedPlayer1Card,
     player1AttackVisible,
-    attackAudio,
     player2ShieldActive,
     player1Animation,
+    playSound,
   ]);
 
   // Listen for player2 attack gestures
   useEffect(() => {
     // Attack detection for Player 2
-    if (player2CardPlayed === 'Attack' && !player2AttackVisible) {
+    if (normalizedPlayer2Card === 'attack' && !player2AttackVisible) {
       // Play attack sound
-      if (attackAudio) {
-        attackAudio.currentTime = 0;
-        attackAudio.play().catch(() => {
-          // Silently fail if audio doesn't play
-        });
-      }
+      playSound(SoundEffect.ATTACK);
 
       // Show attack animation
       setPlayer2AttackVisible(true);
@@ -177,14 +160,15 @@ const PlayerGestureDisplay = ({
       }
     }
   }, [
-    player2CardPlayed,
+    normalizedPlayer2Card,
     player2AttackVisible,
-    attackAudio,
     player1ShieldActive,
     player2Animation,
+    playSound,
   ]);
 
   // Debug state to make sure component is rendering
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [componentMounted, setComponentMounted] = useState(false);
   useEffect(() => {
     setComponentMounted(true);
@@ -251,18 +235,6 @@ const PlayerGestureDisplay = ({
         position='right'
         towerHeight={player2TowerHeight}
         onAnimationComplete={handleExplosionComplete}
-      />
-
-      {/* Hidden audio elements for sounds - these are preloaded */}
-      <audio
-        style={{ display: 'none' }}
-        preload='auto'
-        src='/sounds/shield.mp3'
-      />
-      <audio
-        style={{ display: 'none' }}
-        preload='auto'
-        src='/sounds/attack.mp3'
       />
     </>
   );
