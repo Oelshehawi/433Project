@@ -2,10 +2,9 @@ import {
   GameState,
   GameActionType,
   ServerEventType,
-  GestureEventPayload,
 } from './types';
 import { rooms, webClientNextRoundReadyRooms } from './roomManager';
-import { sendToRoom, clients } from './messaging';
+import { sendToRoom} from './messaging';
 import WebSocket from 'ws';
 
 // Constants for game configuration
@@ -45,7 +44,7 @@ export function initializeGameState(roomId: string): boolean {
     (player) => player.playerType === 'beagleboard'
   );
 
-  // Check if we have enough players based on MIN_REQUIRED_PLAYERS constant
+  // Check if we have enough players
   if (beagleBoardPlayers.length < MIN_REQUIRED_PLAYERS) {
     console.error(
       `Not enough players in room ${roomId}. Minimum ${MIN_REQUIRED_PLAYERS} player(s) required.`
@@ -135,7 +134,7 @@ export function startRound(roomId: string): boolean {
     `\n=========== STARTING ROUND ${room.gameState.roundNumber} IN ROOM ${roomId} ===========`
   );
 
-  // ENHANCED RESET: Completely reinitialize the playerMoves Map to ensure a clean state
+ 
   // First, create a new empty Map
   room.gameState.playerMoves = new Map();
 
@@ -225,8 +224,7 @@ export function startRound(roomId: string): boolean {
   sendToRoom(roomId, 'round_start', payload);
   console.log(`Sent round_start with included cards for room ${roomId}`);
 
-  // We no longer need to send separate beagle_board_command events for cards
-  // as they're now included in the round_start event
+
   console.log(
     `=========== ROUND ${room.gameState.roundNumber} STARTED ===========\n`
   );
@@ -255,36 +253,10 @@ export function endRound(roomId: string): boolean {
   // Check if anyone has reached their goal
   const { winningPlayerId, shouldContinue } = checkWinCondition(roomId);
 
-  // Send round end event to all clients
-  const beagleBoardPlayers = room.players.filter(
-    (player) => player.playerType === 'beagleboard'
-  );
-
-  const roundEndEvent = {
-    event: 'round_end' as ServerEventType,
-    payload: {
-      roomId,
-      roundNumber: room.gameState.roundNumber,
-      gameState: {
-        towerHeights: Object.fromEntries(room.gameState.towerHeights),
-        goalHeights: Object.fromEntries(room.gameState.goalHeights),
-        roundNumber: room.gameState.roundNumber,
-        playerShields: Object.fromEntries(room.gameState.playerShields),
-        playerMoves: Object.fromEntries(room.gameState.playerMoves),
-      },
-      winnerId: winningPlayerId,
-      roundComplete: true,
-      shouldContinue,
-    },
-  };
-
   console.log(
     `[gameManager.ts] Sending round_end event for round ${room.gameState.roundNumber}`
   );
 
-  // IMPORTANT: Do NOT send round_end event to any clients at this point
-  // BeagleBoards already received round_end from handleNextRoundReady
-  // Web clients don't have a handler for round_end, they only listen for round_end_ack
 
   console.log(
     `[gameManager.ts] Not sending round_end to web clients - they only handle round_end_ack`
@@ -590,7 +562,6 @@ export function processAction(
       room.gameState!.playerMoves.set(playerId, true);
     });
 
-    // NEW: Send all gestures together in a single batch event
     sendToRoom(roomId, 'gesture_batch' as ServerEventType, {
       roomId,
       roundNumber: currentRound,
@@ -618,8 +589,6 @@ export function processAction(
       room.gameState.playerMoves.values()
     ).every((moved) => moved);
 
-    // IMPORTANT: We no longer automatically end the round
-    // Instead, we wait for the web client to send the round_end event
     // The web client will send round_end after receiving and processing all gestures
     if (allPlayersCompleted) {
       console.log(
@@ -634,7 +603,6 @@ export function processAction(
   return true;
 }
 
-// Helper function to apply the gameplay effects of a gesture
 function applyGestureEffect(
   roomId: string,
   playerId: string,

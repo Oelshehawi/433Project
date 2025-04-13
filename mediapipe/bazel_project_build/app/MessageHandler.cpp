@@ -359,11 +359,6 @@ void MessageHandler::handleMoveAccepted(const json& payload) {
         roomManager->displayManager->displayRoundEndConfirmation(roundNumber, "accepted");
     }
     
-    // Note: We're waiting for round_end event before sending acknowledgment
     std::cout << "[MessageHandler.cpp] Move accepted but waiting for round_end event before sending ack" << std::endl;
     
-    // IMPORTANT: Do NOT send another gesture here, we already sent one
-    // Remove any code that might be sending gestures at this point
 }
-
-// The implementations for the specific event handlers will go here when we finish the full refactoring 

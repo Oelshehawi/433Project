@@ -262,7 +262,7 @@ void GameState::sendRoundEndEvent() {
             payload["roundNumber"] = currentRoundNumber;
             
             json message = json::object();
-            message["event"] = "round_end_ack";  // IMPORTANT: This must match what the server expects
+            message["event"] = "round_end_ack"; 
             message["payload"] = payload;
             
             std::string messageStr = message.dump();

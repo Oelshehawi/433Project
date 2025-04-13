@@ -40,43 +40,39 @@ import { v4 as uuidv4 } from 'uuid';
 // Store active rooms
 export const rooms: Map<string, Room> = new Map();
 
+// Track which rooms have received the game_ready signal from web clients
+const webClientReadyRooms = new Set<string>();
+
+// Track rooms waiting for web client confirmation to start next round
+export const webClientNextRoundReadyRooms = new Map<string, number>();
+
 // Generate room list for clients
 export const getRoomList = (): RoomListItem[] => {
-  const roomList = Array.from(rooms.values()).map((room) => ({
+  return Array.from(rooms.values()).map((room) => ({
     id: room.id,
     name: room.name,
-    // Only count BeagleBoard players, not web admin clients
     playerCount: room.players.filter(
       (player) => player.playerType === 'beagleboard'
     ).length,
     maxPlayers: room.maxPlayers,
     status: room.status,
   }));
-
-  return roomList;
 };
 
-// Track which rooms have received the game_ready signal from web clients
-const webClientReadyRooms = new Set<string>();
-
-// Track rooms waiting for web client confirmation to start next round
-export const webClientNextRoundReadyRooms = new Map<string, number>(); // roomId -> roundNumber
-
-// Add a function to check and set if a room is in its first round
+// Check if a room is in its first round
 export function isFirstRound(roomId: string): boolean {
   if (!rooms.has(roomId)) return false;
   const room = rooms.get(roomId)!;
   return room.gameState?.roundNumber === 1;
 }
 
-// Handler for game ready event from web client
+// Handle game ready event from web client
 export function handleGameReady(client: ExtendedWebSocket, payload: any) {
   const { roomId } = payload;
-  console.log(`Received game_ready signal from web client for room ${roomId}`);
+  console.log(`Game ready signal received for room ${roomId}`);
 
-  // Verify the room exists
   if (!rooms.has(roomId)) {
-    console.error(`Room ${roomId} not found for game_ready`);
+    console.error(`Room ${roomId} not found`);
     if (client.readyState === WebSocket.OPEN) {
       client.send(
         JSON.stringify({
@@ -88,46 +84,35 @@ export function handleGameReady(client: ExtendedWebSocket, payload: any) {
     return;
   }
 
-  // Get the room
   const room = rooms.get(roomId)!;
 
-  // Check if the room is already marked as ready - prevent duplicate processing
   if (webClientReadyRooms.has(roomId)) {
-    console.log(
-      `Room ${roomId} already marked as ready, ignoring duplicate game_ready`
-    );
+    console.log(`Room ${roomId} already marked as ready`);
     return;
   }
 
-  // Mark this room as having received the game_ready signal
   webClientReadyRooms.add(roomId);
-  console.log(`Room ${roomId} marked as ready to start first round`);
+  console.log(`Room ${roomId} ready to start first round`);
 
-  // Check if we can start the first round
   const beagleBoardPlayers = room.players.filter(
     (p) => p.playerType === 'beagleboard'
   );
   const playerCount = beagleBoardPlayers.length;
 
-  // Normal gameplay requires exactly 2 players
   if (playerCount < 2) {
     console.log(
-      `Waiting for more players in room ${roomId}. Currently have ${playerCount}/2 players.`
+      `Waiting for more players in room ${roomId}. Have ${playerCount}/2 players.`
     );
-    // Send game state update as notification
     sendToRoom(roomId, 'game_state_update', {
       roomId,
-      message: `Waiting for players. Currently have ${playerCount}/2 players.`,
+      message: `Waiting for players. Have ${playerCount}/2 players.`,
       needMorePlayers: true,
     });
     return;
   }
 
-  console.log(
-    `Web client is ready for room ${roomId}. Waiting for round_start event from client.`
-  );
+  console.log(`Web client ready for room ${roomId}. Waiting for round_start.`);
 
-  // Send game state update as notification
   sendToRoom(roomId, 'game_state_update', {
     roomId,
     message: 'Game is ready. Send round_start to begin.',
@@ -135,59 +120,43 @@ export function handleGameReady(client: ExtendedWebSocket, payload: any) {
   });
 }
 
-// New function to handle round_start event from client
+// Handle round start event from client
 export function handleRoundStartEvent(client: ExtendedWebSocket, payload: any) {
-  console.log('Processing round_start event');
   const { roomId, roundNumber } = payload;
-
   console.log(
-    `Received round_start event from client for room ${roomId}, requesting round ${
+    `Round start requested for room ${roomId}, round ${
       roundNumber || 'unspecified'
     }`
   );
 
-  // Verify the room exists
   if (!rooms.has(roomId)) {
-    console.error(`Room ${roomId} not found for round_start event`);
+    console.error(`Room ${roomId} not found`);
     return;
   }
 
   const room = rooms.get(roomId)!;
 
-  // Verify the game state exists
   if (!room.gameState) {
-    console.error(`Game state not found for room ${roomId}`);
+    console.error(`No game state for room ${roomId}`);
     return;
   }
 
-  // Check if web client has sent game_ready
   if (!webClientReadyRooms.has(roomId)) {
-    console.error(`Web client has not sent game_ready for room ${roomId}`);
+    console.error(`Web client not ready for room ${roomId}`);
     return;
   }
 
-  // Get the current round from server state
   const currentRound = room.gameState.roundNumber;
 
-  // Validate round numbers more strictly
   if (roundNumber === undefined) {
-    // If no round number provided, just use current
-    console.log(
-      `No round number specified, using current round ${currentRound}`
-    );
+    console.log(`No round specified, using current round ${currentRound}`);
   } else if (roundNumber > currentRound) {
-    // Valid advancement to next round
-    console.log(
-      `Advancing round in room ${roomId} from ${currentRound} to ${roundNumber}`
-    );
+    console.log(`Advancing to round ${roundNumber} in room ${roomId}`);
     room.gameState.roundNumber = roundNumber;
   } else if (roundNumber < currentRound) {
-    // Invalid regression to earlier round
     console.error(
-      `Invalid round regression: client requested ${roundNumber}, but server is already at ${currentRound}`
+      `Invalid round: requested ${roundNumber}, current is ${currentRound}`
     );
-
-    // Send an error message to the client
     if (client.readyState === WebSocket.OPEN) {
       client.send(
         JSON.stringify({
@@ -198,19 +167,12 @@ export function handleRoundStartEvent(client: ExtendedWebSocket, payload: any) {
         })
       );
     }
-    return; // Do not proceed with starting an earlier round
-  } else if (roundNumber === currentRound) {
-    // Same round, this is okay for the first round, but may be a duplicate for later rounds
-    console.log(`Client requested current round ${roundNumber}`);
+    return;
   }
 
-  // Use the updated round number
   const roundToStart = room.gameState.roundNumber;
-  console.log(
-    `Starting round ${roundToStart} in room ${roomId} at client request`
-  );
+  console.log(`Starting round ${roundToStart} in room ${roomId}`);
 
-  // Now we can start the round
   startRound(roomId);
 }
 
@@ -220,56 +182,44 @@ export const handleCreateRoom = (
   payload: CreateRoomPayload
 ) => {
   try {
-    console.log(
-      'handleCreateRoom called with payload:',
-      JSON.stringify(payload)
-    );
     const { room } = payload;
 
-    // Validate data
     if (!room) {
-      console.error('Missing room data in create_room payload');
+      console.error('Missing room data');
       return sendToClient(client, 'error', {
         error: 'Missing required data',
       } as ErrorPayload);
     }
 
-    // Validate room data
-    if (!room || !room.id || !room.name) {
-      console.error('Invalid room data in create_room payload', room);
+    if (!room.id || !room.name) {
+      console.error('Invalid room data');
       return sendToClient(client, 'error', {
         error: 'Invalid room data',
       } as ErrorPayload);
     }
 
-    // Check if room already exists
     if (rooms.has(room.id)) {
       return sendToClient(client, 'error', {
         error: 'Room already exists',
       } as ErrorPayload);
     }
 
-    // Create the room (with empty players array if not provided)
     const newRoom: Room = {
       ...room,
       createdAt: Date.now(),
       status: 'waiting',
-      players: room.players || [], // Use empty array if no players provided
+      players: room.players || [],
     };
 
-    // Make sure all players have the playerType field set
     newRoom.players.forEach((player) => {
       if (!player.playerType) {
-        player.playerType = 'webviewer'; // Assume any existing players are web viewers
+        player.playerType = 'webviewer';
       }
     });
 
-    // Add room to storage
     rooms.set(newRoom.id, newRoom);
+    console.log(`Created room: ${newRoom.id} - ${newRoom.name}`);
 
-    console.log(`Room created: ${newRoom.id} - ${newRoom.name}`);
-
-    // Check if this client is a BeagleBoard client creating the room
     const hostPlayer = newRoom.players.find(
       (player) => player.id === newRoom.hostId
     );
@@ -278,21 +228,13 @@ export const handleCreateRoom = (
       (hostPlayer.id === client.playerId ||
         hostPlayer.playerType === 'beagleboard')
     ) {
-      console.log(`\n=========== BEAGLEBOARD CLIENT CREATING ROOM ===========`);
-      console.log(`Room ID: ${newRoom.id}`);
-      console.log(`Host ID: ${newRoom.hostId}`);
+      console.log(`BeagleBoard client creating room ${newRoom.id}`);
 
-      // Update client properties to ensure it's properly registered
       client.roomId = newRoom.id;
       client.playerId = hostPlayer.id;
       client.playerName = hostPlayer.name;
       client.playerType = 'beagleboard';
 
-      console.log(
-        `Set client properties: roomId=${client.roomId}, playerId=${client.playerId}, playerType=${client.playerType}`
-      );
-
-      // Register this client in the beagleBoards map
       const beagleBoard: BeagleBoard = {
         deviceId: hostPlayer.id,
         roomId: newRoom.id,
@@ -300,28 +242,11 @@ export const handleCreateRoom = (
       };
 
       beagleBoards.set(client.id, beagleBoard);
-      console.log(
-        `Added BeagleBoard client to beagleBoards map with key ${client.id}`
-      );
-      console.log(`BeagleBoard map now has ${beagleBoards.size} entries`);
-
-      // Log all BeagleBoard entries for debugging
-      beagleBoards.forEach((bb, key) => {
-        console.log(
-          `  Entry ${key}: deviceId=${bb.deviceId}, roomId=${bb.roomId}`
-        );
-      });
-
-      console.log(`============================================\n`);
+      console.log(`Added BeagleBoard client ${client.id}`);
     }
 
-    // Notify the client
     sendToClient(client, 'room_updated', { room: newRoom });
-
-    // Update room list for all clients
-    broadcastToAll('room_list', {
-      rooms: getRoomList(),
-    });
+    broadcastToAll('room_list', { rooms: getRoomList() });
   } catch (error) {
     console.error('Error creating room:', error);
     sendToClient(client, 'error', {
@@ -730,13 +655,10 @@ export const handleGameStart = (
 
     // Delay the actual game start to allow for countdown animation
     setTimeout(() => {
-      // First, initialize game state with goal heights and turn order
-      // This will also start the first round and send cards via round_start
       console.log(`Initializing game state for room ${roomId}`);
       const gameStateInitialized = initializeGameState(roomId);
       if (!gameStateInitialized) {
         console.error(`Failed to initialize game state for room ${roomId}`);
-        // This is more serious, but we'll continue and try to recover
       } else {
         console.log(`Game state successfully initialized for room ${roomId}`);
       }
@@ -748,7 +670,6 @@ export const handleGameStart = (
         timestamp: Date.now(),
       });
 
-      // No need to send cards here anymore as they're sent by startRound inside initializeGameState
 
       // Update room list
       broadcastToAllClients({
@@ -962,9 +883,7 @@ export const handleRoundEndAck = (
   // Old code handlers would go here
 };
 
-// Modify existing startRoomGame to delay first round until web client is ready
 export function startRoomGame(roomId: string) {
-  // ... existing code ...
 
   // Initialize game state with cards
   const { initializeGameState } = require('./gameManager');
@@ -988,7 +907,6 @@ export function startRoomGame(roomId: string) {
     return;
   }
 
-  // UPDATED: Don't automatically start the first round, just wait for round_start from client
   console.log(
     `Game initialized for room ${roomId}, waiting for client to send round_start`
   );
