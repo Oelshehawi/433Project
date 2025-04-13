@@ -87,7 +87,7 @@ static int getCenter(char * message){
     int length = strlen(message);
     int width;
 
-            width = FONT_REGULAR_WIDTH;
+    width = FONT_REGULAR_WIDTH;
 
     return (LCD_1IN54_WIDTH - (length * width)) / 2;
 }
