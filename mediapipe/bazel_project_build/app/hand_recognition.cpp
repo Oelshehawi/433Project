@@ -22,8 +22,6 @@ constexpr char kWindowName[] = "MediaPipe";
 
 // Define constants for configuration
 static const char* const kCalculatorGraphConfigFile = "hand_tracking_custom.pbtxt";
-static const char* const kInputVideoPath = "";
-static const char* const kOutputVideoPath = "output_tracking.mp4";
 
 bool initial = true;
 #define INDEX_TIP 8
