@@ -156,3 +156,9 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "periodTimer",
+    srcs = ["periodTimer.cpp"],
+    hdrs = ["periodTimer.h"],
+    includes = ["."],
+)

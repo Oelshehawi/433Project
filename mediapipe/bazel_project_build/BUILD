@@ -17,6 +17,7 @@ cc_binary(
         "//bazel_project_build/app:GestureEventSender",
         "//bazel_project_build/app:lcd_display",
         "//bazel_project_build/hal:rotary_press_statemachine",
+        "//bazel_project_build/hal:joystick_press",
     ],
     visibility = ["//visibility:public"],
 )

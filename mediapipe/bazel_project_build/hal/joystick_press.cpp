@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include "joystick_press.h"
-#include "../app/periodTimer.h"
+#include "periodTimer.h"
 
 #define GPIO_CHIP "/dev/gpiochip2"
 #define GPIO_BUTTON 15
