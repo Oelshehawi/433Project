@@ -67,6 +67,7 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
     ret->hand_visible = true;
     
     /*
+    //Debuggy
     for (int i = 0; i < landmark_list.landmark_size(); ++i) {
         //if (i == 4|| i == 3|| i == 2|| i == 1){
             const mediapipe::NormalizedLandmark& landmark = landmark_list.landmark(i);
@@ -79,38 +80,11 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
     }
         */
         
-
-    const mediapipe::NormalizedLandmark& index_tip = landmark_list.landmark(INDEX_TIP);
-    const mediapipe::NormalizedLandmark& index_bot = landmark_list.landmark(INDEX_BOT);
-    const mediapipe::NormalizedLandmark& middle_tip = landmark_list.landmark(MIDDLE_TIP);
-    const mediapipe::NormalizedLandmark& middle_bot = landmark_list.landmark(MIDDLE_BOT);
-    const mediapipe::NormalizedLandmark& ring_tip = landmark_list.landmark(RING_TIP);
-    const mediapipe::NormalizedLandmark& ring_bot = landmark_list.landmark(RING_BOT);
-    const mediapipe::NormalizedLandmark& pinky_tip = landmark_list.landmark(PINKY_TIP);
-    const mediapipe::NormalizedLandmark& pinky_bot = landmark_list.landmark(PINKY_BOT);
     const mediapipe::NormalizedLandmark& thumb_tip = landmark_list.landmark(THUMB_TIP);
     const mediapipe::NormalizedLandmark& thumb_bot = landmark_list.landmark(THUMB_BOT);
-    const mediapipe::NormalizedLandmark& index_high = landmark_list.landmark(INDEX_HIGH);
-    const mediapipe::NormalizedLandmark& middle_high = landmark_list.landmark(MIDDLE_HIGH);
-    const mediapipe::NormalizedLandmark& ring_high = landmark_list.landmark(RING_HIGH);
-    const mediapipe::NormalizedLandmark& pinky_high = landmark_list.landmark(PINKY_HIGH);
     const mediapipe::NormalizedLandmark& thumb_high = landmark_list.landmark(THUMB_HIGH);
-    const mediapipe::NormalizedLandmark& index_low = landmark_list.landmark(INDEX_LOW);
-    const mediapipe::NormalizedLandmark& middle_low = landmark_list.landmark(MIDDLE_LOW);
-    const mediapipe::NormalizedLandmark& ring_low = landmark_list.landmark(RING_LOW);
-    const mediapipe::NormalizedLandmark& pinky_low = landmark_list.landmark(PINKY_LOW);
     const mediapipe::NormalizedLandmark& thumb_low = landmark_list.landmark(THUMB_LOW);
     const mediapipe::NormalizedLandmark& hand_base = landmark_list.landmark(HAND_BASE);
-
-    // Remove hand orientation detection since we don't need it
-    // bool is_left_hand = false;
-    // if (pinky_tip.x() > index_tip.x()){
-    //     is_left_hand = false;
-    //     //std::cout << "Is right hand" << std::endl;
-    // }else{
-    //     is_left_hand = true;
-    //     //std::cout << "Is left hand" << std::endl;
-    // }
     
     int index_agreements = 0;
     for (int i = INDEX_TIP; i >= INDEX_BOT; i--){
@@ -160,66 +134,13 @@ void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list
         ret->pinky_held_up = true;
         ret->num_fingers_held_up++;
     }
-    
-    // Replace simple thumb detection with more sophisticated agreement-based approach
-    // Create different detection method for thumb that's less prone to false positives
-    int thumb_agreements = 0;
-    for (int i = THUMB_TIP; i >= THUMB_BOT; i--){
-        for (int j = i-1; j >= THUMB_BOT ; j--){
-            // Check both horizontal and vertical positioning for thumb
-            if (landmark_list.landmark(i).y() > landmark_list.landmark(j).y()){
-                thumb_agreements++;
-            }
-        }
-    }
 
-    // Also check the angle of the thumb relative to the hand
-    float thumb_angle = calculateThumbAngle(thumb_tip, thumb_high, thumb_low, thumb_bot, hand_base);
-
-    // Additional check for thumb extension - measure horizontal distance from palm
-    float horizontal_distance = fabs(thumb_tip.x() - hand_base.x());
-    
-    // Stricter threshold - require all three conditions:
-    // 1. Few agreements in vertical positioning (thumb not pointing down)
-    // 2. Distinct angle away from the palm direction
-    // 3. Significant horizontal extension from palm
-    if (thumb_agreements < 2 && thumb_angle > 0.8 && horizontal_distance > 0.15) {
+   if (fabs(hand_base.x() - thumb_tip.x()) > 0.1 || fabs(thumb_tip.y() - hand_base.y()) > THUMB_Y_THRESHOLD){
         ret->thumb_held_up = true;
         ret->num_fingers_held_up++;
-    }
+   }
     return;
 }
-
-// Helper function to calculate thumb angle relative to hand
-float calculateThumbAngle(
-    const mediapipe::NormalizedLandmark& thumb_tip,
-    const mediapipe::NormalizedLandmark& thumb_high,
-    const mediapipe::NormalizedLandmark& thumb_low,
-    const mediapipe::NormalizedLandmark& thumb_bot,
-    const mediapipe::NormalizedLandmark& hand_base) {
-    
-    // Calculate vectors representing the thumb and palm
-    float thumb_x = thumb_tip.x() - thumb_bot.x();
-    float thumb_y = thumb_tip.y() - thumb_bot.y();
-    
-    // Reference vector approximately aligned with palm (pointing down)
-    float palm_x = 0.0f;
-    float palm_y = 1.0f;
-    
-    // Calculate magnitude of vectors
-    float thumb_mag = sqrt(thumb_x * thumb_x + thumb_y * thumb_y);
-    float palm_mag = 1.0f; // Unit vector
-    
-    // Calculate dot product
-    float dot_product = thumb_x * palm_x + thumb_y * palm_y;
-    
-    // Calculate angle (will be 0 when aligned with palm, higher when extended)
-    float cos_angle = dot_product / (thumb_mag * palm_mag);
-    
-    // Return 1 - cos_angle so the value is higher when thumb is extended
-    return 1.0f - cos_angle;
-}
-
 
 
 
