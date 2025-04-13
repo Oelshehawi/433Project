@@ -65,25 +65,8 @@ bool handPosition::compare(handPosition reference){
 
 void ProcessHandLandmarks(const mediapipe::NormalizedLandmarkList& landmark_list, handPosition* ret) {
     ret->hand_visible = true;
-    
-    /*
-    //Debuggy
-    for (int i = 0; i < landmark_list.landmark_size(); ++i) {
-        //if (i == 4|| i == 3|| i == 2|| i == 1){
-            const mediapipe::NormalizedLandmark& landmark = landmark_list.landmark(i);
-            float x = landmark.x();
-            float y = landmark.y();
-            float z = landmark.z();
-            std::cout << "Landmark " << i << ": x=" << x << ", y=" << y << ", z=" << z << std::endl;
-        //}
-        
-    }
-        */
         
     const mediapipe::NormalizedLandmark& thumb_tip = landmark_list.landmark(THUMB_TIP);
-    const mediapipe::NormalizedLandmark& thumb_bot = landmark_list.landmark(THUMB_BOT);
-    const mediapipe::NormalizedLandmark& thumb_high = landmark_list.landmark(THUMB_HIGH);
-    const mediapipe::NormalizedLandmark& thumb_low = landmark_list.landmark(THUMB_LOW);
     const mediapipe::NormalizedLandmark& hand_base = landmark_list.landmark(HAND_BASE);
     
     int index_agreements = 0;
