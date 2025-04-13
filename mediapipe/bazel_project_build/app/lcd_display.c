@@ -44,7 +44,7 @@ void lcd_init(){
     // signal(SIGINT, Handler_1IN54_LCD);
     
     // Module Init
-	if(DEV_ModuleInit() != 0){
+    if(DEV_ModuleInit() != 0){
         DEV_ModuleExit();
         exit(0);
     }
@@ -74,7 +74,7 @@ void lcd_cleanup()
     // Module Exit
     free(s_fb);
     s_fb = NULL;
-	DEV_ModuleExit();
+    DEV_ModuleExit();
     lcd_initialized = false;
 }
 
