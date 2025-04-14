@@ -831,7 +831,7 @@ if (typeof window !== 'undefined') {
       // Verify state was updated correctly
       setTimeout(() => {
         const newState = useGameStore.getState();
-        console.log('🔵 [game/store] STATE AFTER ROUND START:', {
+        console.log('[game/store] STATE AFTER ROUND START:', {
           gameStatus: newState.gameStatus,
           roundNumber: newState.roundData.roundNumber,
           isTransitioning: newState.roundData.isTransitioning,
@@ -854,7 +854,7 @@ if (typeof window !== 'undefined') {
     try {
       const { playerId, gesture, cardId } = event.detail || {};
       console.log(
-        '🎮 [game/store] Individual gesture event received:',
+        '[game/store] Individual gesture event received:',
         event.detail
       );
 
@@ -876,7 +876,7 @@ if (typeof window !== 'undefined') {
       // Verify we're processing the right round
       if (state.roundData.roundNumber !== roundNumber) {
         console.warn(
-          `🎮 [game/store] Round mismatch: received gestures for round ${roundNumber} but current round is ${state.roundData.roundNumber}`
+          `[game/store] Round mismatch: received gestures for round ${roundNumber} but current round is ${state.roundData.roundNumber}`
         );
         return;
       }
@@ -1287,7 +1287,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('round_end', (event: CustomEventInit) => {
     try {
       const { roomId, roundNumber } = event.detail || {};
-      console.log('🔄 [game/store] Round end received:', {
+      console.log('[game/store] Round end received:', {
         roomId,
         roundNumber,
         timestamp: new Date().toISOString(),

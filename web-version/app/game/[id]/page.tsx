@@ -292,7 +292,7 @@ export default function GamePage() {
       // After round_start is sent successfully for round 1, request game state
       if (roundNumber === 1) {
         setTimeout(() => {
-          console.log('🚀 [GamePage] Requesting game state after round_start');
+          console.log('[GamePage] Requesting game state after round_start');
           requestGameState();
         }, 500);
       }
@@ -310,7 +310,7 @@ export default function GamePage() {
 
   // Custom handler for rules animation completion
   const handleRulesAnimationComplete = () => {
-    console.log('🎮 [GamePage] User clicked X to close rules animation');
+    console.log('[GamePage] User clicked X to close rules animation');
     userClickedX.current = true;
     setAnimationComplete('rulesAnimationComplete', true);
 
@@ -331,7 +331,7 @@ export default function GamePage() {
             setTimeout(() => {
               // Only send round_start if not already sent
               if (!roundStartSent) {
-                console.log('🚀 [GamePage] Sending initial round_start event');
+                console.log('[GamePage] Sending initial round_start event');
                 sendMessage('round_start', { roomId, roundNumber: 1 })
                   .then(() => {
                     console.log('[GamePage] round_start sent successfully');
@@ -340,7 +340,7 @@ export default function GamePage() {
                     // Request game state after round_start is sent
                     setTimeout(() => {
                       console.log(
-                        '🚀 [GamePage] Requesting game state after round_start'
+                        '[GamePage] Requesting game state after round_start'
                       );
                       requestGameState();
                     }, 500);
@@ -456,7 +456,7 @@ export default function GamePage() {
   // Initialize game when component mounts
   useEffect(() => {
     if (roomId) {
-      console.log('🔵 [GamePage] Initializing game for room:', roomId);
+      console.log('[GamePage] Initializing game for room:', roomId);
       initialize(roomId).catch((error) => {
         console.error('[GamePage] Error initializing game:', error);
         setConnectionRetries((prev) => prev + 1);

@@ -203,7 +203,7 @@ export const initializeSocket = (
         // Special handling for game_starting to make it more visible in logs
         if (eventType === 'game_starting') {
           console.log(
-            '[websocket.ts] 🎮 GAME STARTING EVENT RECEIVED:',
+            '[websocket.ts] GAME STARTING EVENT RECEIVED:',
             payload
           );
         }
@@ -211,7 +211,7 @@ export const initializeSocket = (
         // Special tracking for round events
         if (eventType === 'round_start') {
           console.log(
-            '[websocket.ts] 🎮🎮🎮 ROUND START EVENT RECEIVED:',
+            '[websocket.ts] ROUND START EVENT RECEIVED:',
             payload
           );
         }
@@ -356,7 +356,7 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
     // Initialize if needed
     if (!socket) {
       console.log(
-        '📝 [websocket.ts] Initializing socket for sendMessage:',
+        '[websocket.ts] Initializing socket for sendMessage:',
         type
       );
       socket = initializeSocket();
