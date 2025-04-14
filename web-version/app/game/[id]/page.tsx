@@ -264,13 +264,13 @@ export default function GamePage() {
       roundStartMap.current.has(roundNumber)
     ) {
       console.log(
-        `🔄 [GamePage] Already sent/processing round_start for round ${roundNumber}`
+        `[GamePage] Already sent/processing round_start for round ${roundNumber}`
       );
       return;
     }
 
     try {
-      console.log(`🚀 [GamePage] Sending round_start for round ${roundNumber}`);
+      console.log(`[GamePage] Sending round_start for round ${roundNumber}`);
       processingRoundStart.current = true;
 
       // Mark this round as being started
@@ -286,7 +286,7 @@ export default function GamePage() {
       await sendMessage('round_start', { roomId, roundNumber });
 
       console.log(
-        `✅ [GamePage] round_start for round ${roundNumber} sent successfully`
+        `[GamePage] round_start for round ${roundNumber} sent successfully`
       );
 
       // After round_start is sent successfully for round 1, request game state
@@ -298,7 +298,7 @@ export default function GamePage() {
       }
     } catch (err) {
       console.error(
-        `🔴 [GamePage] Error sending round_start for round ${roundNumber}:`,
+        `[GamePage] Error sending round_start for round ${roundNumber}:`,
         err
       );
       // Remove from map so we can retry
@@ -317,7 +317,7 @@ export default function GamePage() {
     // Send game_ready directly when the user clicks X
     if (isSocketHealthy() && !gameReadySent.current && roomId) {
       console.log(
-        '🚀 [GamePage] Sending game_ready immediately after user click'
+        '[GamePage] Sending game_ready immediately after user click'
       );
       gameReadySent.current = true;
 
@@ -325,7 +325,7 @@ export default function GamePage() {
         sendMessage('game_ready', { roomId })
           .then(() => {
             console.log(
-              '✅ [GamePage] game_ready sent successfully on modal close'
+              '[GamePage] game_ready sent successfully on modal close'
             );
             // Add a small delay before sending round_start
             setTimeout(() => {
@@ -334,7 +334,7 @@ export default function GamePage() {
                 console.log('🚀 [GamePage] Sending initial round_start event');
                 sendMessage('round_start', { roomId, roundNumber: 1 })
                   .then(() => {
-                    console.log('✅ [GamePage] round_start sent successfully');
+                    console.log('[GamePage] round_start sent successfully');
                     setRoundStartSent(true);
 
                     // Request game state after round_start is sent
@@ -347,7 +347,7 @@ export default function GamePage() {
                   })
                   .catch((err) => {
                     console.error(
-                      '🔴 [GamePage] Error sending round_start:',
+                      '[GamePage] Error sending round_start:',
                       err
                     );
                   });
@@ -355,7 +355,7 @@ export default function GamePage() {
             }, 500);
           })
           .catch((err) => {
-            console.error('🔴 [GamePage] Error sending game_ready:', err);
+            console.error('[GamePage] Error sending game_ready:', err);
             // If we failed to send, allow retrying
             gameReadySent.current = false;
           });
@@ -458,7 +458,7 @@ export default function GamePage() {
     if (roomId) {
       console.log('🔵 [GamePage] Initializing game for room:', roomId);
       initialize(roomId).catch((error) => {
-        console.error('🔴 [GamePage] Error initializing game:', error);
+        console.error('[GamePage] Error initializing game:', error);
         setConnectionRetries((prev) => prev + 1);
       });
 
@@ -467,7 +467,7 @@ export default function GamePage() {
         try {
           const { roomId, roundNumber } = event.detail || {};
           console.log(
-            '🟢 [GamePage] Received round_end_ack event:',
+            '[GamePage] Received round_end_ack event:',
             event.detail
           );
 
@@ -475,7 +475,7 @@ export default function GamePage() {
           const nextRoundNumber = roundNumber + 1;
 
           console.log(
-            `🟢 [GamePage] Sending round_start for round ${nextRoundNumber}`
+            `[GamePage] Sending round_start for round ${nextRoundNumber}`
           );
 
           // Use imported sendMessage to ensure it's available
@@ -485,11 +485,11 @@ export default function GamePage() {
               roomId,
               roundNumber: nextRoundNumber, // This is the key fix - always use nextRoundNumber
             }).catch((err) => {
-              console.error('🔴 [GamePage] Error sending round_start:', err);
+              console.error('[GamePage] Error sending round_start:', err);
             });
           });
         } catch (error) {
-          console.error('🔴 [GamePage] Error handling round_end_ack:', error);
+          console.error('[GamePage] Error handling round_end_ack:', error);
         }
       };
 
@@ -526,7 +526,7 @@ export default function GamePage() {
   useEffect(() => {
     if (pendingRoundNumber && !roundData.isTransitioning) {
       console.log(
-        `🟢 [GamePage] Ready for round ${pendingRoundNumber}, sending round_start`
+        `[GamePage] Ready for round ${pendingRoundNumber}, sending round_start`
       );
       // Send round_start for the pending round
       if (roomId) {
@@ -538,10 +538,10 @@ export default function GamePage() {
   // Modify the useEffect that was handling game_ready to remove the duplicate sends
   useEffect(() => {
     console.log(
-      `🌟 [GamePage] Game status: ${gameStatus}, Round: ${roundData.roundNumber}`
+      `[GamePage] Game status: ${gameStatus}, Round: ${roundData.roundNumber}`
     );
     console.log(
-      `🌟 [GamePage] Transition state: ${roundData.isTransitioning}, Pending round: ${pendingRoundNumber}`
+      `[GamePage] Transition state: ${roundData.isTransitioning}, Pending round: ${pendingRoundNumber}`
     );
   }, [gameStatus, roundData, pendingRoundNumber]);
 

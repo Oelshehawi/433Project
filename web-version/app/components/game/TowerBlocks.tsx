@@ -47,7 +47,6 @@ export default function TowerBlocks({
   useEffect(() => {
     if (player2Rendered !== player2Blocks) {
       if (player2Rendered < player2Blocks) {
-        // Block added
         setRecentlyAdded2(player2Rendered);
       }
 
@@ -68,7 +67,7 @@ export default function TowerBlocks({
   if (!isVisible) return null;
 
   // Constants for tower and player dimensions
-  const BLOCK_HEIGHT = 40; // pixels
+  const BLOCK_HEIGHT = 40; 
 
   return (
     <div className='absolute bottom-25 left-0 right-0 flex justify-around'>
@@ -85,7 +84,6 @@ export default function TowerBlocks({
                   const offsetX = i % 3 === 0 ? -8 : i % 3 === 1 ? 10 : 0;
                   // Add slight rotation for more Jenga-like appearance
                   const rotation = i % 3 === 0 ? -1 : i % 3 === 1 ? 1 : 0;
-                  // Is this the recently added block?
                   const isNewBlock = i === recentlyAdded1;
 
                   return (
@@ -152,7 +150,6 @@ export default function TowerBlocks({
                   const offsetX = i % 3 === 0 ? 8 : i % 3 === 1 ? -10 : 0;
                   // Add slight rotation for more Jenga-like appearance (opposite direction)
                   const rotation = i % 3 === 0 ? 1 : i % 3 === 1 ? -1 : 0;
-                  // Is this the recently added block?
                   const isNewBlock = i === recentlyAdded2;
 
                   return (
@@ -187,8 +184,6 @@ export default function TowerBlocks({
                 })}
               </AnimatePresence>
             </div>
-
-            {/* Removed the base platform to allow players to appear to stand directly on blocks */}
           </div>
         </div>
       </div>

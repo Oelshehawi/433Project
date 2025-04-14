@@ -49,27 +49,27 @@ const SpriteAnimation = ({
   useEffect(() => {
     // Animation frame count mapping
     const frameMapping: Record<string, number> = {
-      idle: 5, // 5 frames (0-4)
-      attack: 5, // 5 frames (0-4)
-      damaged: 5, // 5 frames (0-4)
-      win: 5, // 5 frames (0-4)
-      lose: 5, // 5 frames (0-4)
+      idle: 5,
+      attack: 5, 
+      damaged: 5, 
+      win: 5,
+      lose: 5, 
     };
 
     // Animation prefix mapping - numbers in filenames
     const prefixMapping: Record<string, string> = {
       idle: '1 IDLE',
       attack: '4 JUMP',
-      damaged: '7 HURT', // Player 1 has 7 for HURT
-      win: '6 DIE', // Player 1 has 6 for DIE
-      lose: '6 DIE', // Player 2 uses 6 for DIE
+      damaged: '7 HURT', 
+      win: '6 DIE', 
+      lose: '6 DIE', 
     };
 
     // Handle different prefix for Player 2 hurt and die
     let prefix = prefixMapping[animationState];
     if (playerNumber === 2) {
-      if (animationState === 'damaged') prefix = '6 HURT'; // Player 2 uses 6 for HURT
-      if (animationState === 'lose') prefix = '7 DIE'; // Player 2 uses 7 for DIE
+      if (animationState === 'damaged') prefix = '6 HURT'; 
+      if (animationState === 'lose') prefix = '7 DIE'; 
     }
 
     // Get number of frames for this animation
@@ -82,7 +82,7 @@ const SpriteAnimation = ({
 
     setFrames(newFrames);
     setFrame(0); // Reset to first frame on animation change
-    setImageError(null); // Reset any previous errors
+    setImageError(null); 
   }, [animationState, playerNumber]);
 
   // Reset animation when state changes
@@ -98,11 +98,10 @@ const SpriteAnimation = ({
     // Set up interval for frame update
     intervalRef.current = setInterval(() => {
       setFrame((prevFrame) => {
-        // If we're at the last frame, start over
+        // If at the last frame, start over
         if (prevFrame >= frames.length - 1) {
           return 0;
         }
-        // Otherwise, move to the next frame
         return prevFrame + 1;
       });
     }, frameDuration);
@@ -146,7 +145,7 @@ const SpriteAnimation = ({
         scale !== 1 ? `scale(${scale})` : ''
       }`.trim(),
       transition: 'transform 0.2s ease-out',
-      transformOrigin: 'center bottom', // Ensure scaling happens from bottom center
+      transformOrigin: 'center bottom', 
     };
   };
 

@@ -25,7 +25,7 @@ const GameStateDisplay: React.FC = () => {
 
   // Add logging effect to track game state changes
   useEffect(() => {
-    console.log('🔍 [GameStateDisplay] Current game state:', {
+    console.log('[GameStateDisplay] Current game state:', {
       gameStateObj: gameState,
       player1: {
         name: player1Name,

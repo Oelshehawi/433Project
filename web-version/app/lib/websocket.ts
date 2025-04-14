@@ -218,7 +218,7 @@ export const initializeSocket = (
 
         if (eventType === 'round_end') {
           console.log(
-            '[websocket.ts] 🛑🛑🛑 ROUND END EVENT RECEIVED:',
+            '[websocket.ts] ROUND END EVENT RECEIVED:',
             payload
           );
         }
@@ -365,7 +365,7 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
     if (!socket) {
       const error = new Error('Could not initialize WebSocket connection');
       console.error(
-        '❌ [websocket.ts] Socket initialization failed:',
+        '[websocket.ts] Socket initialization failed:',
         error.message
       );
       reject(error);
@@ -375,7 +375,7 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
     if (socket.readyState !== WebSocket.OPEN) {
       const state = getReadyStateLabel(socket.readyState);
       const error = new Error(`WebSocket not ready (${state})`);
-      console.error('❌ [websocket.ts] Socket not ready:', error.message);
+      console.error('[websocket.ts] Socket not ready:', error.message);
       reject(error);
       return;
     }
@@ -384,19 +384,19 @@ export const sendMessage = <T>(type: string, payload: T): Promise<void> => {
       const message = { event: type, payload };
 
       if (message.event !== 'ping' && message.event !== 'pong') {
-        console.log('📝 [websocket.ts] Sending WebSocket message:', message);
+        console.log('[websocket.ts] Sending WebSocket message:', message);
       }
 
       socket.send(JSON.stringify(message));
 
       // Confirm sent for important messages
       if (type === 'next_round_ready' || type === 'game_ready') {
-        console.log('✅ [websocket.ts] Successfully sent', type);
+        console.log('[websocket.ts] Successfully sent', type);
       }
 
       resolve();
     } catch (error) {
-      console.error('❌ [websocket.ts] Error sending message:', error);
+      console.error('[websocket.ts] Error sending message:', error);
       reject(error);
     }
   });
@@ -457,14 +457,14 @@ export const signalNextRoundReady = (
   roundNumber: number
 ): void => {
   console.log(
-    `📢 [websocket.ts] Signaling server that web client is ready for round ${roundNumber}`
+    `[websocket.ts] Signaling server that web client is ready for round ${roundNumber}`
   );
 
   try {
     // Check socket health first
     if (!isSocketHealthy()) {
       console.warn(
-        '❌ [websocket.ts] Socket not healthy, refreshing connection'
+        '[websocket.ts] Socket not healthy, refreshing connection'
       );
       refreshConnectionStatus();
 
@@ -472,19 +472,19 @@ export const signalNextRoundReady = (
       setTimeout(() => {
         if (isSocketHealthy()) {
           console.log(
-            `📢 [websocket.ts] Retrying next_round_ready for round ${roundNumber} after refresh`
+            `[websocket.ts] Retrying next_round_ready for round ${roundNumber} after refresh`
           );
           sendMessage('next_round_ready', { roomId, roundNumber }).catch(
             (error) => {
               console.error(
-                '❌ [websocket.ts] Error sending next_round_ready after refresh:',
+                '[websocket.ts] Error sending next_round_ready after refresh:',
                 error
               );
             }
           );
         } else {
           console.error(
-            '❌ [websocket.ts] Still not healthy after refresh, cannot send next_round_ready'
+            '[websocket.ts] Still not healthy after refresh, cannot send next_round_ready'
           );
         }
       }, 500);
@@ -495,13 +495,13 @@ export const signalNextRoundReady = (
     // Send with normal flow if socket is healthy
     sendMessage('next_round_ready', { roomId, roundNumber }).catch((error) => {
       console.error(
-        '❌ [websocket.ts] Error sending next_round_ready signal:',
+        '[websocket.ts] Error sending next_round_ready signal:',
         error
       );
     });
   } catch (error) {
     console.error(
-      '❌ [websocket.ts] Exception sending next_round_ready signal:',
+      '[websocket.ts] Exception sending next_round_ready signal:',
       error
     );
   }

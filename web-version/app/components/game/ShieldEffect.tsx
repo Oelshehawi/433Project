@@ -42,8 +42,8 @@ const ShieldEffect = ({
   if (!isActive) return null;
 
   // Constants for positioning
-  const BLOCK_HEIGHT = 40; // pixels
-  const BASE_HEIGHT = 15; // pixels
+  const BLOCK_HEIGHT = 40; 
+  const BASE_HEIGHT = 15; 
 
   // Position styles based on left or right
   const positionStyles =

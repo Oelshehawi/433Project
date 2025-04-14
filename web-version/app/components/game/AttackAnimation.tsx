@@ -120,7 +120,7 @@ const AttackAnimation: React.FC<AttackAnimationProps> = ({
     setPosition({ x: startX, y: 0 });
 
     // Time settings
-    const duration = 1500; // 1.5 seconds
+    const duration = 1500; 
     const startTime = Date.now();
 
     // Clear any existing interval and timers
@@ -140,8 +140,8 @@ const AttackAnimation: React.FC<AttackAnimationProps> = ({
 
       // Calculate current position
       const x = startX + (targetX - startX) * progress;
-      const arcComponent = -4 * progress * (progress - 1) * 100; // Parabolic arc
-      const linearComponent = progress * targetYPercent; // Linear rise
+      const arcComponent = -4 * progress * (progress - 1) * 100; 
+      const linearComponent = progress * targetYPercent; 
       const y = linearComponent + arcComponent;
 
       // Update position
@@ -157,7 +157,7 @@ const AttackAnimation: React.FC<AttackAnimationProps> = ({
           handleAnimationComplete();
         }, 100);
       }
-    }, 16); // ~60fps
+    }, 16); 
 
     // Set a maximum duration timeout as a fallback
     // This ensures animation always completes even if there are issues
@@ -167,7 +167,7 @@ const AttackAnimation: React.FC<AttackAnimationProps> = ({
         cleanupAnimation();
         handleAnimationComplete();
       }
-    }, duration + 250); // Give a little extra time beyond the animation duration
+    }, duration + 250); 
 
     // Cleanup function
     return () => {
@@ -209,7 +209,7 @@ const AttackAnimation: React.FC<AttackAnimationProps> = ({
         width={32}
         height={32}
         className='object-contain'
-        priority={true} // Prioritize loading
+        priority={true} 
       />
     </div>
   );

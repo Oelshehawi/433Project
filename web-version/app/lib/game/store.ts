@@ -632,12 +632,12 @@ if (typeof window !== 'undefined') {
     try {
       const { gameState, message, allGesturesReceived, playerGestureSummary } =
         event.detail || {};
-      console.log('🟣 [game/store] Game state update received:', gameState);
-      console.log('🟣 [game/store] Message:', message);
+      console.log('[game/store] Game state update received:', gameState);
+      console.log('[game/store] Message:', message);
 
       if (allGesturesReceived) {
         console.log(
-          '🟣 [game/store] All gestures received:',
+          '[game/store] All gestures received:',
           playerGestureSummary
         );
 
@@ -650,7 +650,7 @@ if (typeof window !== 'undefined') {
             // Send next_round_ready signal to server after animations have completed
             setTimeout(() => {
               console.log(
-                '🟣 [game/store] Sending next_round_ready signal after receiving all gestures'
+                '[game/store] Sending next_round_ready signal after receiving all gestures'
               );
               import('../websocket').then(({ sendMessage }) => {
                 sendMessage('next_round_ready', {
@@ -658,7 +658,7 @@ if (typeof window !== 'undefined') {
                   roundNumber: state.roundData.roundNumber,
                 }).catch((err) => {
                   console.error(
-                    '🔴 [game/store] Failed to send next_round_ready:',
+                    '[game/store] Failed to send next_round_ready:',
                     err
                   );
                 });
@@ -742,7 +742,7 @@ if (typeof window !== 'undefined') {
       }
     } catch (error) {
       console.error(
-        '🔴 [game/store] Error processing game state update:',
+        '[game/store] Error processing game state update:',
         error
       );
     }
@@ -753,11 +753,11 @@ if (typeof window !== 'undefined') {
     try {
       const { roundNumber, gameState } = event.detail || {};
       console.log(
-        '🔵 [game/store] ===== ROUND START EVENT RECEIVED =====',
+        '[game/store] ===== ROUND START EVENT RECEIVED =====',
         event.detail
       );
       console.log(
-        '🔵 [game/store] Round number:',
+        '[game/store] Round number:',
         roundNumber,
         'Current game status:',
         useGameStore.getState().gameStatus
@@ -773,16 +773,16 @@ if (typeof window !== 'undefined') {
         roundNumber < state.roundData.roundNumber
       ) {
         console.error(
-          `🚨 [game/store] INVALID ROUND START: Server sent round ${roundNumber} but we're already on round ${state.roundData.roundNumber}`
+          `[game/store] INVALID ROUND START: Server sent round ${roundNumber} but we're already on round ${state.roundData.roundNumber}`
         );
         return; // Reject invalid round transitions
       }
 
       // CRITICAL FIX: Force transition to playing state
       console.log(
-        '🔵 [game/store] 🚨 TRANSITIONING FROM',
+        '[game/store] TRANSITIONING FROM',
         currentStatus,
-        'TO "playing" STATE 🚨'
+        'TO "playing" STATE'
       );
 
       // Update round data
@@ -839,11 +839,11 @@ if (typeof window !== 'undefined') {
       }, 100);
 
       console.log(
-        '🔵 [game/store] ===== ROUND START PROCESSING COMPLETE ====='
+        '[game/store] ===== ROUND START PROCESSING COMPLETE ====='
       );
     } catch (error) {
       console.error(
-        '🔴 [game/store] Error processing round start event:',
+        '[game/store] Error processing round start event:',
         error
       );
     }
@@ -861,7 +861,7 @@ if (typeof window !== 'undefined') {
       // Process single gesture (reuse existing code)
       processGesture(playerId, gesture, cardId);
     } catch (error) {
-      console.error('🔴 [game/store] Error processing gesture event:', error);
+      console.error('[game/store] Error processing gesture event:', error);
     }
   });
 
@@ -869,7 +869,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('gesture_batch', (event: CustomEventInit) => {
     try {
       const { gestures, roundNumber } = event.detail || {};
-      console.log('🎮 [game/store] Gesture batch received:', gestures);
+      console.log('[game/store] Gesture batch received:', gestures);
 
       const state = useGameStore.getState();
 
@@ -901,7 +901,7 @@ if (typeof window !== 'undefined') {
         // that includes allGesturesReceived flag
       }
     } catch (error) {
-      console.error('🔴 [game/store] Error processing gesture batch:', error);
+      console.error('[game/store] Error processing gesture batch:', error);
     }
   });
 
@@ -1106,7 +1106,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('round_end_ack', (event: CustomEventInit) => {
     try {
       const { roomId, playerId, roundNumber } = event.detail || {};
-      console.log('🔄 [game/store] Round end acknowledgment received:', {
+      console.log('[game/store] Round end acknowledgment received:', {
         roomId,
         playerId,
         roundNumber,
@@ -1118,7 +1118,7 @@ if (typeof window !== 'undefined') {
       // Check if this is for our current room
       if (roomId !== state.currentRoom) {
         console.warn(
-          '🔶 [game/store] Received round_end_ack for different room, ignoring'
+          '[game/store] Received round_end_ack for different room, ignoring'
         );
         return;
       }
@@ -1126,7 +1126,7 @@ if (typeof window !== 'undefined') {
       // Check if we're in the correct round
       if (roundNumber !== state.roundData.roundNumber) {
         console.warn(
-          `🔶 [game/store] Round number mismatch: received ${roundNumber}, current is ${state.roundData.roundNumber}`
+          `[game/store] Round number mismatch: received ${roundNumber}, current is ${state.roundData.roundNumber}`
         );
         return;
       }
@@ -1158,7 +1158,7 @@ if (typeof window !== 'undefined') {
       );
     } catch (error) {
       console.error(
-        '🔴 [game/store] Error processing round end acknowledgment:',
+        '[game/store] Error processing round end acknowledgment:',
         error
       );
     }
@@ -1264,7 +1264,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('round_start', (event: CustomEventInit) => {
     try {
       const { roomId, roundNumber } = event.detail || {};
-      console.log('🔄 [game/store] Round start received:', {
+      console.log('[game/store] Round start received:', {
         roomId,
         roundNumber,
         timestamp: new Date().toISOString(),
@@ -1279,7 +1279,7 @@ if (typeof window !== 'undefined') {
         'Animation'
       );
     } catch (error) {
-      console.error('🔴 [game/store] Error handling round start event:', error);
+      console.error('[game/store] Error handling round start event:', error);
     }
   });
 
@@ -1302,7 +1302,7 @@ if (typeof window !== 'undefined') {
         'Animation'
       );
     } catch (error) {
-      console.error('🔴 [game/store] Error handling round end event:', error);
+      console.error('[game/store] Error handling round end event:', error);
     }
   });
 }

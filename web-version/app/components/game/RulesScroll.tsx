@@ -24,7 +24,7 @@ export default function RulesScroll({
       className='fixed inset-0 flex items-center justify-center z-[100]'
       style={{
         backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        isolation: 'isolate', // Creates a new stacking context
+        isolation: 'isolate', 
       }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}

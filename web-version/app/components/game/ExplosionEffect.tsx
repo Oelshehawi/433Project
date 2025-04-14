@@ -14,8 +14,8 @@ const ExplosionEffect: React.FC<ExplosionEffectProps> = ({
   onAnimationComplete,
 }) => {
   // Constants
-  const BLOCK_HEIGHT = 40; // pixels
-  const BASE_HEIGHT = 15; // pixels
+  const BLOCK_HEIGHT = 40; 
+  const BASE_HEIGHT = 15; 
 
   // Track animation timer
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -45,7 +45,7 @@ const ExplosionEffect: React.FC<ExplosionEffectProps> = ({
           );
           onAnimationComplete();
         }
-      }, 500); // Match the CSS animation duration
+      }, 500); 
     }
 
     return cleanup;

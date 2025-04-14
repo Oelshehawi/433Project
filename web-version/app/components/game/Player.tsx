@@ -14,7 +14,7 @@ interface PlayerProps {
   isVisible: boolean;
   animationState?: PlayerAnimationState;
   jumpHeight?: number;
-  towerHeight?: number; // Add prop for tower height
+  towerHeight?: number; 
 }
 
 export default function Player({
@@ -23,7 +23,7 @@ export default function Player({
   isVisible,
   animationState = 'idle',
   jumpHeight = 0,
-  towerHeight = 0, // Default to 0 if not provided
+  towerHeight = 0,
 }: PlayerProps) {
   const isPlayer1 = playerId === 'player1';
   const playerNumber = isPlayer1 ? 1 : 2;
