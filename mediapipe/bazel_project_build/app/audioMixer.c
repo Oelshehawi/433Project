@@ -1,8 +1,10 @@
 // Incomplete implementation of an audio mixer. Search for "REVISIT" to find things
 // which are left as incomplete.
 // Note: Generates low latency audio on BeagleBone Black; higher latency found on host.
-#include "audioMixer.h"
+//#define _TIME_H 1
+#define _STRUCT_TIMESPEC
 #include "alsa/asoundlib.h"
+#include <time.h>
 #include <stdbool.h>
 #include <pthread.h>
 #include <limits.h>
@@ -12,6 +14,8 @@
 #include <stdio.h>
 #include <assert.h>
 #include "periodTimer.h"
+#include "audioMixer.h"
+
 
 
 static snd_pcm_t *handle;
@@ -297,6 +301,7 @@ static void fillPlaybackBuffer(short *buff, int size)
 	 */
 
 	memset(buff, 0, size * sizeof(short));
+	memset(playbackBuffer, 0, playbackBufferSize * sizeof(*playbackBuffer));
     
 	pthread_mutex_lock(&audioMutex);
 	for (int i = 0; i < MAX_SOUND_BITES; i++) {

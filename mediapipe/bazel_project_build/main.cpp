@@ -20,6 +20,9 @@
 #include "app/lcd_display.h"
 #include "hal/rotary_press_statemachine.h"
 #include "hal/joystick_press.h"
+#include "app/SoundManager.h"
+#include "app/audioMixer.h"
+
 //bazel build -c opt --crosstool_top=@crosstool//:toolchains --compiler=gcc --cpu=aarch64 --define MEDIAPIPE_DISABLE_GPU=1 //bazel_project_build:gesture_game
 
 std::atomic<bool> joystickRunning = false;
@@ -159,6 +162,10 @@ int main(int argc, char* argv[]) {
         std::cout << "Initializing input controls..." << std::endl;
         rotary_press_statemachine_init();
         joystick_press_init();
+
+        std::cout << "Initializing audio system..." << std::endl;
+        AudioMixer_init();
+        SoundManager_init();
         
         // Display welcome message
         char* welcomeMsg[] = {"Gesture Tower", "Game", "Ready!"};
@@ -419,6 +426,10 @@ int main(int argc, char* argv[]) {
             webSocketClient->disconnect();
             delete webSocketClient;
         }
+
+        SoundManager_cleanup();
+        AudioMixer_cleanup();   
+
         
         // Restore stderr
         std::cerr.rdbuf(stderr_buf);

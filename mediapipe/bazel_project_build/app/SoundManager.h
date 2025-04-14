@@ -1,6 +1,11 @@
 #ifndef SOUND_MANAGER_H
 #define SOUND_MANAGER_H
 
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "audioMixer.h"
 
 // Initializes all sounds
@@ -13,5 +18,10 @@ void SoundManager_cleanup();
 void SoundManager_playAttack();
 void SoundManager_playBuild();
 void SoundManager_playShield();
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

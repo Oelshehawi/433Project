@@ -9,13 +9,13 @@ static wavedata_t sound_shield;
 void SoundManager_init() {
     char path[256];
 
-    strcpy(path, "/mnt/remote/mediapipe/sounds/attack_s32.wav");
+    strcpy(path, "/mnt/remote/mediapipe/sounds/attack_s16.wav");
     AudioMixer_readWaveFileIntoMemory(path, &sound_attack);
 
-    strcpy(path, "/mnt/remote/mediapipe/sounds/build_s32.wav");
+    strcpy(path, "/mnt/remote/mediapipe/sounds/build_s16.wav");
     AudioMixer_readWaveFileIntoMemory(path, &sound_build);
 
-    strcpy(path, "/mnt/remote/mediapipe/sounds/shield_s32.wav");
+    strcpy(path, "/mnt/remote/mediapipe/sounds/shield_s16.wav");
     AudioMixer_readWaveFileIntoMemory(path, &sound_shield);
 
     printf("[SoundManager] Loaded all 3 sound files.\n");

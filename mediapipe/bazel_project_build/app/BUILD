@@ -150,6 +150,7 @@ cc_library(
         ":CoreHeaders",
         ":hand_recognition",
         ":lcd_display",
+        ":SoundManager",
         ":GestureEventSender",
         "//bazel_project_build/hal:camera_hal",
         "//bazel_project_build/hal:rotary_press_statemachine",
@@ -158,7 +159,27 @@ cc_library(
 
 cc_library(
     name = "periodTimer",
-    srcs = ["periodTimer.cpp"],
+    srcs = ["periodTimer.c"],
     hdrs = ["periodTimer.h"],
     includes = ["."],
+)
+
+cc_library(
+    name = "audioMixer",
+    srcs = ["audioMixer.c"],
+    hdrs = ["audioMixer.h"],
+    deps = [":periodTimer"],
+    linkopts = [
+        "-L/usr/aarch64-linux-gnu/lib",
+        "-lasound"
+        ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "SoundManager",
+    srcs = ["SoundManager.c"],
+    hdrs = ["SoundManager.h"],
+    deps = [":audioMixer"],
+    visibility = ["//visibility:public"],
 )

@@ -3,6 +3,7 @@
 #include "GestureEventSender.h"
 #include "GameState.h"
 #include "DisplayManager.h"
+#include "SoundManager.h"
 #include <iostream>
 #include <unistd.h>
 #include <cmath>
@@ -142,6 +143,7 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
         !handPos.thumb_held_up && !handPos.middle_held_up && !handPos.ring_held_up && !handPos.pinky_held_up) {
         detectedMove = "Attack";
         actionType = "attack";
+        SoundManager_playAttack();
         std::cout << "[GestureDetector.cpp] Detected gesture: Attack" << std::endl;
         
         // Display confirmation message if we have a display manager
@@ -161,6 +163,7 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
              handPos.middle_held_up && handPos.ring_held_up && handPos.pinky_held_up) {
         detectedMove = "Defend";
         actionType = "defend";
+        SoundManager_playShield();
         std::cout << "[GestureDetector.cpp] Detected gesture: Defend" << std::endl;
         
         // Display confirmation message if we have a display manager
@@ -180,6 +183,7 @@ bool GestureDetector::recognizeGesture(const handPosition& handPos, std::string&
              !handPos.thumb_held_up && !handPos.ring_held_up && !handPos.pinky_held_up) {
         detectedMove = "Build";
         actionType = "build";
+        SoundManager_playBuild();
         std::cout << "[GestureDetector.cpp] Detected gesture: Build" << std::endl;
         
         // Display confirmation message if we have a display manager

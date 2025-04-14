@@ -1,6 +1,10 @@
 #ifndef _PERIOD_TIMER_H_
 #define _PERIOD_TIMER_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Module to record and report the timing of periodic events.
 //     Written by Brian Fraser
 // Usage:
@@ -52,5 +56,9 @@ void Period_getStatisticsAndClear(
 );
 
 unsigned long long periodTimer_getCurrentTimeMs(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

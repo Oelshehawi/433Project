@@ -3,6 +3,11 @@
 #ifndef AUDIO_MIXER_H
 #define AUDIO_MIXER_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 typedef struct {
 	int numSamples;
 	short *pData;
@@ -29,5 +34,11 @@ void AudioMixer_queueSound(wavedata_t *pSound);
 // http://stackoverflow.com/questions/6787318/set-alsa-master-volume-from-c-code
 int  AudioMixer_getVolume();
 void AudioMixer_setVolume(int newVolume);
+
+
+#ifdef __cplusplus
+}
+#endif
+
 
 #endif
